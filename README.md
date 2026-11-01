@@ -12,7 +12,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-In den Einstellungen die Server-URL (z. B. `http://127.0.0.1:1234/v1`), ggf. API-Schlüssel eintragen,
+In den Einstellungen die Server-URL (z. B. `http://127.0.0.1:1234/v1`) und den API-Token eintragen (LM Studio verlangt ihn: Developer-Einstellungen),
 „Modelle laden“, Modell wählen. Enter sendet, Shift+Enter ist ein Zeilenumbruch.
 
 ## Persönlichkeit
