@@ -8,7 +8,8 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Regeln des Besitzers
 - **Kein Name, keine E-Mail im Code, in Commits, READMEs oder Kommentaren.** Git-Identität ist die
   GitHub-noreply-Adresse (global gesetzt) – nicht ändern. Vor jedem Push `git log --format='%an %ae'` prüfen.
-- Commits nur auf Wunsch; Commit-Nachrichten englisch, Code-Kommentare/UI deutsch.
+- Bei grünen Tests sofort committen (ohne Rückfrage), bei roten nicht; sonst nur auf Wunsch. Nie pushen ohne
+  Auftrag. Commit-Nachrichten englisch, Code-Kommentare/UI deutsch.
 - Kommunikation auf Deutsch.
 
 ## Entscheidungen
