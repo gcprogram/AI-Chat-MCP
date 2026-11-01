@@ -16,6 +16,7 @@ from .config import APP_DIR
 log = logging.getLogger(__name__)
 PERSONAS_DIR = APP_DIR / "personas"
 AVATAR_SUBDIR = "avatars"
+TOOL_MODES = ("marker", "native")
 
 
 @dataclass
@@ -27,6 +28,7 @@ class Persona:
     rules: list[str] = field(default_factory=list)  # zusätzliche, persönlichkeitsspezifische Regeln
     avatar: str = ""  # Dateiname relativ zu personas/ (z. B. "avatars/mia.png") oder absoluter Pfad
     tools: list[str] = field(default_factory=list)  # freigeschaltete Werkzeuge (Aliase aus mcp_servers.json)
+    tool_mode: str = "marker"  # "marker": Textmarker im Prompt | "native": Parameter 'tools' der Chat-API
     id: str = ""  # Dateiname ohne .json; wird beim Laden/Speichern gesetzt, nicht in der Datei gespeichert
 
     def system_prompt(self, user_name: str, tools_section: str = "") -> str:
@@ -96,6 +98,8 @@ def load_persona(name: str, directory: Path = PERSONAS_DIR) -> Persona:
             persona.rules = []
         if not isinstance(persona.tools, list):
             persona.tools = []
+        if persona.tool_mode not in TOOL_MODES:
+            persona.tool_mode = "marker"
         persona.id = name
         return persona
     except (OSError, ValueError, TypeError) as exc:

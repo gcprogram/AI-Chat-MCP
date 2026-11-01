@@ -38,6 +38,7 @@ class ToolCall:
     raw: str
     start: int
     end: int
+    arguments: dict | None = None  # nativer Aufruf: die echten (JSON-)Argumente statt des Marker-Textes
 
 
 def find_call(text: str) -> ToolCall | None:
@@ -158,8 +159,8 @@ class ToolSpec:
     def usage(self) -> str:
         return "[[mcp:" + "|".join([self.alias] + [f"<{p.name}>" for p in self.params]) + "]]"
 
-    def resolve(self, args: str) -> dict[str, Any]:
-        """Marker-Argumente -> Argumente des MCP-Werkzeugs (Reihenfolge der Parameter, Typumwandlung)."""
+    def bind(self, args: str) -> dict[str, Any]:
+        """Marker-Text -> benannte Argumente der sichtbaren Parameter (noch ohne Standardwerte und Typumwandlung)."""
         names = {p.name for p in self.params}
         given: dict[str, Any] = {}
         positional: list[Any] = []
@@ -183,6 +184,16 @@ class ToolSpec:
         extras = positional[len(free):]
         if extras and len(self.params) == 1 and isinstance(given.get(self.params[0].name), str):
             given[self.params[0].name] = " ".join([given[self.params[0].name], *map(str, extras)])
+        return given
+
+    def resolve(self, args: str, named: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Marker-Argumente (oder bei nativen Aufrufen schon benannte) -> Argumente des MCP-Werkzeugs
+        (Standardwerte, Typumwandlung, feste Argumente)."""
+        names = {p.name for p in self.params}
+        if named is None:
+            given = self.bind(args)
+        else:
+            given = {k: _unquote(v) for k, v in named.items() if k in names}
         for name, value in self.defaults.items():
             if given.get(name) in (None, ""):
                 given[name] = value
@@ -390,6 +401,54 @@ class ToolRegistry:
             *(spec.prompt_line() for spec in specs),
         ])
 
+    # --- Natives Tool-Calling (Parameter "tools" der Chat-API) ------------------------------------
+
+    def native_tools(self, aliases: list[str]) -> list[dict]:
+        """Funktionsbeschreibungen im OpenAI-Format. Die Aliase machen sie klein: feste Argumente fehlen,
+        meist bleibt höchstens ein Parameter."""
+        tools = []
+        for alias in dict.fromkeys(normalize_name(x) for x in aliases):
+            spec = self.tools.get(alias)
+            if spec is None:
+                continue
+            properties = {p.name: {"type": p.type if p.type in ("string", "integer", "number", "boolean") else "string",
+                                   **({"description": _first_sentence(p.description, 80)} if p.description else {})}
+                          for p in spec.params}
+            parameters: dict[str, Any] = {"type": "object", "properties": properties}
+            if any(p.required for p in spec.params):
+                parameters["required"] = [p.name for p in spec.params if p.required]
+            tools.append({"type": "function", "function": {
+                "name": spec.alias, "description": spec.description.rstrip(".") + "." if spec.description else spec.alias,
+                "parameters": parameters}})
+        return tools
+
+    def native_prompt_section(self, aliases: list[str]) -> str:
+        """Beim nativen Modus beschreibt das Chat-Template die Werkzeuge; hier nur die Verhaltensregeln."""
+        if not any(normalize_name(a) in self.tools for a in aliases):
+            return ""
+        return "\n".join(["Werkzeuge:",
+                          "- Benutze ein Werkzeug nur, wenn du die Information wirklich brauchst; sonst antworte normal.",
+                          "- Erfinde nie ein Ergebnis und rate nicht, was das Werkzeug liefert."])
+
+    def native_call(self, name: str, arguments_json: str) -> tuple[str, dict]:
+        """Nativer Aufruf -> (Marker-Text für Anzeige und Verlauf, benannte Argumente). Der Marker ist nur die
+        lesbare Form; ausgeführt wird mit den echten Argumenten ('|' und ']' im Text würden den Marker sprengen)."""
+        try:
+            arguments = json.loads(arguments_json) if arguments_json.strip() else {}
+        except ValueError:
+            arguments = {}
+        arguments = arguments if isinstance(arguments, dict) else {}
+        spec = self.tools.get(normalize_name(name))
+        order = [p.name for p in spec.params] if spec else list(arguments)
+        values, gap = [], False
+        for key in order:
+            if key not in arguments:
+                gap = True  # danach nur noch benannt schreiben, sonst verrutscht die Reihenfolge
+                continue
+            text = re.sub(r"[|\]\[\r\n]+", " ", str(arguments[key])).strip()
+            values.append(f"{key}={text}" if gap else text)
+        return "[[mcp:" + "|".join([normalize_name(name), *values]) + "]]", arguments
+
     def run(self, call: ToolCall, allowed: list[str], *, max_chars: int = 2000, timeout: float = 60.0) -> ToolOutcome:
         """Führt einen Aufruf aus. Fehler werden als Ergebnis (ok=False) zurückgegeben, damit das Modell sie sieht."""
         alias = normalize_name(call.name)
@@ -398,7 +457,7 @@ class ToolRegistry:
             return ToolOutcome(call.name, False,
                                f"Unbekanntes Werkzeug '{call.name}'. Verfügbar: {', '.join(allowed) or 'keine'}.")
         try:
-            arguments = spec.resolve(call.args)
+            arguments = spec.resolve(call.args, call.arguments)
         except ToolArgError as exc:
             return ToolOutcome(spec.alias, False, str(exc))
         try:

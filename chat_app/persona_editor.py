@@ -10,6 +10,9 @@ from .persona import (Persona, delete_persona, list_personas, load_persona, remo
                       unique_id)
 
 
+MODE_LABELS = {"marker": "Textmarker (für kleine Modelle)", "native": "Nativ (tools-Parameter der API)"}
+
+
 class PersonaEditor(tk.Toplevel):
     def __init__(self, app, select: str | None = None):
         super().__init__(app.root)
@@ -50,8 +53,15 @@ class PersonaEditor(tk.Toplevel):
         self.tools_frame = ttk.Frame(self)
         self.tools_frame.grid(row=7, column=1, sticky="w", padx=10, pady=5)
 
+        ttk.Label(self, text="Werkzeug-Modus:").grid(row=8, column=0, sticky="nw", padx=10, pady=5)
+        mode = ttk.Frame(self)
+        mode.grid(row=8, column=1, sticky="w", padx=10, pady=5)
+        self.mode = ttk.Combobox(mode, state="readonly", width=34, values=list(MODE_LABELS.values()))
+        self.mode.pack(side=tk.LEFT)
+        ttk.Label(mode, foreground="#666666", text="  Nativ nur für Modelle mit Tool-Unterstützung.").pack(side=tk.LEFT)
+
         buttons = ttk.Frame(self)
-        buttons.grid(row=8, column=0, columnspan=2, pady=12)
+        buttons.grid(row=9, column=0, columnspan=2, pady=12)
         ttk.Button(buttons, text="Speichern", command=self.save).pack(side=tk.LEFT, padx=5)
         ttk.Button(buttons, text="Schließen", command=self.destroy).pack(side=tk.LEFT, padx=5)
 
@@ -111,6 +121,7 @@ class PersonaEditor(tk.Toplevel):
             widget.delete("1.0", tk.END)
             widget.insert("1.0", value)
         self._build_tool_checks(persona.tools)
+        self.mode.set(MODE_LABELS.get(persona.tool_mode, MODE_LABELS["marker"]))
         self.avatar_view.show(persona, self.app.personas_dir)
 
     def _collect(self) -> Persona:
@@ -122,6 +133,7 @@ class PersonaEditor(tk.Toplevel):
             rules=[r.strip() for r in self.rules.get("1.0", tk.END).splitlines() if r.strip()],
             avatar=self.avatar_saved,
             tools=[a for a, var in self.tool_vars.items() if var.get()] + self.hidden_tools,
+            tool_mode=next((k for k, v in MODE_LABELS.items() if v == self.mode.get()), "marker"),
             id=self.current_id)
 
     def _load(self, persona_id: str) -> None:

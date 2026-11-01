@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 58 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 70 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -50,8 +50,15 @@ python main.py
   `discard` (nur Statuszeile). Angezeigte Ergebnisse gehen erst mit der **nächsten Nutzernachricht** ans Modell
   (`_wire_history` verpackt sie dort; Rollen bleiben abwechselnd). Fehler gehen immer ans Modell. `raw: false` pro
   Server blendet rohe Tools aus. Eigene Server in `servers/` (Wetter, Websuche; Datumsrechnung im Server, nicht im Modell).
-- Offen: nativer Modus (`tools`-Parameter von LM Studio) als Schalter pro Companion; Aliase könnten dann als
-  Funktionen mit 0–1 Parameter geschickt werden (viel kleiner als rohe MCP-Schemas).
+- **Nativer Modus** (`Persona.tool_mode = "native"`, Schalter im Companion-Editor): Aliase gehen als `tools`-Parameter
+  (`ToolRegistry.native_tools`, klein dank fester `args`). `llm_client` setzt `delta.tool_calls` zusammen und liefert
+  `StreamEvent("tool_call")`; die GUI macht daraus per `ToolRegistry.native_call` einen Marker (Anzeige/Verlauf/Speichern
+  bleiben wie im Marker-Modus) und führt mit den echten JSON-Argumenten aus (`ToolCall.arguments`, `ChatApp.native_args`).
+  Erst beim Senden wandelt `ChatSession._wire_native` den Verlauf in `tool_calls`/`tool`-Nachrichten um (Aufruf ohne
+  Ergebnis → Text; `tool_shown` → `tool`-Nachricht). Werkzeugbeschreibungen zählen in die Kontext-Schätzung. Nur der
+  erste Aufruf pro Antwort. Ungeprüft: echtes Modell/LM Studio (nur Fake-Server-Tests).
+- Tests mit Tk: Variablen des Editors vorher im Hauptthread per `gc.collect` freigeben (sonst `Tcl_AsyncDelete`-Abbruch,
+  wenn ein Streaming-Thread die GC auslöst).
 
 ## Offene Aufgaben (Reihenfolge)
 1. **Echter Test** mit einem Chat-Modell in LM Studio (kein TranslateGemma – das ist reiner Übersetzer):

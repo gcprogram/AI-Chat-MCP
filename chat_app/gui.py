@@ -16,12 +16,12 @@ from . import chatlog
 from .avatar import AvatarView
 from .config import CHATS_DIR, CONFIG_PATH, MCP_CONFIG_PATH, Config
 from .context import TOOL_RESULT, TOOL_SHOWN, Message
-from .llm_client import ChatClient, LLMError
+from .llm_client import ChatClient, LLMError, StreamEvent
 from .persona import PERSONAS_DIR, list_personas, load_persona
 from .persona_editor import PersonaEditor
 from .reply import Reply, StreamGuard, finalize_reply
 from .session import ChatSession
-from .tools import (RESULT_DISCARD, RESULT_SHOW, ToolCall, ToolOutcome, ToolRegistry, normalize_name,
+from .tools import (RESULT_DISCARD, RESULT_SHOW, ToolCall, ToolOutcome, ToolRegistry, find_call, normalize_name,
                     split_segments)
 
 log = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ class ChatApp:
         self.last_usage: dict | None = None
         self.sent_messages: list[dict] = []
         self.tool_rounds = 0
+        self.native_args: dict[tuple[str, str], dict] = {}  # echte Argumente nativer Aufrufe (Schlüssel: Name, Marker-Text)
         self.settings_win: tk.Toplevel | None = None
         self.editor: PersonaEditor | None = None
         self.model_combo: ttk.Combobox | None = None
@@ -204,6 +205,7 @@ class ChatApp:
         self.session.add_user(text)
         self._show_message(self.session.history[-1])
         self.tool_rounds = 0
+        self.native_args.clear()
         self.cancel.clear()
         self._set_streaming(True)
         self._start_round()
@@ -217,6 +219,7 @@ class ChatApp:
         threading.Thread(target=self._stream, daemon=True, args=(
             dataclasses.replace(self.config), self.sent_messages, self.session.stop_sequences,
             self.session.previous_replies(), self.session.tool_names, self.session.persona.name,
+            self.session.native_tools,
         )).start()
 
     def _set_streaming(self, streaming: bool) -> None:
@@ -228,16 +231,20 @@ class ChatApp:
         self.stop_btn.configure(state=tk.NORMAL if streaming else tk.DISABLED)
 
     def _stream(self, config: Config, messages: list[dict], stop: list[str], previous: list[str],
-                tool_names: list[str], persona_name: str) -> None:
+                tool_names: list[str], persona_name: str, native_tools: list[dict]) -> None:
         reply: list[str] = []
         guard = StreamGuard(config.user_name, persona_name, tool_names)
         try:
             client = ChatClient(config.base_url, config.api_key)
             stream = client.stream_chat(config.model, messages, temperature=config.temperature,
                                         max_tokens=config.max_reply_tokens, stop=stop, cancel=self.cancel,
-                                        extra=config.sampling_params())
+                                        extra=config.sampling_params(), tools=native_tools or None)
             try:
                 for event in stream:
+                    if event.kind == "tool_call":  # nativer Aufruf: ab hier wie ein Marker behandeln
+                        marker, arguments = self.registry.native_call(event.text, event.arguments)
+                        self.native_args[self._call_key(marker)] = arguments
+                        event = StreamEvent("content", (" " if reply else "") + marker)
                     if event.kind == "content":
                         reply.append(event.text)
                     self.events.put((event.kind, event))
@@ -342,7 +349,15 @@ class ChatApp:
 
     # --- Werkzeuge ---------------------------------------------------------------------------
 
+    @staticmethod
+    def _call_key(marker: str) -> tuple[str, str]:
+        call = find_call(marker)
+        return (normalize_name(call.name), call.args) if call else ("", marker)
+
     def _handle_call(self, call: ToolCall, note: str) -> None:
+        arguments = self.native_args.pop(self._call_key(call.raw), None)  # nativer Aufruf: echte Argumente
+        if arguments is not None:
+            call = dataclasses.replace(call, arguments=arguments)
         self.tool_rounds += 1
         if self.tool_rounds > self.config.max_tool_calls:
             self._append("[Limit für Werkzeugaufrufe erreicht]\n\n", "system")

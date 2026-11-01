@@ -15,9 +15,10 @@ class LLMError(Exception):
 
 @dataclass(frozen=True)
 class StreamEvent:
-    kind: str  # "content" | "reasoning" | "usage"
+    kind: str  # "content" | "reasoning" | "usage" | "tool_call" (text = Funktionsname)
     text: str = ""
     usage: dict | None = None
+    arguments: str = ""  # nur bei tool_call: Argumente als JSON-Text
 
 
 class ChatClient:
@@ -49,7 +50,9 @@ class ChatClient:
 
     def stream_chat(self, model: str, messages: list[dict], *, temperature: float, max_tokens: int,
                     stop: list[str] | None = None, cancel: threading.Event | None = None,
-                    extra: dict | None = None) -> Iterator[StreamEvent]:
+                    extra: dict | None = None, tools: list[dict] | None = None) -> Iterator[StreamEvent]:
+        """tools: Funktionsbeschreibungen (OpenAI-Format) für natives Tool-Calling; Aufrufe kommen am Ende des
+        Streams als StreamEvent("tool_call") - die Deltas werden hier zusammengesetzt."""
         payload = {
             "model": model, "messages": messages, "stream": True,
             "temperature": temperature, "max_tokens": max_tokens,
@@ -58,6 +61,9 @@ class ChatClient:
         payload.update(extra or {})  # z. B. top_p, frequency_penalty, repeat_penalty
         if stop:
             payload["stop"] = stop
+        if tools:
+            payload["tools"] = tools
+        calls: dict[int, dict] = {}
         url = f"{self.base_url}/chat/completions"
         try:
             # Lese-Timeout großzügig: LM Studio lädt das Modell beim ersten Request nach.
@@ -78,13 +84,16 @@ class ChatClient:
                         continue
                     data = line[5:].strip()
                     if data == "[DONE]":
-                        return
-                    yield from self._events(data)
+                        break
+                    yield from self._events(data, calls)
             except requests.RequestException as exc:
                 raise LLMError(f"Verbindung während der Antwort abgebrochen: {exc}") from exc
+            for _, call in sorted(calls.items()):
+                if call["name"]:
+                    yield StreamEvent("tool_call", call["name"], arguments=call["arguments"])
 
     @staticmethod
-    def _events(data: str) -> Iterator[StreamEvent]:
+    def _events(data: str, calls: dict[int, dict] | None = None) -> Iterator[StreamEvent]:
         try:
             chunk = json.loads(data)
         except ValueError:
@@ -98,5 +107,14 @@ class ChatClient:
                 yield StreamEvent("reasoning", reasoning)
             if delta.get("content"):
                 yield StreamEvent("content", delta["content"])
+            for part in delta.get("tool_calls") or []:  # Name kommt im ersten Fragment, Argumente stückweise
+                if calls is None or not isinstance(part, dict):
+                    continue
+                call = calls.setdefault(int(part.get("index") or 0), {"name": "", "arguments": ""})
+                function = part.get("function") or {}
+                name = function.get("name") or ""
+                if name != call["name"]:  # manche Server wiederholen den vollständigen Namen in jedem Fragment
+                    call["name"] += name
+                call["arguments"] += function.get("arguments") or ""
         if chunk.get("usage"):
             yield StreamEvent("usage", usage=chunk["usage"])

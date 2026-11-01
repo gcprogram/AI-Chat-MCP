@@ -98,6 +98,23 @@ Fehler eines Werkzeugs gehen immer ans Modell, egal welcher `result`. Pro Server
 MCP-Werkzeuge aus (nur die Aliase sind dann sichtbar); Aliase auf Server mit `"disabled": true` werden übergangen.
 Die Aliase erscheinen im Companion-Editor wie alle anderen Werkzeuge.
 
+### Werkzeug-Modus pro Companion: Textmarker oder nativ
+
+Im Companion-Editor (**Werkzeug-Modus**) wählst du, wie das Modell Werkzeuge aufruft:
+
+- **Textmarker** (Standard, für kleine Modelle): der Prompt erklärt `[[mcp:NAME|ARG]]` (siehe oben).
+- **Nativ**: die Werkzeuge gehen als Parameter `tools` der Chat-API (`/v1/chat/completions`) mit; das Chat-Template des
+  Modells setzt sie in das Format ein, auf das das Modell trainiert ist. Das funktioniert nur mit Modellen, die
+  Tool-Calling können (LM Studio kennzeichnet sie). Die Aliase halten die Beschreibung klein: feste Argumente
+  (`args`) sehen Modell und Schema nicht, oft bleibt höchstens ein Parameter.
+
+Alles andere bleibt gleich: Aliase, `result` (`model`/`show`/`discard`), `confirm`, Aufrufgrenze, nie erneut
+ausführen beim Laden. Intern werden native Aufrufe im Verlauf und in gespeicherten Chats als lesbarer Marker
+abgelegt (`Ich schaue nach. [[mcp:wetter|Berlin]]`); für die Anfrage werden sie wieder zu `tool_calls` und
+`tool`-Nachrichten, ausgeführt wird mit den echten JSON-Argumenten. Pro Antwort wird nur der erste Aufruf bearbeitet.
+Ein Aufruf ohne Ergebnis (abgebrochen) wird beim nächsten Senden zu normalem Text. Lehnt der Server den Parameter
+`tools` ab, erscheint seine Fehlermeldung – dann den Companion auf Textmarker stellen.
+
 ### Mitgelieferte Server (`servers/`, nur Standardbibliothek, ohne API-Schlüssel)
 
 - `wetter_server.py`: `forecast` (heute/morgen/übermorgen, stündlich, wttr.in) und `historical` (Open-Meteo-Archiv).
