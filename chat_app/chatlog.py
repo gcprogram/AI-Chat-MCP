@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .context import CHAT, TOOL_ERROR, TOOL_RESULT, Message
+from .context import CHAT, TOOL_ERROR, TOOL_RESULT, TOOL_SHOWN, Message
 
 FORMAT_VERSION = 1
 MAX_FILE_BYTES = 10_000_000
@@ -78,7 +78,7 @@ def _load_json(text: str) -> LoadedChat:
         role = item.get("role")
         if role not in ("user", "assistant") or not isinstance(item.get("content"), str):
             raise ChatFileError("Ungültige Nachricht (role/content) in der Datei.")
-        kind = item.get("kind") if item.get("kind") in (TOOL_RESULT, TOOL_ERROR) and role == "user" else CHAT
+        kind = item.get("kind") if item.get("kind") in (TOOL_RESULT, TOOL_ERROR, TOOL_SHOWN) and role == "user" else CHAT
         messages.append(Message(role, item["content"], kind, str(item.get("tool", "")) if kind != CHAT else ""))
     persona = data.get("persona", "") if isinstance(data, dict) else ""
     return LoadedChat(_normalize(messages), persona if isinstance(persona, str) else "")

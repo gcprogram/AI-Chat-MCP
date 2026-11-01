@@ -8,14 +8,57 @@
                 "calculate": {"alias": "rechnen", "hint": "Rechnet einen Ausdruck aus", "example": "[[mcp:rechnen|12*(3+4)]]"}
             }
         },
-        "web": {
+        "wetter": {
+            "command": "python",
+            "args": ["servers/wetter_server.py"],
+            "raw": false
+        },
+        "websuche": {
+            "command": "python",
+            "args": ["servers/websuche_server.py"],
+            "raw": false
+        },
+        "fernbedienung": {
             "disabled": true,
-            "command": "uvx",
-            "args": ["duckduckgo-mcp-server"],
-            "tools": {
-                "search": {"alias": "web-search", "hint": "Sucht im Internet", "args": ["query"],
-                           "example": "[[mcp:web-search|KI Nachrichten heute]]"}
-            }
+            "command": "python",
+            "args": ["C:/Pfad/zu/Broadcast-Remote/pc/broadcast_remote_bridge.py"],
+            "env": {"BROADCAST_REMOTE_URL": "https://192.168.1.20:8443/mcp"},
+            "raw": false
+        }
+    },
+    "aliases": {
+        "wetter": {
+            "server": "wetter", "tool": "forecast", "params": ["ort", "tag"],
+            "defaults": {"ort": "Berlin", "tag": "heute"},
+            "hint": "Wettervorhersage für heute oder morgen", "example": "[[mcp:wetter|Berlin|morgen]]",
+            "result": "show", "confirm": false
+        },
+        "wetter-frueher": {
+            "server": "wetter", "tool": "historical", "params": ["ort", "datum"],
+            "defaults": {"ort": "Berlin"},
+            "hint": "Wetter an einem vergangenen Tag", "example": "[[mcp:wetter-frueher|Berlin|25.11.2020]]",
+            "result": "show", "confirm": false
+        },
+        "websuche": {
+            "server": "websuche", "tool": "search", "params": ["suchbegriff"],
+            "hint": "Sucht im Internet", "example": "[[mcp:websuche|KI Nachrichten heute]]",
+            "result": "model", "confirm": false
+        },
+        "ventilator-niedrig": {
+            "server": "fernbedienung", "tool": "send", "args": {"code": "01"},
+            "hint": "Ventilator auf niedrig stellen", "result": "discard", "status": "Ventilator: niedrig"
+        },
+        "ventilator-mittel": {
+            "server": "fernbedienung", "tool": "send", "args": {"code": "02"},
+            "hint": "Ventilator auf mittel stellen", "result": "discard", "status": "Ventilator: mittel"
+        },
+        "ventilator-hoch": {
+            "server": "fernbedienung", "tool": "send", "args": {"code": "03"},
+            "hint": "Ventilator auf hoch stellen", "result": "discard", "status": "Ventilator: hoch"
+        },
+        "ventilator-aus": {
+            "server": "fernbedienung", "tool": "off",
+            "hint": "Ventilator ausschalten", "result": "discard", "status": "Ventilator: aus"
         }
     }
 }

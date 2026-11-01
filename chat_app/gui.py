@@ -15,13 +15,14 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from . import chatlog
 from .avatar import AvatarView
 from .config import CHATS_DIR, CONFIG_PATH, MCP_CONFIG_PATH, Config
-from .context import TOOL_RESULT, Message
+from .context import TOOL_RESULT, TOOL_SHOWN, Message
 from .llm_client import ChatClient, LLMError
 from .persona import PERSONAS_DIR, list_personas, load_persona
 from .persona_editor import PersonaEditor
 from .reply import Reply, StreamGuard, finalize_reply
 from .session import ChatSession
-from .tools import ToolCall, ToolOutcome, ToolRegistry, normalize_name, split_segments
+from .tools import (RESULT_DISCARD, RESULT_SHOW, ToolCall, ToolOutcome, ToolRegistry, normalize_name,
+                    split_segments)
 
 log = logging.getLogger(__name__)
 POLL_MS = 50
@@ -106,6 +107,7 @@ class ChatApp:
         self.chat.tag_configure("system", foreground="#1a56c4", font=("Arial", 10, "italic"))
         self.chat.tag_configure("tool", foreground="#0b6b3a", font=("Arial", 10, "italic"))
         self.chat.tag_configure("toolresult", foreground="#555555", font=("Arial", 9))
+        self.chat.tag_configure("toolshown", foreground="#222222", font=("Consolas", 10), lmargin1=12, lmargin2=12)
         self.chat.tag_configure("error", foreground="#c0392b")
 
     def _build_input(self) -> None:
@@ -149,7 +151,9 @@ class ChatApp:
 
     def _show_message(self, message: Message) -> None:
         persona = self.session.persona
-        if message.is_tool:
+        if message.kind == TOOL_SHOWN:  # Klartext im Chat, das Modell antwortet nicht darauf
+            self._append(f"{message.content}\n\n", "toolshown")
+        elif message.is_tool:
             preview = " ".join(message.content.split())
             if len(preview) > RESULT_PREVIEW_CHARS:
                 preview = preview[:RESULT_PREVIEW_CHARS].rstrip() + "…"
@@ -346,7 +350,9 @@ class ChatApp:
             return
         allowed = self.session.tool_names
         known = normalize_name(call.name) in allowed
-        if known and self.config.confirm_tools and not messagebox.askyesno(
+        spec = self.registry.tools.get(normalize_name(call.name))
+        ask = self.config.confirm_tools if spec is None or spec.confirm is None else spec.confirm
+        if known and ask and not messagebox.askyesno(
                 "Werkzeug ausführen?",
                 f"{self.session.persona.name} möchte das Werkzeug '{call.name}' ausführen.\n\n"
                 f"Argumente: {call.args or '(keine)'}\n\nAusführen?"):
@@ -368,6 +374,18 @@ class ChatApp:
     def _on_tool(self, outcome: ToolOutcome) -> None:
         if self.cancel.is_set():
             self._finish("Abgebrochen")
+            return
+        if outcome.ok and outcome.mode == RESULT_SHOW:  # Klartext in den Chat, keine weitere Modellrunde
+            shown = (self.session.add_tool_shown(outcome.tool, outcome.text) if outcome.remember
+                     else Message("user", outcome.text, TOOL_SHOWN, outcome.tool))
+            self._show_message(shown)
+            self._finish("Bereit")
+            return
+        if outcome.ok and outcome.mode == RESULT_DISCARD:  # Ergebnis verwerfen, nur Statuszeile
+            if outcome.remember:
+                self.session.add_tool_shown(outcome.tool, outcome.status)
+            self._append(f"✔ {outcome.status}\n\n", "tool")
+            self._finish("Bereit")
             return
         self._show_message(self.session.add_tool_result(outcome.tool, outcome.text, outcome.ok))
         self._start_round()

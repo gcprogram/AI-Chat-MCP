@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 CHAT, TOOL_RESULT, TOOL_ERROR = "chat", "tool_result", "tool_error"
+TOOL_SHOWN = "tool_shown"  # Ergebnis, das direkt im Chat angezeigt wurde (das Modell antwortet nicht darauf)
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,7 @@ class Message:
 
     @property
     def is_tool(self) -> bool:
-        return self.kind in (TOOL_RESULT, TOOL_ERROR)
+        return self.kind in (TOOL_RESULT, TOOL_ERROR, TOOL_SHOWN)
 
 
 class ContextManager:

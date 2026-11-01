@@ -67,8 +67,47 @@ Webseiten-Inhalt), und standardmäßig fragt das Programm vor jedem Aufruf nach.
 Desktop, `mcpServers` oder `servers`; nur stdio-Server). Pro Werkzeug kann ein kurzer deutscher `alias`, `hint`,
 `example` und die sichtbaren `args` angegeben werden – je einfacher, desto zuverlässiger das kleine Modell.
 Dann in **Companions…** die Werkzeuge pro Companion ankreuzen; sie erscheinen im Prompt mit Beispielzeile.
-`examples/demo_mcp_server.py` (Uhrzeit, Rechnen) dient zum Ausprobieren. Der Eintrag für die Websuche im Beispiel
-ist ungeprüft.
+`examples/demo_mcp_server.py` (Uhrzeit, Rechnen) dient zum Ausprobieren.
+
+### Aliase (Kurznamen)
+
+Je kürzer und einfacher das, was das Modell schreiben muss, desto zuverlässiger. Im Block `aliases` von
+`mcp_servers.json` wird ein Kurzname auf einen echten MCP-Aufruf abgebildet; das Modell sieht nur den Kurznamen:
+
+```json
+"aliases": {
+  "ventilator-niedrig": {"server": "fernbedienung", "tool": "send", "args": {"code": "01"},
+                         "hint": "Ventilator auf niedrig", "result": "discard", "status": "Ventilator: niedrig"},
+  "wetter": {"server": "wetter", "tool": "forecast", "params": ["ort", "tag"], "defaults": {"ort": "Berlin"},
+             "hint": "Wettervorhersage", "result": "show", "confirm": false}
+}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `server`, `tool` | echtes MCP-Werkzeug (Pflicht) |
+| `args` | feste Argumente, die das Modell nicht sieht und nicht ändern kann |
+| `params` | Argumente, die das Modell schreibt (Reihenfolge = Reihenfolge im Marker); ohne Angabe alle, die nicht in `args` stehen |
+| `defaults` | Ersatz für fehlende Argumente (das Argument wird dadurch optional) |
+| `hint`, `example` | Zeile im Prompt (je kürzer, desto weniger Kontext) |
+| `result` | `model` (Standard): Ergebnis geht ans Modell, das darauf antwortet · `show`: Klartext im Chat, keine zweite Modellrunde (spart Kontext, nichts wird verfälscht) · `discard`: Ergebnis verwerfen, nur Statuszeile `status` |
+| `remember` | Ergebnis (bei `discard` der Status) dem Modell mit der nächsten Nutzernachricht zeigen; Standard: `true` bei `show`, sonst `false` |
+| `confirm` | `true`/`false` überstimmt die globale Rückfrage-Einstellung für diesen Alias |
+
+Fehler eines Werkzeugs gehen immer ans Modell, egal welcher `result`. Pro Server blendet `"raw": false` die rohen
+MCP-Werkzeuge aus (nur die Aliase sind dann sichtbar); Aliase auf Server mit `"disabled": true` werden übergangen.
+Die Aliase erscheinen im Companion-Editor wie alle anderen Werkzeuge.
+
+### Mitgelieferte Server (`servers/`, nur Standardbibliothek, ohne API-Schlüssel)
+
+- `wetter_server.py`: `forecast` (heute/morgen/übermorgen, stündlich, wttr.in) und `historical` (Open-Meteo-Archiv).
+  Das Datum darf `gestern`, `vorgestern`, `25.11.2020`, `25.11.` oder `2020-11-25` heißen – das rechnet der Server,
+  nicht das kleine Modell.
+- `websuche_server.py`: `search` über die HTML-Ausgabe von DuckDuckGo (Titel, Adresse, Auszug). Das Seitenformat
+  ist nicht garantiert; ändert es sich, muss nur `parse_results()` angepasst werden.
+- Fernbedienung: die Bridge aus dem Projekt Broadcast-Remote ist selbst ein stdio-MCP-Server (`status`, `buttons`,
+  `send(code)`, `off`). Der Token gehört in die Umgebungsvariable `BROADCAST_REMOTE_TOKEN` (wird an den Server
+  durchgereicht), nicht in die Datei. Der Beispieleintrag ist deaktiviert und nicht gegen echte Hardware geprüft.
 
 ## Kontext
 

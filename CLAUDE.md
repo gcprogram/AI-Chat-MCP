@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 42 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 58 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -44,6 +44,14 @@ python main.py
 - Companions: `personas/*.json` + `personas/avatars/`, Editor in `persona_editor.py`; Werkzeuge pro Companion
   (`tools`). Chats: `chatlog.py` (JSON vollständig, TXT lesbar/ladbar), Ordner `chats/` (gitignored).
 - `mcp_servers.json` ist gitignored (kann Schlüssel enthalten); Vorlage in `examples/`.
+- **Alias-Layer** (`aliases` in `mcp_servers.json`, `ToolSpec.fixed/defaults/result/status/confirm/remember`): Kurzname →
+  echtes MCP-Tool mit festen Argumenten, damit das kleine Modell nur einen Namen (plus ≤1 Argument) schreiben muss.
+  `result`: `model` (Antwortrunde) | `show` (Klartext im Chat, `Message.kind = tool_shown`, keine zweite Runde) |
+  `discard` (nur Statuszeile). Angezeigte Ergebnisse gehen erst mit der **nächsten Nutzernachricht** ans Modell
+  (`_wire_history` verpackt sie dort; Rollen bleiben abwechselnd). Fehler gehen immer ans Modell. `raw: false` pro
+  Server blendet rohe Tools aus. Eigene Server in `servers/` (Wetter, Websuche; Datumsrechnung im Server, nicht im Modell).
+- Offen: nativer Modus (`tools`-Parameter von LM Studio) als Schalter pro Companion; Aliase könnten dann als
+  Funktionen mit 0–1 Parameter geschickt werden (viel kleiner als rohe MCP-Schemas).
 
 ## Offene Aufgaben (Reihenfolge)
 1. **Echter Test** mit einem Chat-Modell in LM Studio (kein TranslateGemma – das ist reiner Übersetzer):
@@ -59,4 +67,5 @@ python main.py
 ## Aufbau
 `chat_app/`: `config.py` · `persona.py` · `context.py` · `session.py` (Verlauf, baut Anfrage) · `llm_client.py`
 (SSE-Streaming) · `reply.py` · `tools.py` · `mcp_client.py` · `chatlog.py` · `avatar.py` · `persona_editor.py` ·
-`gui.py` (Streaming-/Werkzeug-Thread → Queue → GUI). Nicht getestet: echte LM-Studio-Antworten.
+`gui.py` (Streaming-/Werkzeug-Thread → Queue → GUI). `servers/`: eigene MCP-Server (`mini_mcp.py`, `wetter_server.py`,
+`websuche_server.py`). Nicht getestet: echte LM-Studio-Antworten, echte Fernbedienungs-Bridge.

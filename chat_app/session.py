@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from .config import Config
-from .context import CHAT, TOOL_ERROR, TOOL_RESULT, ContextManager, Message
+from .context import CHAT, TOOL_ERROR, TOOL_RESULT, TOOL_SHOWN, ContextManager, Message
 from .persona import Persona
 from .reply import HISTORY_REPLIES
 from .tools import ToolRegistry, normalize_name, result_message
@@ -53,6 +53,12 @@ class ChatSession:
         self.history.append(message)
         return message
 
+    def add_tool_shown(self, tool: str, text: str) -> Message:
+        """Ergebnis, das im Chat angezeigt wurde. Das Modell bekommt es erst mit der nächsten Nutzernachricht."""
+        message = Message("user", text, TOOL_SHOWN, tool)
+        self.history.append(message)
+        return message
+
     def discard_last_user(self) -> str:
         """Nimmt die letzte 'user'-Nachricht zurück (z. B. nach Fehler/Abbruch). Gibt den Text nur für echte
         Nutzereingaben zurück, nicht für Werkzeugergebnisse."""
@@ -85,13 +91,22 @@ class ChatSession:
     def _wire_history(self) -> list[Message]:
         """Verlauf, wie er an das Modell geht: Werkzeugergebnisse verpackt, ältere gekürzt."""
         last_question = max((i for i, m in enumerate(self.history) if m.role == "user" and not m.is_tool), default=-1)
-        wire = []
+        wire: list[Message] = []
+        shown: list[str] = []  # angezeigte Ergebnisse: gehen mit der nächsten Nutzernachricht mit (Rollen wechseln ab)
         for i, m in enumerate(self.history):
             if m.is_tool:
                 text = m.content
                 if i < last_question and len(text) > OLD_RESULT_CHARS:
                     text = text[:OLD_RESULT_CHARS].rstrip() + " […]"
+                if m.kind == TOOL_SHOWN:
+                    shown.append(f"[Ergebnis von {m.tool}, {self.config.user_name} schon angezeigt]\n{text}\n"
+                                 "[Ende des Ergebnisses]")
+                    continue
                 m = replace(m, content=result_message(m.tool, text, m.kind == TOOL_RESULT, self.config.user_name))
+            elif shown:
+                if m.role == "user":
+                    m = replace(m, content="\n".join(shown) + "\n\n" + m.content)
+                shown = []
             wire.append(m)
         return wire
 

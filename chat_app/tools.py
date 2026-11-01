@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +133,10 @@ def _coerce(param: Param, value: Any) -> Any:
     return value
 
 
+RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD = "model", "show", "discard"
+RESULT_MODES = (RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD)
+
+
 @dataclass
 class ToolSpec:
     alias: str
@@ -142,6 +146,13 @@ class ToolSpec:
     params: list[Param] = field(default_factory=list)
     example: str = ""
     read_only: bool = False
+    # Nur bei Aliasen aus dem Block "aliases":
+    fixed: dict[str, Any] = field(default_factory=dict)  # feste Argumente, die das Modell nicht sieht
+    defaults: dict[str, Any] = field(default_factory=dict)  # Ersatz für fehlende Argumente
+    result: str = RESULT_MODEL  # model: Modell antwortet | show: Klartext im Chat | discard: nur Statuszeile
+    status: str = ""  # Statuszeile bei discard
+    confirm: bool | None = None  # None = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
+    remember: bool = False  # Ergebnis bei show/discard dem Modell im Verlauf zeigen
 
     @property
     def usage(self) -> str:
@@ -172,11 +183,16 @@ class ToolSpec:
         extras = positional[len(free):]
         if extras and len(self.params) == 1 and isinstance(given.get(self.params[0].name), str):
             given[self.params[0].name] = " ".join([given[self.params[0].name], *map(str, extras)])
+        for name, value in self.defaults.items():
+            if given.get(name) in (None, ""):
+                given[name] = value
         missing = [p.name for p in self.params if p.required and given.get(p.name) in (None, "")]
         if missing:
             raise ToolArgError(f"Es fehlt: {', '.join(missing)}. Richtiges Format: {self.usage}")
         by_name = {p.name: p for p in self.params}
-        return {k: _coerce(by_name[k], v) for k, v in given.items()}
+        arguments = {k: _coerce(by_name[k], v) for k, v in given.items() if k in by_name}
+        arguments.update(self.fixed)  # feste Argumente gewinnen immer
+        return arguments
 
     def prompt_line(self) -> str:
         description = self.description.rstrip(".") + "." if self.description else ""
@@ -210,6 +226,9 @@ class ToolOutcome:
     tool: str
     ok: bool
     text: str
+    mode: str = RESULT_MODEL  # Fehler gehen immer ans Modell, damit es dem Nutzer Bescheid sagen kann
+    status: str = ""
+    remember: bool = False
 
 
 def result_message(tool: str, text: str, ok: bool, user_name: str) -> str:
@@ -227,13 +246,16 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self.servers: dict[str, McpServer] = {}
-        self.tools: dict[str, ToolSpec] = {}
+        self.tools: dict[str, ToolSpec] = {}  # was das Modell benutzen darf (Aliase)
+        self.remote: dict[tuple[str, str], ToolSpec] = {}  # alle Werkzeuge der Server, auch unsichtbare
         self.errors: list[str] = []
 
     # --- Aufbau --------------------------------------------------------------------------------
 
-    def add_server(self, name: str, server: McpServer, overrides: dict | None = None) -> list[str]:
-        """Startet den Server (blockierend) und registriert seine Werkzeuge. Liefert die neuen Aliase."""
+    def add_server(self, name: str, server: McpServer, overrides: dict | None = None,
+                   *, expose_raw: bool = True) -> list[str]:
+        """Startet den Server (blockierend) und registriert seine Werkzeuge. Liefert die neuen Aliase.
+        Mit expose_raw=False bleiben die Werkzeuge unsichtbar und sind nur über "aliases" erreichbar."""
         server.start()
         try:
             remote_tools = server.list_tools()
@@ -250,13 +272,72 @@ class ToolRegistry:
                 alias = f"{normalize_name(name)}-{alias}"
             only = override.get("args") if isinstance(override.get("args"), list) else None
             annotations = tool.get("annotations") if isinstance(tool.get("annotations"), dict) else {}
-            self.tools[alias] = ToolSpec(
+            spec = ToolSpec(
                 alias=alias, server=name, remote_name=tool["name"],
                 description=str(override.get("hint") or _first_sentence(tool.get("description", ""))),
                 params=_params_from_schema(tool.get("inputSchema"), only),
                 example=str(override.get("example") or ""), read_only=bool(annotations.get("readOnlyHint")))
-            added.append(alias)
+            self.remote[(name, tool["name"])] = spec
+            if expose_raw:
+                self.tools[alias] = spec
+                added.append(alias)
         return added
+
+    def add_aliases(self, aliases: Any, skip_servers: frozenset[str] = frozenset()) -> list[str]:
+        """Registriert Kurznamen aus dem Block "aliases" (Fehler landen in self.errors). Liefert die neuen Aliase.
+        Aliase auf bewusst deaktivierte Server (skip_servers) werden still übergangen."""
+        if not isinstance(aliases, dict):
+            if aliases is not None:
+                self.errors.append("'aliases' ist kein Objekt")
+            return []
+        added = []
+        for raw_name, entry in aliases.items():
+            if isinstance(entry, dict) and entry.get("server") in skip_servers:
+                continue
+            alias = normalize_name(str(raw_name))
+            try:
+                self.tools[alias] = self._build_alias(alias, entry)
+            except ValueError as exc:
+                self.errors.append(f"Alias '{alias}': {exc}")
+            else:
+                added.append(alias)
+        return added
+
+    def _build_alias(self, alias: str, entry: Any) -> ToolSpec:
+        if not isinstance(entry, dict):
+            raise ValueError("Eintrag ist kein Objekt")
+        server, tool = str(entry.get("server") or ""), str(entry.get("tool") or "")
+        base = self.remote.get((server, tool))
+        if base is None:
+            raise ValueError(f"Werkzeug '{server}/{tool}' nicht gefunden (Server nicht gestartet?)")
+        fixed, defaults = entry.get("args") or {}, entry.get("defaults") or {}
+        if not isinstance(fixed, dict) or not isinstance(defaults, dict):
+            raise ValueError("'args' und 'defaults' müssen Objekte sein")
+        by_name = {p.name: p for p in base.params}
+        names = entry.get("params")
+        if names is None:  # ohne Angabe: alle Parameter, die nicht fest vorgegeben sind
+            names = [p.name for p in base.params if p.name not in fixed]
+        if not isinstance(names, list):
+            raise ValueError("'params' muss eine Liste sein")
+        unknown = [n for n in [*names, *defaults] if n not in by_name]
+        if unknown:
+            raise ValueError(f"unbekannte Parameter {', '.join(map(str, unknown))} "
+                             f"(das Werkzeug kennt: {', '.join(by_name) or 'keine'})")
+        mode = str(entry.get("result") or RESULT_MODEL)
+        if mode not in RESULT_MODES:
+            raise ValueError(f"'result' muss {', '.join(RESULT_MODES)} sein")
+        confirm = entry.get("confirm")
+        if confirm is not None and not isinstance(confirm, bool):
+            raise ValueError("'confirm' muss true oder false sein")
+        remember = entry.get("remember")
+        if remember is None:
+            remember = mode == RESULT_SHOW  # angezeigte Wetterdaten braucht das Modell für Folgefragen
+        params = [replace(by_name[n], required=by_name[n].required and n not in defaults) for n in names]
+        return ToolSpec(
+            alias=alias, server=server, remote_name=tool, params=params, read_only=base.read_only,
+            description=str(entry.get("hint") or base.description), example=str(entry.get("example") or ""),
+            fixed=dict(fixed), defaults=dict(defaults), result=mode, status=str(entry.get("status") or ""),
+            confirm=confirm, remember=bool(remember))
 
     def start_from_config(self, path: Path | str = MCP_CONFIG_PATH, base_dir: Path = APP_DIR) -> None:
         """Liest mcp_servers.json (Format wie bei Claude Desktop: "mcpServers"; zusätzlich "tools"-Hinweise)."""
@@ -278,10 +359,12 @@ class ToolRegistry:
                                {str(k): str(v) for k, v in (entry.get("env") or {}).items()},
                                str(entry.get("cwd") or base_dir), name)
             try:
-                self.add_server(name, server, entry.get("tools"))
+                self.add_server(name, server, entry.get("tools"), expose_raw=entry.get("raw", True) is not False)
             except (McpError, OSError, ValueError, KeyError) as exc:
                 log.warning("MCP-Server '%s' nicht verfügbar: %s", name, exc)
                 self.errors.append(f"{name}: {exc}")
+        disabled = frozenset(n for n, e in servers.items() if isinstance(e, dict) and e.get("disabled"))
+        self.add_aliases(data.get("aliases"), disabled)
 
     def shutdown(self) -> None:
         for server in self.servers.values():
@@ -325,4 +408,7 @@ class ToolRegistry:
         text = neutralize(text) or "(leeres Ergebnis)"
         if len(text) > max_chars:
             text = text[:max_chars].rstrip() + " […gekürzt]"
-        return ToolOutcome(spec.alias, not is_error, text)
+        if is_error:
+            return ToolOutcome(spec.alias, False, text)
+        status = spec.status or f"{spec.alias} ausgeführt"
+        return ToolOutcome(spec.alias, True, text, spec.result, status, spec.remember)
