@@ -1,4 +1,5 @@
 """Alias-Layer (Kurznamen mit festen Argumenten, Ergebnis-Modus, Bestätigung), Wetter- und Suche-Server."""
+import gc
 import json
 import sys
 import tempfile
@@ -75,7 +76,7 @@ class AliasTest(unittest.TestCase):
         self.assertFalse(self.run_call("[[mcp:rechne]]").ok)  # kein Standardwert -> Argument fehlt
         self.assertEqual(self.registry.tools["sieben"].params, [])
         section = self.registry.prompt_section(["sieben", "rechne"])
-        self.assertIn("- sieben: Zeigt das Ergebnis von 6 mal 7. Beispiel: [[mcp:sieben]]", section)
+        self.assertIn("- sieben: Zeigt das Ergebnis von 6 mal 7. Example: [[mcp:sieben]]", section)
         self.assertIn("[[mcp:rechne|<expression>]]", section)
 
     def test_errors_always_go_to_the_model(self):
@@ -116,11 +117,12 @@ class ExampleConfigTest(unittest.TestCase):
         try:
             registry.start_from_config(ROOT / "examples" / "mcp_servers.example.json", base_dir=ROOT)
             self.assertEqual(registry.errors, [])  # Aliase des deaktivierten Servers machen keinen Fehler
-            self.assertEqual(registry.available(), ["rechnen", "websuche", "wetter", "wetter-frueher", "zeit"])
+            self.assertEqual(registry.available(), ["calc", "time", "weather", "weather-past", "websearch"])
             for alias in registry.available():
                 self.assertTrue(registry.tools[alias].description)
-            section = registry.prompt_section(["wetter", "wetter-frueher", "websuche"])
-            self.assertIn("[[mcp:wetter|Berlin|morgen]]", section)
+            section = registry.prompt_section(["weather", "weather-past", "websearch"])
+            self.assertIn("[[mcp:weather|Berlin|tomorrow]]", section)
+            self.assertIn("- weather: Weather forecast for today or tomorrow.", section)
         finally:
             registry.shutdown()
 
@@ -209,6 +211,7 @@ class GuiAliasTest(unittest.TestCase):
         cfg = Config(base_url=self.url, model="show", user_name="Alex", persona="mia", confirm_tools=False)
         self.app = ChatApp(self.tk, config=cfg, config_path=root / "config.json", personas_dir=root / "personas",
                            chats_dir=root / "chats", registry=self.registry)
+        self.addCleanup(gc.collect)  # Tk-Variablen im Hauptthread freigeben, bevor Tk zerstört wird (läuft vor destroy)
         REQUESTS.clear()
 
     def ask(self, text, model):
@@ -260,14 +263,23 @@ class GuiAliasTest(unittest.TestCase):
         self.assertEqual(len(REQUESTS), 2)  # Ablehnung wird dem Modell gemeldet
         self.assertIn("abgelehnt", REQUESTS[1]["messages"][-1]["content"])
 
+    def test_marker_for_tool_not_enabled_for_companion_is_reported_not_silent(self):
+        self.app.session.persona.tools = []  # "sieben" existiert, der Companion hat aber keine Werkzeuge freigeschaltet
+        self.ask("Was ist 6 mal 7?", "show")
+        text = self.app.chat.get("1.0", "end")
+        self.assertIn("'sieben' ist für Mia nicht freigeschaltet", text)
+        self.assertNotIn("\n42\n", text)  # nichts ausgeführt
+        self.assertEqual(len(REQUESTS), 1)
+
 
 class WeatherServerTest(unittest.TestCase):
     def test_parse_date_variants(self):
-        from wetter_server import parse_date
+        from weather_server import parse_date
 
         today = date(2026, 11, 1)
-        self.assertEqual(parse_date("gestern", today), date(2026, 10, 31))
-        self.assertEqual(parse_date("Vorgestern", today), date(2026, 10, 30))
+        self.assertEqual(parse_date("yesterday", today), date(2026, 10, 31))
+        self.assertEqual(parse_date("gestern", today), date(2026, 10, 31))  # deutsche Wörter gehen auch
+        self.assertEqual(parse_date("Day before Yesterday", today), date(2026, 10, 30))
         self.assertEqual(parse_date("", today), date(2026, 10, 31))
         self.assertEqual(parse_date("2020-11-25", today), date(2020, 11, 25))
         self.assertEqual(parse_date("25.11.2020", today), date(2020, 11, 25))
@@ -275,45 +287,54 @@ class WeatherServerTest(unittest.TestCase):
         self.assertEqual(parse_date("25.11.", today), date(2025, 11, 25))  # sonst läge es in der Zukunft
         self.assertEqual(parse_date("24.10.", today), date(2026, 10, 24))
         from mini_mcp import ToolError
-        for bad in ("neulich", "31.02.2020", "2020-13-01"):
+        for bad in ("recently", "31.02.2020", "2020-13-01", "31.02."):
             with self.assertRaises(ToolError):
                 parse_date(bad, today)
 
+    def test_pick_place_uses_region_hint(self):
+        from weather_server import pick_place
+
+        results = [{"name": "Langen", "admin1": "Lower Saxony", "country": "Germany"},
+                   {"name": "Langen", "admin1": "Hesse", "country": "Germany"}]
+        self.assertEqual(pick_place(results, " Hesse")["admin1"], "Hesse")
+        self.assertEqual(pick_place(results, "")["admin1"], "Lower Saxony")  # ohne Zusatz: erster Treffer
+        self.assertEqual(pick_place(results, "Bavaria")["admin1"], "Lower Saxony")  # Zusatz passt nirgends
+
     def test_forecast_and_historical_text(self):
-        from wetter_server import forecast_text, historical_text
+        from weather_server import forecast_text, historical_text
 
         hours = [{"time": str(h * 100), "tempC": str(h), "FeelsLikeC": str(h - 1), "chanceofrain": "10",
-                  "winddirDegree": "225", "windspeedKmph": "7", "lang_de": [{"value": "Sonnig"}]}
+                  "winddirDegree": "225", "windspeedKmph": "7", "weatherDesc": [{"value": "Sunny "}]}
                  for h in range(0, 24, 3)]
         data = {"nearest_area": [{"areaName": [{"value": "Berlin"}], "region": [{"value": "Berlin"}],
                                   "country": [{"value": "Germany"}]}],
                 "weather": [{"date": "2026-11-01", "mintempC": "3", "maxtempC": "12", "hourly": hours}]}
         text = forecast_text(data, 0, 6, 15, 3)
         lines = text.splitlines()
-        self.assertEqual(lines[0], "Wetter für Berlin, Germany, Sonntag, 1.11.2026: 3 bis 12°C")
+        self.assertEqual(lines[0], "Weather for Berlin, Germany, Sunday, 2026-11-01: 3 to 12°C")
         self.assertEqual([l[:5] for l in lines[1:]], ["06:00", "09:00", "12:00"])
-        self.assertIn("Sonnig, 6°C (gefühlt 5°C), Regen 10%, Wind SW 7 km/h", lines[1])
+        self.assertIn("Sunny, 6°C (feels like 5°C), rain 10%, wind SW 7 km/h", lines[1])
         with self.assertRaises(Exception):
             forecast_text(data, 1, 6, 15, 3)  # morgen fehlt
 
         daily = {"temperature_2m_max": [6.1], "temperature_2m_min": [0.3], "precipitation_sum": [0.0], "weathercode": [3],
                  "windspeed_10m_max": [10.7], "winddirection_10m_dominant": [157]}
         text = historical_text("Langen", date(2020, 11, 25), daily)
-        self.assertIn("am Mittwoch, 25.11.2020: bedeckt", text)
-        self.assertIn("Höchsttemperatur 6.1°C, Tiefsttemperatur 0.3°C", text)
-        self.assertIn("Wind bis 10.7 km/h aus SSO", text)
+        self.assertIn("on Wednesday, 2020-11-25: overcast", text)
+        self.assertIn("High 6.1°C, low 0.3°C", text)
+        self.assertIn("Wind up to 10.7 km/h from SSE", text)
         with self.assertRaises(Exception):
             historical_text("Langen", date(2026, 11, 1), {"temperature_2m_max": [None]})
 
     def test_server_over_stdio_reports_errors_without_network(self):
-        server = McpServer("python", [str(ROOT / "servers" / "wetter_server.py")], cwd=str(ROOT), name="wetter")
+        server = McpServer("python", [str(ROOT / "servers" / "weather_server.py")], cwd=str(ROOT), name="weather")
         server.start()
         self.addCleanup(server.close)
         self.assertEqual([t["name"] for t in server.list_tools()], ["forecast", "historical"])
-        text, is_error = server.call_tool("historical", {"ort": "Berlin", "datum": "neulich"})
+        text, is_error = server.call_tool("historical", {"place": "Berlin", "date": "recently"})
         self.assertTrue(is_error)
-        self.assertIn("nicht verstanden", text)
-        self.assertTrue(server.call_tool("forecast", {"ort": " "})[1])
+        self.assertIn("not understood", text)
+        self.assertTrue(server.call_tool("forecast", {"place": " "})[1])
 
 
 class SearchServerTest(unittest.TestCase):
@@ -327,7 +348,7 @@ class SearchServerTest(unittest.TestCase):
     """
 
     def test_parse_and_format(self):
-        from websuche_server import format_results, parse_results
+        from websearch_server import format_results, parse_results
 
         results = parse_results(self.PAGE, 5)
         self.assertEqual(results[0], ("Titel A & Co", "https://example.org/a?x=1", 'Auszug mit Fett und "Zitat"'))

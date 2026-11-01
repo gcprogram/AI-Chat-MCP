@@ -69,6 +69,8 @@ Desktop, `mcpServers` oder `servers`; nur stdio-Server). Pro Werkzeug kann ein k
 Dann in **Companions…** die Werkzeuge pro Companion ankreuzen; sie erscheinen im Prompt mit Beispielzeile.
 `examples/demo_mcp_server.py` (Uhrzeit, Rechnen) dient zum Ausprobieren.
 
+**Namen und Beschreibungen sind englisch** (Alias, `hint`, `example`, Parameter, Prompt-Abschnitt "Tools:"): kleine Modelle folgen englischen Anweisungen zuverlässiger, und der Aufruf bleibt unabhängig von der Chat-Sprache.
+
 ### Aliase (Kurznamen)
 
 Je kürzer und einfacher das, was das Modell schreiben muss, desto zuverlässiger. Im Block `aliases` von
@@ -76,10 +78,10 @@ Je kürzer und einfacher das, was das Modell schreiben muss, desto zuverlässige
 
 ```json
 "aliases": {
-  "ventilator-niedrig": {"server": "fernbedienung", "tool": "send", "args": {"code": "01"},
-                         "hint": "Ventilator auf niedrig", "result": "discard", "status": "Ventilator: niedrig"},
-  "wetter": {"server": "wetter", "tool": "forecast", "params": ["ort", "tag"], "defaults": {"ort": "Berlin"},
-             "hint": "Wettervorhersage", "result": "show", "confirm": false}
+  "fan-low": {"server": "remote", "tool": "send", "args": {"code": "01"},
+              "hint": "Switch the fan on, low speed", "result": "discard", "status": "Fan: low"},
+  "weather": {"server": "weather", "tool": "forecast", "params": ["place", "day"], "defaults": {"place": "Berlin"},
+              "hint": "Weather forecast for today or tomorrow", "result": "show", "confirm": false}
 }
 ```
 
@@ -110,17 +112,18 @@ Im Companion-Editor (**Werkzeug-Modus**) wählst du, wie das Modell Werkzeuge au
 
 Alles andere bleibt gleich: Aliase, `result` (`model`/`show`/`discard`), `confirm`, Aufrufgrenze, nie erneut
 ausführen beim Laden. Intern werden native Aufrufe im Verlauf und in gespeicherten Chats als lesbarer Marker
-abgelegt (`Ich schaue nach. [[mcp:wetter|Berlin]]`); für die Anfrage werden sie wieder zu `tool_calls` und
+abgelegt (`Ich schaue nach. [[mcp:weather|Berlin]]`); für die Anfrage werden sie wieder zu `tool_calls` und
 `tool`-Nachrichten, ausgeführt wird mit den echten JSON-Argumenten. Pro Antwort wird nur der erste Aufruf bearbeitet.
 Ein Aufruf ohne Ergebnis (abgebrochen) wird beim nächsten Senden zu normalem Text. Lehnt der Server den Parameter
 `tools` ab, erscheint seine Fehlermeldung – dann den Companion auf Textmarker stellen.
 
 ### Mitgelieferte Server (`servers/`, nur Standardbibliothek, ohne API-Schlüssel)
 
-- `wetter_server.py`: `forecast` (heute/morgen/übermorgen, stündlich, wttr.in) und `historical` (Open-Meteo-Archiv).
-  Das Datum darf `gestern`, `vorgestern`, `25.11.2020`, `25.11.` oder `2020-11-25` heißen – das rechnet der Server,
-  nicht das kleine Modell.
-- `websuche_server.py`: `search` über die HTML-Ausgabe von DuckDuckGo (Titel, Adresse, Auszug). Das Seitenformat
+- `weather_server.py` (Alias `weather`, `weather-past`): `forecast` (today/tomorrow/day after tomorrow, stündlich, wttr.in) und
+  `historical` (Open-Meteo-Archiv). Das Datum darf `yesterday`, `day before yesterday`, `2020-11-25`, `25.11.2020` oder
+  `25.11.` heißen (deutsche Wörter wie `gestern` gehen auch) – das rechnet der Server, nicht das kleine Modell. Ein Ort
+  wie `Langen` kann mehrdeutig sein: `Langen, Hesse` wählt beim Archiv den passenden Treffer. Ausgabe englisch.
+- `websearch_server.py` (Alias `websearch`): `search` über die HTML-Ausgabe von DuckDuckGo (Titel, Adresse, Auszug). Das Seitenformat
   ist nicht garantiert; ändert es sich, muss nur `parse_results()` angepasst werden.
 - Fernbedienung: die Bridge aus dem Projekt Broadcast-Remote ist selbst ein stdio-MCP-Server (`status`, `buttons`,
   `send(code)`, `off`). Der Token gehört in die Umgebungsvariable `BROADCAST_REMOTE_TOKEN` (wird an den Server

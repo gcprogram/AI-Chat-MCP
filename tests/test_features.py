@@ -162,8 +162,8 @@ class McpTest(unittest.TestCase):
     def test_tools_listed_and_prompt_section(self):
         self.assertEqual(self.registry.available(), ["rechnen", "zeit"])
         section = self.registry.prompt_section(["rechnen", "zeit", "gibt-es-nicht"])
-        for needle in ("[[mcp:NAME|ARGUMENT]]", "- rechnen: Rechnet einen Ausdruck aus. Beispiel: [[mcp:rechnen|12*(3+4)]]",
-                       "- zeit: Aktuelles Datum und Uhrzeit. Beispiel: [[mcp:zeit]]", "Erfinde nie ein Ergebnis"):
+        for needle in ("[[mcp:NAME|ARGUMENT]]", "- rechnen: Rechnet einen Ausdruck aus. Example: [[mcp:rechnen|12*(3+4)]]",
+                       "- zeit: Aktuelles Datum und Uhrzeit. Example: [[mcp:zeit]]", "Never invent a result"):
             self.assertIn(needle, section)
         self.assertEqual(self.registry.prompt_section([]), "")
 
@@ -175,7 +175,7 @@ class McpTest(unittest.TestCase):
         self.assertEqual(self.run_call("[[mcp:rechnen|6*7]]").text, "42")
         bad = self.run_call("[[mcp:rechnen|1/0]]")
         self.assertFalse(bad.ok)
-        self.assertIn("Rechenfehler", bad.text)
+        self.assertIn("Calculation error", bad.text)
         self.assertFalse(self.run_call("[[mcp:rechnen]]").ok)  # Argument fehlt -> Hinweis fürs Modell
         unknown = self.run_call("[[mcp:löschen|alles]]")
         self.assertFalse(unknown.ok)
@@ -217,9 +217,9 @@ class SessionTest(unittest.TestCase):
         session = self.make()
         self.assertEqual(session.tool_names, ["rechnen"])
         self.assertIn("[[mcp:rechnen|12*(3+4)]]", session.system_prompt)
-        self.assertNotIn("zeit", session.system_prompt.split("Verfügbare Werkzeuge:")[1])
+        self.assertNotIn("zeit", session.system_prompt.split("Available tools:")[1])
         self.assertEqual(self.make(max_tool_calls=0).tool_names, [])
-        self.assertNotIn("Werkzeuge:", self.make(max_tool_calls=0).system_prompt)
+        self.assertNotIn("Tools:", self.make(max_tool_calls=0).system_prompt)
 
     def test_tool_result_is_wrapped_as_user_message_and_old_ones_shortened(self):
         session = self.make()

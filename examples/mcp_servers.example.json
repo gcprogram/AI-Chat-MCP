@@ -2,63 +2,127 @@
     "servers": {
         "demo": {
             "command": "python",
-            "args": ["examples/demo_mcp_server.py"],
+            "args": [
+                "examples/demo_mcp_server.py"
+            ],
             "tools": {
-                "get_time": {"alias": "zeit", "hint": "Aktuelles Datum und Uhrzeit", "example": "[[mcp:zeit]]"},
-                "calculate": {"alias": "rechnen", "hint": "Rechnet einen Ausdruck aus", "example": "[[mcp:rechnen|12*(3+4)]]"}
+                "get_time": {
+                    "alias": "time",
+                    "hint": "Current date and time",
+                    "example": "[[mcp:time]]"
+                },
+                "calculate": {
+                    "alias": "calc",
+                    "hint": "Calculates an expression",
+                    "example": "[[mcp:calc|12*(3+4)]]"
+                }
             }
         },
-        "wetter": {
+        "weather": {
             "command": "python",
-            "args": ["servers/wetter_server.py"],
+            "args": [
+                "servers/weather_server.py"
+            ],
             "raw": false
         },
-        "websuche": {
+        "websearch": {
             "command": "python",
-            "args": ["servers/websuche_server.py"],
+            "args": [
+                "servers/websearch_server.py"
+            ],
             "raw": false
         },
-        "fernbedienung": {
+        "remote": {
             "disabled": true,
             "command": "python",
-            "args": ["C:/Pfad/zu/Broadcast-Remote/pc/broadcast_remote_bridge.py"],
-            "env": {"BROADCAST_REMOTE_URL": "https://192.168.1.20:8443/mcp"},
+            "args": [
+                "C:/path/to/Broadcast-Remote/pc/broadcast_remote_bridge.py"
+            ],
+            "env": {
+                "BROADCAST_REMOTE_URL": "https://192.168.1.20:8443/mcp"
+            },
             "raw": false
         }
     },
     "aliases": {
-        "wetter": {
-            "server": "wetter", "tool": "forecast", "params": ["ort", "tag"],
-            "defaults": {"ort": "Berlin", "tag": "heute"},
-            "hint": "Wettervorhersage für heute oder morgen", "example": "[[mcp:wetter|Berlin|morgen]]",
-            "result": "show", "confirm": false
+        "weather": {
+            "server": "weather",
+            "tool": "forecast",
+            "params": [
+                "place",
+                "day"
+            ],
+            "defaults": {
+                "place": "Berlin",
+                "day": "today"
+            },
+            "hint": "Weather forecast for today or tomorrow",
+            "example": "[[mcp:weather|Berlin|tomorrow]]",
+            "result": "show",
+            "confirm": false
         },
-        "wetter-frueher": {
-            "server": "wetter", "tool": "historical", "params": ["ort", "datum"],
-            "defaults": {"ort": "Berlin"},
-            "hint": "Wetter an einem vergangenen Tag", "example": "[[mcp:wetter-frueher|Berlin|25.11.2020]]",
-            "result": "show", "confirm": false
+        "weather-past": {
+            "server": "weather",
+            "tool": "historical",
+            "params": [
+                "place",
+                "date"
+            ],
+            "defaults": {
+                "place": "Berlin"
+            },
+            "hint": "Weather on a past day",
+            "example": "[[mcp:weather-past|Berlin|2020-11-25]]",
+            "result": "show",
+            "confirm": false
         },
-        "websuche": {
-            "server": "websuche", "tool": "search", "params": ["suchbegriff"],
-            "hint": "Sucht im Internet", "example": "[[mcp:websuche|KI Nachrichten heute]]",
-            "result": "model", "confirm": false
+        "websearch": {
+            "server": "websearch",
+            "tool": "search",
+            "params": [
+                "query"
+            ],
+            "hint": "Searches the web",
+            "example": "[[mcp:websearch|AI news today]]",
+            "result": "model",
+            "confirm": false
         },
-        "ventilator-niedrig": {
-            "server": "fernbedienung", "tool": "send", "args": {"code": "01"},
-            "hint": "Ventilator auf niedrig stellen", "result": "discard", "status": "Ventilator: niedrig"
+        "fan-low": {
+            "server": "remote",
+            "tool": "send",
+            "args": {
+                "code": "01"
+            },
+            "hint": "Switch the fan on, low speed",
+            "result": "discard",
+            "status": "Fan: low"
         },
-        "ventilator-mittel": {
-            "server": "fernbedienung", "tool": "send", "args": {"code": "02"},
-            "hint": "Ventilator auf mittel stellen", "result": "discard", "status": "Ventilator: mittel"
+        "fan-medium": {
+            "server": "remote",
+            "tool": "send",
+            "args": {
+                "code": "02"
+            },
+            "hint": "Switch the fan on, medium speed",
+            "result": "discard",
+            "status": "Fan: medium"
         },
-        "ventilator-hoch": {
-            "server": "fernbedienung", "tool": "send", "args": {"code": "03"},
-            "hint": "Ventilator auf hoch stellen", "result": "discard", "status": "Ventilator: hoch"
+        "fan-high": {
+            "server": "remote",
+            "tool": "send",
+            "args": {
+                "code": "03"
+            },
+            "hint": "Switch the fan on, high speed",
+            "result": "discard",
+            "status": "Fan: high"
         },
-        "ventilator-aus": {
-            "server": "fernbedienung", "tool": "off",
-            "hint": "Ventilator ausschalten", "result": "discard", "status": "Ventilator: aus"
+        "fan-off": {
+            "server": "remote",
+            "tool": "off",
+            "hint": "Switch the fan off",
+            "result": "discard",
+            "status": "Fan: off"
         }
     }
 }

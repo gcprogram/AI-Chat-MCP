@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 70 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 72 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -49,7 +49,10 @@ python main.py
   `result`: `model` (Antwortrunde) | `show` (Klartext im Chat, `Message.kind = tool_shown`, keine zweite Runde) |
   `discard` (nur Statuszeile). Angezeigte Ergebnisse gehen erst mit der **nächsten Nutzernachricht** ans Modell
   (`_wire_history` verpackt sie dort; Rollen bleiben abwechselnd). Fehler gehen immer ans Modell. `raw: false` pro
-  Server blendet rohe Tools aus. Eigene Server in `servers/` (Wetter, Websuche; Datumsrechnung im Server, nicht im Modell).
+  Server blendet rohe Tools aus. Eigene Server in `servers/` (Wetter, Websuche; Datumsrechnung im Server, nicht im Modell). **Werkzeugnamen, Parameter,
+  Beschreibungen und der Prompt-Abschnitt sind englisch** (`weather`, `weather-past`, `websearch`, `fan-low|medium|high|off`):
+  kleine Modelle folgen englischen Anweisungen besser. Marker für nicht freigeschaltete Werkzeuge werden im Chat gemeldet
+  (sonst wirkt ein Companion ohne `tools` wie „Werkzeuge gehen nicht“).
 - **Nativer Modus** (`Persona.tool_mode = "native"`, Schalter im Companion-Editor): Aliase gehen als `tools`-Parameter
   (`ToolRegistry.native_tools`, klein dank fester `args`). `llm_client` setzt `delta.tool_calls` zusammen und liefert
   `StreamEvent("tool_call")`; die GUI macht daraus per `ToolRegistry.native_call` einen Marker (Anzeige/Verlauf/Speichern
@@ -75,5 +78,5 @@ python main.py
 ## Aufbau
 `chat_app/`: `config.py` · `persona.py` · `context.py` · `session.py` (Verlauf, baut Anfrage) · `llm_client.py`
 (SSE-Streaming) · `reply.py` · `tools.py` · `mcp_client.py` · `chatlog.py` · `avatar.py` · `persona_editor.py` ·
-`gui.py` (Streaming-/Werkzeug-Thread → Queue → GUI). `servers/`: eigene MCP-Server (`mini_mcp.py`, `wetter_server.py`,
-`websuche_server.py`). Nicht getestet: echte LM-Studio-Antworten, echte Fernbedienungs-Bridge.
+`gui.py` (Streaming-/Werkzeug-Thread → Queue → GUI). `servers/`: eigene MCP-Server (`mini_mcp.py`, `weather_server.py`,
+`websearch_server.py`). Nicht getestet: echte LM-Studio-Antworten, echte Fernbedienungs-Bridge.

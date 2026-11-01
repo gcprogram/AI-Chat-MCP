@@ -42,7 +42,7 @@ Auffälligkeiten notieren und bei Bedarf in den *Einstellungen* nachstellen: meh
 copy examples\mcp_servers.example.json mcp_servers.json
 ```
 Programm neu starten; unten steht „Werkzeuge bereit: …“ (Websuche und Wetter brauchen Internet). In **Companions…**
-beim Companion die Werkzeuge `wetter`, `wetter-frueher`, `websuche`, `zeit`, `rechnen` ankreuzen, Werkzeug-Modus
+beim Companion die Werkzeuge `weather`, `weather-past`, `websearch`, `time`, `calc` ankreuzen, Werkzeug-Modus
 **Textmarker**, Speichern. Neuer Chat.
 
 In `mcp_servers.json` unter `defaults` statt „Berlin“ deinen eigenen Ort eintragen (die Datei ist gitignored).
@@ -53,12 +53,12 @@ Jeweils eine frische Nachricht senden und im Chat nach der grünen Zeile `» Wer
 
 | Eingabe | Erwartet | Modus |
 |---|---|---|
-| „Wie spät ist es?“ | `» Werkzeug zeit`, dann Antwort mit Uhrzeit | model |
-| „Was ist 17 mal 23?“ | `» Werkzeug rechnen: 17*23`, Antwort mit 391 | model |
-| „Wie wird das Wetter morgen?“ | `» Werkzeug wetter: …`, danach die Tabelle im Klartext, **keine** zweite Modellantwort | show |
-| „Wie war das Wetter am 25.11.2020?“ | `» Werkzeug wetter-frueher: …`, Wetterblock | show |
+| „Wie spät ist es?“ | `» Werkzeug time`, dann Antwort mit Uhrzeit | model |
+| „Was ist 17 mal 23?“ | `» Werkzeug calc: 17*23`, Antwort mit 391 | model |
+| „Wie wird das Wetter morgen?“ | `» Werkzeug weather: …`, danach die Tabelle im Klartext, **keine** zweite Modellantwort | show |
+| „Wie war das Wetter am 25.11.2020?“ | `» Werkzeug weather-past: …`, Wetterblock | show |
 | „Und gestern?“ direkt danach | das Modell nutzt Ort und Zusammenhang der angezeigten Tabelle | show + Verlauf |
-| „Such mal nach aktuellen KI-Nachrichten.“ | `» Werkzeug websuche: …`, Modell fasst Treffer zusammen | model |
+| „Such mal nach aktuellen KI-Nachrichten.“ | `» Werkzeug websearch: …`, Modell fasst Treffer zusammen | model |
 | „Erzähl mir einen Witz.“ | **kein** Werkzeug | Gegenprobe |
 
 Pro Zeile je 3 Versuche und zählen, wie oft es klappt. Typische Fehler und was man tut:
@@ -99,10 +99,10 @@ Standard für kleine Modelle wird.
 
 ## 7. Fernbedienung (optional, nur mit Hardware)
 
-Der Beispieleintrag `fernbedienung` ist deaktiviert und ungeprüft. Zum Testen: App auf dem Handy mit eingeschalteter
+Der Beispieleintrag `remote` ist deaktiviert und ungeprüft. Zum Testen: App auf dem Handy mit eingeschalteter
 Fernsteuerung, Umgebungsvariable `BROADCAST_REMOTE_TOKEN` setzen (nicht in die Datei), in `mcp_servers.json`
-`"disabled": true` entfernen und die Pfade/URL anpassen, Companion die `ventilator-…`-Aliase freischalten. Prüfen:
-Statuszeile `✔ Ventilator: …` erscheint, das Gerät reagiert, ein Bestätigungsdialog kommt (Standard).
+`"disabled": true` entfernen und die Pfade/URL anpassen, Companion die `fan-…`-Aliase freischalten. Prüfen:
+Statuszeile `✔ Fan: …` erscheint, das Gerät reagiert, ein Bestätigungsdialog kommt (Standard).
 Ob Tool- und Parametername (`send`/`code`) zur Bridge passen, steht erst nach diesem Test fest.
 
 ## 8. Ergebnis festhalten

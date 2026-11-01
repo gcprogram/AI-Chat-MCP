@@ -9,8 +9,9 @@ from pathlib import Path
 from chat_app.config import Config
 from chat_app.context import ContextManager, Message
 from chat_app.llm_client import ChatClient, LLMError
-from chat_app.persona import Persona, list_personas, load_persona
+from chat_app.persona import Persona, list_personas, load_persona, save_persona
 from chat_app.session import ChatSession
+from chat_app.tools import ToolRegistry
 
 REQUESTS: list[dict] = []
 
@@ -164,10 +165,15 @@ class GuiEndToEndTest(ServerCase):
         import tkinter as tk
         from chat_app.gui import ChatApp
 
+        tmp = tempfile.TemporaryDirectory()  # hermetisch: nie die echte config.json, personas/ oder mcp_servers.json
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        save_persona(Persona(name="Mia"), base / "personas")
         root = tk.Tk()
         root.withdraw()
         try:
-            app = ChatApp(root)
+            app = ChatApp(root, config=Config(persona="mia"), config_path=base / "config.json",
+                          personas_dir=base / "personas", chats_dir=base / "chats", registry=ToolRegistry())
             app.config.base_url, app.config.model, app.config.user_name = self.url, "m", "Alex"
             app.input.insert("1.0", "Hallo Mia")
             app.send()

@@ -1,6 +1,6 @@
 """Winziger MCP-Server (stdio, nur Standardbibliothek) zum Ausprobieren und für die Tests.
 
-Werkzeuge: get_time (Datum/Uhrzeit), calculate (Grundrechenarten)."""
+Werkzeuge (englisch beschrieben): get_time (Datum/Uhrzeit), calculate (Grundrechenarten)."""
 import ast
 import json
 import operator
@@ -11,9 +11,9 @@ OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast
        ast.Pow: operator.pow, ast.Mod: operator.mod, ast.USub: operator.neg}
 
 TOOLS = [
-    {"name": "get_time", "description": "Gibt das aktuelle Datum und die Uhrzeit zurück.",
+    {"name": "get_time", "description": "Returns the current date and time.",
      "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": True}},
-    {"name": "calculate", "description": "Berechnet einen Ausdruck mit + - * / ** % und Klammern.",
+    {"name": "calculate", "description": "Calculates an expression with + - * / ** % and parentheses.",
      "inputSchema": {"type": "object", "properties": {"expression": {"type": "string"}}, "required": ["expression"]},
      "annotations": {"readOnlyHint": True}},
 ]
@@ -27,22 +27,22 @@ def evaluate(node):
     if isinstance(node, ast.BinOp) and type(node.op) in OPS:
         left, right = evaluate(node.left), evaluate(node.right)
         if isinstance(node.op, ast.Pow) and abs(right) > 100:
-            raise ValueError("Exponent zu groß")
+            raise ValueError("Exponent too large")
         return OPS[type(node.op)](left, right)
     if isinstance(node, ast.UnaryOp) and type(node.op) in OPS:
         return OPS[type(node.op)](evaluate(node.operand))
-    raise ValueError("Nur Zahlen und + - * / ** % sind erlaubt")
+    raise ValueError("Only numbers and + - * / ** % are allowed")
 
 
 def call(name, arguments):
     if name == "get_time":
-        return datetime.now().strftime("%A, %d.%m.%Y, %H:%M Uhr"), False
+        return datetime.now().strftime("%A, %Y-%m-%d, %H:%M"), False
     if name == "calculate":
         try:
             return str(evaluate(ast.parse(str(arguments.get("expression", "")).replace(",", "."), mode="eval"))), False
         except (ValueError, SyntaxError, ZeroDivisionError) as exc:
-            return f"Rechenfehler: {exc}", True
-    return f"Unbekanntes Werkzeug: {name}", True
+            return f"Calculation error: {exc}", True
+    return f"Unknown tool: {name}", True
 
 
 def respond(message):

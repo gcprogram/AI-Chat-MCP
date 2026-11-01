@@ -1,4 +1,4 @@
-"""MCP-Server Websuche (stdio, nur Standardbibliothek, ohne API-Schlüssel).
+"""MCP-Server Websuche (stdio, nur Standardbibliothek, ohne API-Schlüssel). Beschreibungen und Ausgabe englisch.
 
 search  Sucht über die HTML-Ausgabe von DuckDuckGo und liefert die ersten Treffer mit Titel, Adresse und Auszug.
 Das Seitenformat ist nicht garantiert; ändert es sich, passt man nur parse_results() an."""
@@ -38,23 +38,23 @@ def format_results(results):
 
 
 def search(arguments):
-    query = str(arguments.get("suchbegriff", "")).strip()
+    query = str(arguments.get("query", "")).strip()
     if not query:
-        raise ToolError("Es fehlt der Suchbegriff.")
+        raise ToolError("The search query is missing.")
     try:
-        limit = max(1, min(8, int(float(str(arguments.get("anzahl", 5))))))
+        limit = max(1, min(8, int(float(str(arguments.get("count", 5))))))
     except ValueError:
         limit = 5
-    page = fetch("https://html.duckduckgo.com/html/", urlencode({"q": query, "kl": "de-de"}).encode())
+    page = fetch("https://html.duckduckgo.com/html/", urlencode({"q": query, "kl": "wt-wt"}).encode())
     results = parse_results(page, limit)
     if not results:
-        raise ToolError("Keine Treffer (oder der Suchdienst hat die Anfrage abgelehnt).")
+        raise ToolError("No results (or the search service rejected the request).")
     return format_results(results)
 
 
-TOOLS = [tool("search", "Sucht im Internet und liefert die ersten Treffer mit Auszug.",
-              {"suchbegriff": ("string", "Wonach gesucht wird"), "anzahl": ("integer", "Anzahl Treffer, Standard 5")},
-              ["suchbegriff"])]
+TOOLS = [tool("search", "Searches the web and returns the top results with a short excerpt.",
+              {"query": ("string", "What to search for"), "count": ("integer", "Number of results, default 5")},
+              ["query"])]
 
 if __name__ == "__main__":
-    serve("websuche", TOOLS, {"search": search})
+    serve("websearch", TOOLS, {"search": search})

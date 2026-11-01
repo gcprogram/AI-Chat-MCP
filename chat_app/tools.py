@@ -209,7 +209,7 @@ class ToolSpec:
         description = self.description.rstrip(".") + "." if self.description else ""
         optional = [p.name for p in self.params if not p.required]
         note = f" Optional: {', '.join(optional)}." if optional else ""
-        return f"- {self.alias}: {description}{note} Beispiel: {self.example or self.usage}".replace("  ", " ")
+        return f"- {self.alias}: {description}{note} Example: {self.example or self.usage}".replace("  ", " ")
 
 
 def _first_sentence(text: str, limit: int = 140) -> str:
@@ -390,14 +390,14 @@ class ToolRegistry:
         specs = [self.tools[a] for a in dict.fromkeys(normalize_name(x) for x in aliases) if a in self.tools]
         if not specs:
             return ""
-        return "\n".join([
-            "Werkzeuge:",
-            "Du kannst Werkzeuge benutzen. Schreibe dazu genau eine Zeile im Format [[mcp:NAME|ARGUMENT]] und "
-            "danach nichts mehr. Das Programm führt das Werkzeug aus und gibt dir das Ergebnis; dann antwortest du darauf.",
-            "- Erfinde nie ein Ergebnis und rate nicht, was das Werkzeug liefert.",
-            "- Benutze ein Werkzeug nur, wenn du die Information wirklich brauchst; sonst antworte normal.",
-            "- Mehrere Argumente trennst du mit |. Keine Anführungszeichen um Argumente.",
-            "Verfügbare Werkzeuge:",
+        return "\n".join([  # englisch: kleine Modelle folgen englischen Anweisungen zuverlässiger
+            "Tools:",
+            "You can use tools. To call one, write exactly one line in the format [[mcp:NAME|ARGUMENT]] at the very "
+            "start of your reply and nothing after it. The program runs the tool; you do not say it is done yourself.",
+            "- Never invent a result and never guess what a tool returns.",
+            "- Use a tool only when you really need it; otherwise just answer normally.",
+            "- Separate several arguments with |. No quotation marks around arguments.",
+            "Available tools:",
             *(spec.prompt_line() for spec in specs),
         ])
 
@@ -426,9 +426,9 @@ class ToolRegistry:
         """Beim nativen Modus beschreibt das Chat-Template die Werkzeuge; hier nur die Verhaltensregeln."""
         if not any(normalize_name(a) in self.tools for a in aliases):
             return ""
-        return "\n".join(["Werkzeuge:",
-                          "- Benutze ein Werkzeug nur, wenn du die Information wirklich brauchst; sonst antworte normal.",
-                          "- Erfinde nie ein Ergebnis und rate nicht, was das Werkzeug liefert."])
+        return "\n".join(["Tools:",
+                          "- Use a tool only when you really need it; otherwise just answer normally.",
+                          "- Never invent a result and never guess what a tool returns."])
 
     def native_call(self, name: str, arguments_json: str) -> tuple[str, dict]:
         """Nativer Aufruf -> (Marker-Text für Anzeige und Verlauf, benannte Argumente). Der Marker ist nur die

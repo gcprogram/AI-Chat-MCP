@@ -101,7 +101,7 @@ class NativeSessionTest(unittest.TestCase):
         self.assertNotEqual(messages[6]["tool_calls"][0]["id"], call["tool_calls"][0]["id"])
         self.assertEqual(messages[7]["content"], "Fehler: Rechenfehler")
         self.assertNotIn("[[mcp", messages[0]["content"])  # Werkzeuge beschreibt das Chat-Template, nicht der Prompt
-        self.assertIn("Erfinde nie ein Ergebnis", messages[0]["content"])
+        self.assertIn("Never invent a result", messages[0]["content"])
         self.assertEqual(len(s.native_tools), 2)
 
     def test_shown_result_is_a_tool_message_and_unanswered_call_becomes_text(self):

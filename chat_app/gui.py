@@ -318,6 +318,8 @@ class ChatApp:
             self._update_context_label()
             return
         self.session.add_assistant(text)  # nur der bereinigte Antworttext, nie das Reasoning
+        if result.call is None:
+            self._warn_disabled_tool(text)
         if self.last_usage:
             self.session.record_usage(self.sent_messages, self.last_usage.get("prompt_tokens", 0))
         note = f" ({'; '.join(result.notes)})" if result.notes else ""
@@ -353,6 +355,15 @@ class ChatApp:
     def _call_key(marker: str) -> tuple[str, str]:
         call = find_call(marker)
         return (normalize_name(call.name), call.args) if call else ("", marker)
+
+    def _warn_disabled_tool(self, text: str) -> None:
+        """Marker für ein vorhandenes, aber für diesen Companion nicht freigeschaltetes Werkzeug: sichtbar melden,
+        sonst sieht es aus, als wäre der Aufruf einfach wirkungslos."""
+        call = find_call(text)
+        name = normalize_name(call.name) if call else ""
+        if name in self.registry.tools and name not in self.session.tool_names:
+            self._append(f"[Werkzeug '{name}' ist für {self.session.persona.name} nicht freigeschaltet – "
+                         "unter Companions… ankreuzen und einen neuen Chat beginnen]\n\n", "system")
 
     def _handle_call(self, call: ToolCall, note: str) -> None:
         arguments = self.native_args.pop(self._call_key(call.raw), None)  # nativer Aufruf: echte Argumente
