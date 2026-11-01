@@ -24,6 +24,8 @@ class PersonaEditor(tk.Toplevel):
         self.avatar_saved = ""  # bereits gespeicherter relativer Pfad
         self.hidden_tools: list[str] = []  # freigeschaltet, aber gerade nicht verfügbar - nicht verlieren
         self.tool_vars: dict[str, tk.BooleanVar] = {}
+        self.approve_vars: dict[str, tk.BooleanVar] = {}  # vorab genehmigt (ohne Rückfrage)
+        self.hidden_approved: list[str] = []
 
         top = ttk.Frame(self)
         top.grid(row=0, column=0, columnspan=2, sticky="we", padx=10, pady=8)
@@ -94,19 +96,27 @@ class PersonaEditor(tk.Toplevel):
         self.combo.set(select if select in ids else "")
         self.delete_btn.configure(state=tk.NORMAL if len(ids) > 1 else tk.DISABLED)  # einer muss übrig bleiben
 
-    def _build_tool_checks(self, enabled: list[str]) -> None:
+    def _build_tool_checks(self, enabled: list[str], approved: list[str]) -> None:
         for child in self.tools_frame.winfo_children():
             child.destroy()
         available = self.app.registry.available()
         self.tool_vars = {a: tk.BooleanVar(value=a in enabled) for a in available}
+        self.approve_vars = {a: tk.BooleanVar(value=a in approved) for a in available}
         self.hidden_tools = [t for t in enabled if t not in available]
-        for alias in available:
+        self.hidden_approved = [t for t in approved if t not in available]
+        if available:
+            ttk.Label(self.tools_frame, foreground="#666666",
+                      text="Freischalten  ·  ohne Rückfrage (vorab genehmigt)").grid(row=0, column=0, columnspan=2,
+                                                                                       sticky="w")
+        for row, alias in enumerate(available, 1):
             spec = self.app.registry.tools[alias]
             ttk.Checkbutton(self.tools_frame, text=f"{alias} – {spec.description}", variable=self.tool_vars[alias]
-                            ).pack(anchor="w")
+                            ).grid(row=row, column=0, sticky="w")
+            ttk.Checkbutton(self.tools_frame, text="ohne Rückfrage", variable=self.approve_vars[alias]
+                            ).grid(row=row, column=1, sticky="w", padx=(12, 0))
         if not available:
             ttk.Label(self.tools_frame, foreground="#666666",
-                      text="Keine Werkzeuge verfügbar (mcp_servers.json anlegen, siehe README).").pack(anchor="w")
+                      text="Keine Werkzeuge verfügbar (mcp_servers.json anlegen, siehe README).").grid(row=0, column=0)
 
     # --- Formular ----------------------------------------------------------------------------------
 
@@ -120,7 +130,7 @@ class PersonaEditor(tk.Toplevel):
                               (self.rules, "\n".join(persona.rules))):
             widget.delete("1.0", tk.END)
             widget.insert("1.0", value)
-        self._build_tool_checks(persona.tools)
+        self._build_tool_checks(persona.tools, persona.approved_tools)
         self.mode.set(MODE_LABELS.get(persona.tool_mode, MODE_LABELS["marker"]))
         self.avatar_view.show(persona, self.app.personas_dir)
 
@@ -133,6 +143,8 @@ class PersonaEditor(tk.Toplevel):
             rules=[r.strip() for r in self.rules.get("1.0", tk.END).splitlines() if r.strip()],
             avatar=self.avatar_saved,
             tools=[a for a, var in self.tool_vars.items() if var.get()] + self.hidden_tools,
+            approved_tools=[a for a, var in self.approve_vars.items() if var.get() and self.tool_vars[a].get()]
+            + self.hidden_approved,
             tool_mode=next((k for k, v in MODE_LABELS.items() if v == self.mode.get()), "marker"),
             id=self.current_id)
 

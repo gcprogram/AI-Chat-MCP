@@ -463,6 +463,29 @@ class GuiToolsTest(unittest.TestCase):
         self.assertEqual(kinds.count(TOOL_RESULT), self.app.config.max_tool_calls)
         self.assertIn("Limit für Werkzeugaufrufe", self.app.chat.get("1.0", "end"))
 
+    def test_companion_pre_approval_skips_confirmation_only_for_approved_tools(self):
+        self.app.config.confirm_tools = True
+        with mock.patch("chat_app.gui.messagebox.askyesno", return_value=True) as ask:
+            self.ask("Rechne bitte")
+        self.assertEqual(ask.call_count, 1)  # nicht genehmigt: es wird gefragt
+
+        self.app.session.reset()
+        self.app.session.persona.approved_tools = ["Rechnen"]  # Schreibweise egal
+        with mock.patch("chat_app.gui.messagebox.askyesno", return_value=False) as ask:
+            self.ask("Rechne bitte")
+        self.assertEqual(ask.call_count, 0)
+        self.assertEqual(self.app.session.history[2].kind, TOOL_RESULT)  # lief ohne Rückfrage
+
+    def test_editor_saves_pre_approval_and_only_for_enabled_tools(self):
+        from chat_app.persona_editor import PersonaEditor
+
+        editor = PersonaEditor(self.app, select="mia")
+        self.addCleanup(editor.destroy)
+        editor.approve_vars["rechnen"].set(True)
+        editor.approve_vars["zeit"].set(True)  # nicht freigeschaltet: wird nicht gespeichert
+        self.assertEqual(editor.save(), "mia")
+        self.assertEqual(load_persona("mia", self.personas).approved_tools, ["rechnen"])
+
     def test_loaded_text_chat_and_trailing_question_goes_to_input(self):
         path = Path(self.tmp.name) / "alt.txt"
         path.write_text("Alex: Hi Mia\n\nMia: Hallo!\n\nAlex: Noch da?", encoding="utf-8")

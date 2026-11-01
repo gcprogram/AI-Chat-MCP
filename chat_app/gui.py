@@ -378,6 +378,8 @@ class ChatApp:
         known = normalize_name(call.name) in allowed
         spec = self.registry.tools.get(normalize_name(call.name))
         ask = self.config.confirm_tools if spec is None or spec.confirm is None else spec.confirm
+        if normalize_name(call.name) in {normalize_name(a) for a in self.session.persona.approved_tools}:
+            ask = False  # beim Companion vorab genehmigt: keine Rückfrage
         if known and ask and not messagebox.askyesno(
                 "Werkzeug ausführen?",
                 f"{self.session.persona.name} möchte das Werkzeug '{call.name}' ausführen.\n\n"

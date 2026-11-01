@@ -66,7 +66,10 @@ Webseiten-Inhalt), und standardmäßig fragt das Programm vor jedem Aufruf nach.
 **Einrichtung**: `examples/mcp_servers.example.json` nach `mcp_servers.json` kopieren (Format wie bei Claude
 Desktop, `mcpServers` oder `servers`; nur stdio-Server). Pro Werkzeug kann ein kurzer deutscher `alias`, `hint`,
 `example` und die sichtbaren `args` angegeben werden – je einfacher, desto zuverlässiger das kleine Modell.
-Dann in **Companions…** die Werkzeuge pro Companion ankreuzen; sie erscheinen im Prompt mit Beispielzeile.
+Dann in **Companions…** die Werkzeuge pro Companion ankreuzen; sie erscheinen im Prompt mit Beispielzeile. Die zweite
+Checkbox **ohne Rückfrage** genehmigt ein Werkzeug für diesen Companion vorab (`approved_tools` in der Persona-Datei):
+Es läuft dann ohne Dialog, auch bei vielen Aufrufen hintereinander (z. B. TV-Programme durchschalten). Nicht genehmigte
+Werkzeuge fragen weiter nach (globale Einstellung bzw. `confirm` des Alias); die Vorab-Genehmigung gewinnt gegen beides.
 `examples/demo_mcp_server.py` (Uhrzeit, Rechnen) dient zum Ausprobieren.
 
 **Namen und Beschreibungen sind englisch** (Alias, `hint`, `example`, Parameter, Prompt-Abschnitt "Tools:"): kleine Modelle folgen englischen Anweisungen zuverlässiger, und der Aufruf bleibt unabhängig von der Chat-Sprache.

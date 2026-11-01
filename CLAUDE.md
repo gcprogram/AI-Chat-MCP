@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 72 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 74 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -42,7 +42,7 @@ python main.py
   geht als `user`-Nachricht (`Message.kind = tool_result/tool_error`, Rollen bleiben abwechselnd) zurück. Ergebnisse
   werden gekürzt, Marker darin entschärft, Aufrufe standardmäßig bestätigt. Geladene Chats führen **nie** aus.
 - Companions: `personas/*.json` + `personas/avatars/`, Editor in `persona_editor.py`; Werkzeuge pro Companion
-  (`tools`). Chats: `chatlog.py` (JSON vollständig, TXT lesbar/ladbar), Ordner `chats/` (gitignored).
+  (`tools`), davon vorab genehmigte ohne Rückfrage (`approved_tools`, schlägt globale Einstellung und Alias-`confirm`). Chats: `chatlog.py` (JSON vollständig, TXT lesbar/ladbar), Ordner `chats/` (gitignored).
 - `mcp_servers.json` ist gitignored (kann Schlüssel enthalten); Vorlage in `examples/`.
 - **Alias-Layer** (`aliases` in `mcp_servers.json`, `ToolSpec.fixed/defaults/result/status/confirm/remember`): Kurzname →
   echtes MCP-Tool mit festen Argumenten, damit das kleine Modell nur einen Namen (plus ≤1 Argument) schreiben muss.
