@@ -9,3 +9,6 @@ chats/
 *.docx
 *.epub
 *.pdf
+build/
+dist/
+main.spec
