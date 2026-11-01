@@ -1,0 +1,21 @@
+{
+    "servers": {
+        "demo": {
+            "command": "python",
+            "args": ["examples/demo_mcp_server.py"],
+            "tools": {
+                "get_time": {"alias": "zeit", "hint": "Aktuelles Datum und Uhrzeit", "example": "[[mcp:zeit]]"},
+                "calculate": {"alias": "rechnen", "hint": "Rechnet einen Ausdruck aus", "example": "[[mcp:rechnen|12*(3+4)]]"}
+            }
+        },
+        "web": {
+            "disabled": true,
+            "command": "uvx",
+            "args": ["duckduckgo-mcp-server"],
+            "tools": {
+                "search": {"alias": "web-search", "hint": "Sucht im Internet", "args": ["query"],
+                           "example": "[[mcp:web-search|KI Nachrichten heute]]"}
+            }
+        }
+    }
+}

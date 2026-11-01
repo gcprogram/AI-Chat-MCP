@@ -48,12 +48,14 @@ class ChatClient:
         return [i for i in ids if "embed" not in i.lower()]
 
     def stream_chat(self, model: str, messages: list[dict], *, temperature: float, max_tokens: int,
-                    stop: list[str] | None = None, cancel: threading.Event | None = None) -> Iterator[StreamEvent]:
+                    stop: list[str] | None = None, cancel: threading.Event | None = None,
+                    extra: dict | None = None) -> Iterator[StreamEvent]:
         payload = {
             "model": model, "messages": messages, "stream": True,
             "temperature": temperature, "max_tokens": max_tokens,
             "stream_options": {"include_usage": True},
         }
+        payload.update(extra or {})  # z. B. top_p, frequency_penalty, repeat_penalty
         if stop:
             payload["stop"] = stop
         url = f"{self.base_url}/chat/completions"

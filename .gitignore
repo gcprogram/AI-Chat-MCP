@@ -2,3 +2,5 @@
 .venv
 __pycache__
 config.json
+mcp_servers.json
+chats/

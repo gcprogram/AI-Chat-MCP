@@ -7,11 +7,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+CHAT, TOOL_RESULT, TOOL_ERROR = "chat", "tool_result", "tool_error"
+
 
 @dataclass(frozen=True)
 class Message:
     role: str  # "user" | "assistant"
     content: str
+    kind: str = CHAT  # Werkzeugergebnisse gehen als 'user'-Nachricht zum Modell, sind aber keine Nutzereingabe
+    tool: str = ""  # Name des Werkzeugs bei kind != CHAT
+
+    @property
+    def is_tool(self) -> bool:
+        return self.kind in (TOOL_RESULT, TOOL_ERROR)
 
 
 class ContextManager:
@@ -38,6 +46,7 @@ class ContextManager:
             kept.append(message)
             remaining -= cost
         kept.reverse()
-        while len(kept) > 1 and kept[0].role != "user":  # Verlauf muss mit 'user' beginnen
+        # Verlauf muss mit einer echten Nutzernachricht beginnen (kein Assistent, kein verwaistes Werkzeugergebnis)
+        while len(kept) > 1 and (kept[0].role != "user" or kept[0].is_tool):
             kept.pop(0)
         return kept, len(history) - len(kept)
