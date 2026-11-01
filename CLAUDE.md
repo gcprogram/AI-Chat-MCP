@@ -61,7 +61,8 @@ python main.py
   wenn ein Streaming-Thread die GC auslöst).
 
 ## Offene Aufgaben (Reihenfolge)
-1. **Echter Test** mit einem Chat-Modell in LM Studio (kein TranslateGemma – das ist reiner Übersetzer):
+1. **Echter Test** mit einem Chat-Modell in LM Studio (kein TranslateGemma – das ist reiner Übersetzer);
+   Ablauf in `docs/TEST_LMSTUDIO.md`:
    Streaming, Reasoning-Anzeige, Stop-Sequenzen, Du/Ich-Verhalten, Kontext-Anzeige. NEU zu prüfen: wirken
    Sampling + Bereinigung gegen die Wiederholungen, schreibt das 4B-Modell den Marker `[[mcp:…]]` zuverlässig
    (Prompt-Abschnitt in `ToolRegistry.prompt_section`, `hint`/`example` pro Tool), echter MCP-Server (z. B. Websuche).
