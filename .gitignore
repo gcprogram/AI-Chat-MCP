@@ -4,3 +4,8 @@ __pycache__
 config.json
 mcp_servers.json
 chats/
+*.txt
+!requirements.txt
+*.docx
+*.epub
+*.pdf
