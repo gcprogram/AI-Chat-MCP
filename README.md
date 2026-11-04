@@ -90,6 +90,12 @@ oder die Fernbedienungs-App auf dem Handy direkt, ohne stdio-Bridge:
 | `headers` | zusätzliche Header; `${NAME}` wird aus der Umgebungsvariable eingesetzt, der Token steht also nie in der Datei. Fehlt die Variable, steht ihr Name in der Fehlermeldung |
 | `cert` | Zertifikat (PEM) eines selbst signierten Servers als einziger Vertrauensanker; ohne Angabe gelten die System-Zertifikate |
 
+**Handy per USB** (z. B. im Hotel-WLAN, wo Geräte sich nicht sehen): `adb -s <Seriennummer> forward tcp:8443 tcp:8443`, dann
+`"url": "https://127.0.0.1:8443/mcp"`. Das Zertifikat der Fernbedienungs-App enthält `127.0.0.1`. Es wird beim Wechsel
+der WLAN-Adresse neu erzeugt; bei „certificate verify failed“ das aktuelle holen (über den Forward
+`ssl.get_server_certificate(("127.0.0.1", 8443))`, per Kabel also vertrauenswürdig) und als `cert` eintragen. Die
+Forward-Regel gilt nur, solange adb läuft und das Handy angesteckt ist.
+
 `raw`, `tools`, `disabled` und die Aliase funktionieren wie bei stdio. Antworten als JSON oder als SSE-Strom werden
 verstanden; läuft die Sitzung auf dem Server ab (Neustart), meldet sich der Client einmal selbst neu an. Weiterleitungen
 werden nicht verfolgt, damit der Token nicht an einen fremden Host geht. Verbindungsfehler (Handy aus, falsches WLAN)
