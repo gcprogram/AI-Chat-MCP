@@ -91,9 +91,9 @@
             "args": {
                 "code": "0x11"
             },
-            "hint": "TV key P1",
+            "hint": "Switch the TV to program 1",
             "result": "discard",
-            "status": "TV: P1"
+            "status": "TV: Program 1"
         },
         "tv-p2": {
             "server": "remote",
@@ -101,9 +101,9 @@
             "args": {
                 "code": "0x12"
             },
-            "hint": "TV key P2",
+            "hint": "Switch the TV to program 2",
             "result": "discard",
-            "status": "TV: P2"
+            "status": "TV: Program 2"
         },
         "tv-off": {
             "server": "remote",

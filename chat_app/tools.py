@@ -377,6 +377,7 @@ class ToolRegistry:
         except (OSError, ValueError, AttributeError) as exc:
             self.errors.append(f"{path.name} nicht lesbar: {exc}")
             return
+        failed: set[str] = set()
         for name, entry in servers.items():
             if not isinstance(entry, dict) or entry.get("disabled") or not (entry.get("command") or entry.get("url")):
                 continue
@@ -386,8 +387,9 @@ class ToolRegistry:
             except (McpError, OSError, ValueError, KeyError) as exc:
                 log.warning("MCP-Server '%s' nicht verfügbar: %s", name, exc)
                 self.errors.append(f"{name}: {exc}")
+                failed.add(name)
         disabled = frozenset(n for n, e in servers.items() if isinstance(e, dict) and e.get("disabled"))
-        self.add_aliases(data.get("aliases"), disabled)
+        self.add_aliases(data.get("aliases"), disabled | failed)  # ein Fehler pro Server, nicht einer pro Alias
 
     def shutdown(self) -> None:
         for server in self.servers.values():

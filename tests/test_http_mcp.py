@@ -228,5 +228,23 @@ class RegistryConfigTest(unittest.TestCase):
         self.assertEqual(fake.log[-1][0], "DELETE")  # beim Beenden wird auch die HTTP-Sitzung geschlossen
 
 
+    def test_failed_server_gives_one_error_not_one_per_alias(self):
+        fake = FakeMcp()
+        port = fake.server_port
+        fake.server_close()  # nichts hört mehr zu
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "mcp.json"
+            path.write_text(json.dumps({
+                "servers": {"remote": {"url": f"http://127.0.0.1:{port}/mcp"}},
+                "aliases": {"tv-p1": {"server": "remote", "tool": "send"},
+                            "tv-p2": {"server": "remote", "tool": "send"},
+                            "kaputt": {"server": "gibt-es-nicht", "tool": "x"}}}), encoding="utf-8")
+            registry = ToolRegistry()
+            registry.start_from_config(path)
+        self.assertEqual(len(registry.errors), 2)  # Server + der Alias auf einen nie konfigurierten Server
+        self.assertTrue(registry.errors[0].startswith("remote: "))
+        self.assertEqual(registry.available(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
