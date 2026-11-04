@@ -171,6 +171,32 @@ mehr ins Kontextfenster (Einstellung, Standard 8192), werden die ältesten Runde
 `reply.py` (Bereinigung) · `tools.py` + `mcp_client.py` (Werkzeuge) · `chatlog.py` (Speichern/Laden) · `avatar.py` ·
 `persona_editor.py` · `gui.py` (Tkinter, Streaming-Thread über Queue). Tests: `python -m unittest discover -s tests` (mit `PYTHONPATH=.`).
 
+## Android-App (`android/`)
+
+Kotlin mit Jetpack Compose, gleiche Logik wie die Python-App: Companions (dieselben JSON-Dateien), Textmarker mit
+Aliasen, Antwort-Bereinigung, Kontextverwaltung, Chat speichern/laden (gleiches JSON-Format), HTTP-MCP.
+Das Modell läuft weiter in LM Studio (Server-URL und Token in den Einstellungen); ein Modell auf dem Handy ist noch
+nicht eingebaut.
+
+```bash
+cd android
+set JAVA_HOME=<JDK 17>            # JDK 25 (z. B. das von Android Studio) kann Kotlin 2.0 nicht lesen
+gradlew :core:test :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+- `android/core`: reine Kotlin-Logik ohne Android (41 JVM-Tests; Erwartungswerte aus der Python-Version).
+- `android/app`: Oberfläche (Chat, Einstellungen, Companions, Werkzeuge) und Speicher im privaten App-Ordner.
+- **Server erreichen**: im Heimnetz `http://<PC-IP>:1234/v1`; per USB `adb reverse tcp:1234 tcp:1234` und
+  `http://127.0.0.1:1234/v1` (auch im Hotel-WLAN).
+- **Werkzeuge**: Gleiches `mcp_servers.json` wie am PC (Menü *Werkzeuge*, auch Import aus Datei). Unterprozesse gibt es auf
+  Android nicht: `weather_server.py`/`websearch_server.py` werden automatisch durch die eingebauten Server ersetzt
+  (oder `"builtin": "weather"`/`"websearch"`), andere Server müssen per `url` (HTTP) erreichbar sein. `${NAME}` in Headern
+  kommt aus den *Geheimnissen* der App, ein selbst signiertes Zertifikat wird dort per *Vom Server holen* (mit
+  Fingerabdruck zum Vergleichen) oder aus einer PEM-Datei importiert und über `cert` (Dateiname) angegeben. Die
+  Fernbedienungs-App auf demselben Handy ist unter `https://127.0.0.1:8443/mcp` erreichbar.
+- Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text.
+
 ## Roadmap
 
 - Kontext-Strategie ausbauen: alte Runden zusammenfassen statt nur abschneiden, feste „Erinnerungen“.

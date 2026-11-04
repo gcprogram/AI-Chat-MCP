@@ -1,0 +1,38 @@
+{
+    "servers": {
+        "weather": {"builtin": "weather", "raw": false},
+        "websearch": {"builtin": "websearch", "raw": false},
+        "remote": {
+            "disabled": true,
+            "url": "https://127.0.0.1:8443/mcp",
+            "headers": {"Authorization": "Bearer ${BROADCAST_REMOTE_TOKEN}"},
+            "cert": "remote.pem",
+            "raw": false
+        }
+    },
+    "aliases": {
+        "weather": {
+            "server": "weather", "tool": "forecast", "params": ["place", "day"],
+            "defaults": {"place": "Berlin", "day": "today"},
+            "hint": "Weather forecast for today or tomorrow", "example": "[[mcp:weather|Berlin|tomorrow]]",
+            "result": "show", "confirm": false
+        },
+        "weather-past": {
+            "server": "weather", "tool": "historical", "params": ["place", "date"],
+            "defaults": {"place": "Berlin"},
+            "hint": "Weather on a past day", "example": "[[mcp:weather-past|Berlin|2020-11-25]]",
+            "result": "show", "confirm": false
+        },
+        "websearch": {
+            "server": "websearch", "tool": "search", "params": ["query"],
+            "hint": "Searches the web", "example": "[[mcp:websearch|AI news today]]",
+            "result": "model", "confirm": false
+        },
+        "tv-p1": {"server": "remote", "tool": "send", "args": {"code": "0x11"},
+                  "hint": "Switch the TV to program 1", "result": "discard", "status": "TV: Program 1"},
+        "tv-p2": {"server": "remote", "tool": "send", "args": {"code": "0x12"},
+                  "hint": "Switch the TV to program 2", "result": "discard", "status": "TV: Program 2"},
+        "tv-off": {"server": "remote", "tool": "off",
+                   "hint": "Switch the TV off", "result": "discard", "status": "TV: off"}
+    }
+}

@@ -6,7 +6,7 @@ private const val OLD_RESULT_CHARS = 300 // Werkzeugergebnisse früherer Runden 
  * Chat-Verlauf einer Unterhaltung (Port von session.py, Textmarker-Modus). Der Client ist zustandslos: jede Anfrage
  * enthält System-Prompt und (gekürzten) Verlauf vollständig - der Server speichert nichts mit.
  */
-class ChatSession(var config: Config, var persona: Persona, val registry: ToolRegistry = ToolRegistry()) {
+class ChatSession(var config: Config, var persona: Persona, var registry: ToolRegistry = ToolRegistry()) {
     val history = mutableListOf<Message>()
     val context = ContextManager()
 

@@ -68,6 +68,13 @@ python main.py
 - Tests mit Tk: Variablen des Editors vorher im Hauptthread per `gc.collect` freigeben (sonst `Tcl_AsyncDelete`-Abbruch,
   wenn ein Streaming-Thread die GC auslöst).
 
+- **Android-App** (`android/`, Gradle: `:core` reine Kotlin-Logik, `:app` Compose): Port der Python-Logik, Erwartungswerte der
+  Tests stammen aus Python (`difflib`-Nachbau, Bereinigung, Wächter). Build mit **JDK 17** (JDK 25 bricht Kotlin 2.0).
+  `ChatEngine` (core) führt ganze Runden (in Python steckt das in `gui.py`); pro Runde ein eigenes `CancelToken`
+  (stilles Stoppen durch den Wächter darf nicht in die nächste Runde wirken). Eingebaute Server statt Unterprozesse;
+  Desktop-Konfiguration (`servers/weather_server.py`) wird erkannt. Tests: `cd android && gradlew :core:test` (41).
+  Auf dem Gerät noch nicht visuell geprüft (Handy war gesperrt), nativer Modus und Avatare fehlen.
+
 ## Offene Aufgaben (Reihenfolge)
 1. **Echter Test** mit einem Chat-Modell in LM Studio (kein TranslateGemma – das ist reiner Übersetzer);
    Ablauf in `docs/TEST_LMSTUDIO.md`:
