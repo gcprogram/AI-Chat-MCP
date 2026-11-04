@@ -70,15 +70,17 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
     Column(Modifier.fillMaxSize()) {
         TopBar(vm, open, onExport, onImport)
         HorizontalDivider()
-        SelectionContainer(Modifier.weight(1f)) {
-            LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 10.dp), state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                item { Spacer(Modifier.padding(2.dp)) }
-                items(vm.messages) { MessageItem(it, vm.persona.name, vm.config.userName) }
-                vm.live?.let { live -> item { LiveItem(live, vm.persona.name) } }
-                item { Spacer(Modifier.padding(2.dp)) }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            SelectionContainer {
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = 10.dp), state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item { Spacer(Modifier.padding(2.dp)) }
+                    items(vm.messages) { MessageItem(it, vm.persona.name, vm.config.userName) }
+                    vm.live?.let { live -> item { LiveItem(live, vm.persona.name) } }
+                    item { Spacer(Modifier.padding(2.dp)) }
+                }
             }
         }
         HorizontalDivider()

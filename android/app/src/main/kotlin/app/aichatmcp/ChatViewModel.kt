@@ -156,7 +156,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 engine.send(text).collect(::handle)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: Throwable) { // auch Error (z. B. ExceptionInInitializerError): die App darf nicht abstürzen
                 messages += UiMessage(UiKind.ERROR, "[Fehler] ${e.message}")
                 status = "Fehler"
             } finally {

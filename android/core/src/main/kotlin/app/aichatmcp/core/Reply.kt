@@ -21,7 +21,8 @@ private val MARKUP = Regex(
 private val LOOP = Regex("(.{6,60}?)(?:\\s*\\1){2,}", RegexOption.DOT_MATCHES_ALL) // Baustein mindestens dreimal hintereinander
 private val SENTENCE_END = Regex("[.!?…][\"»“)]*(?=\\s)")
 private val TRIGGER = Regex("[.!?…\\n<:\\]]")
-private val NON_WORD = Regex("(?U)[^\\w\\s]")
+// kein (?U): Androids ICU-Regex kennt das Flag nicht; \p{L}\p{N} gilt auf JVM und Android gleich
+private val NON_WORD = Regex("[^\\p{L}\\p{N}_\\s]")
 private val SPACES = Regex("\\s+")
 
 data class Reply(
