@@ -213,16 +213,16 @@ class RegistryConfigTest(unittest.TestCase):
                     "remote": {"url": fake.url, "headers": {"Authorization": "Bearer ${FAKE_TOKEN}"}, "raw": False},
                     "kaputt": {"url": fake.url, "headers": "nein"},
                     "aus": {"url": fake.url, "disabled": True}},
-                "aliases": {"fan-low": {"server": "remote", "tool": "send", "args": {"code": "01"},
-                                        "result": "discard", "status": "Fan: low"}}}), encoding="utf-8")
+                "aliases": {"tv-p1": {"server": "remote", "tool": "send", "args": {"code": "01"},
+                                        "result": "discard", "status": "TV: P1"}}}), encoding="utf-8")
             registry = ToolRegistry()
             self.addCleanup(registry.shutdown)
             registry.start_from_config(path)
-            self.assertEqual(registry.available(), ["fan-low"])
+            self.assertEqual(registry.available(), ["tv-p1"])
             self.assertEqual(len(registry.errors), 1)
             self.assertIn("headers", registry.errors[0])
-            outcome = registry.run(find_call("[[mcp:fan-low]]"), ["fan-low"])
-            self.assertEqual((outcome.ok, outcome.status), (True, "Fan: low"))
+            outcome = registry.run(find_call("[[mcp:tv-p1]]"), ["tv-p1"])
+            self.assertEqual((outcome.ok, outcome.status), (True, "TV: P1"))
             self.assertEqual(fake.sent_codes, ["01"])
         registry.shutdown()
         self.assertEqual(fake.log[-1][0], "DELETE")  # beim Beenden wird auch die HTTP-Sitzung geschlossen

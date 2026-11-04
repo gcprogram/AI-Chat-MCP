@@ -85,42 +85,32 @@
             "result": "model",
             "confirm": false
         },
-        "fan-low": {
+        "tv-p1": {
             "server": "remote",
             "tool": "send",
             "args": {
-                "code": "01"
+                "code": "0x11"
             },
-            "hint": "Switch the fan on, low speed",
+            "hint": "TV key P1",
             "result": "discard",
-            "status": "Fan: low"
+            "status": "TV: P1"
         },
-        "fan-medium": {
+        "tv-p2": {
             "server": "remote",
             "tool": "send",
             "args": {
-                "code": "02"
+                "code": "0x12"
             },
-            "hint": "Switch the fan on, medium speed",
+            "hint": "TV key P2",
             "result": "discard",
-            "status": "Fan: medium"
+            "status": "TV: P2"
         },
-        "fan-high": {
-            "server": "remote",
-            "tool": "send",
-            "args": {
-                "code": "03"
-            },
-            "hint": "Switch the fan on, high speed",
-            "result": "discard",
-            "status": "Fan: high"
-        },
-        "fan-off": {
+        "tv-off": {
             "server": "remote",
             "tool": "off",
-            "hint": "Switch the fan off",
+            "hint": "Switch the TV off",
             "result": "discard",
-            "status": "Fan: off"
+            "status": "TV: off"
         }
     }
 }

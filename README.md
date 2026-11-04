@@ -108,8 +108,8 @@ Je kürzer und einfacher das, was das Modell schreiben muss, desto zuverlässige
 
 ```json
 "aliases": {
-  "fan-low": {"server": "remote", "tool": "send", "args": {"code": "01"},
-              "hint": "Switch the fan on, low speed", "result": "discard", "status": "Fan: low"},
+  "tv-p1": {"server": "remote", "tool": "send", "args": {"code": "0x11"},
+            "hint": "TV key P1", "result": "discard", "status": "TV: P1"},
   "weather": {"server": "weather", "tool": "forecast", "params": ["place", "day"], "defaults": {"place": "Berlin"},
               "hint": "Weather forecast for today or tomorrow", "result": "show", "confirm": false}
 }

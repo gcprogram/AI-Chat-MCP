@@ -101,8 +101,8 @@ Standard für kleine Modelle wird.
 
 Der Beispieleintrag `remote` ist deaktiviert und ungeprüft. Zum Testen: App auf dem Handy mit eingeschalteter
 Fernsteuerung, Umgebungsvariable `BROADCAST_REMOTE_TOKEN` setzen (nicht in die Datei), in `mcp_servers.json`
-`"disabled": true` entfernen und die Pfade/URL anpassen, Companion die `fan-…`-Aliase freischalten. Prüfen:
-Statuszeile `✔ Fan: …` erscheint, das Gerät reagiert, ein Bestätigungsdialog kommt (Standard).
+`"disabled": true` entfernen und die Pfade/URL anpassen, Companion die `tv-…`-Aliase freischalten. Prüfen:
+Statuszeile `✔ TV: …` erscheint, das Gerät reagiert, ein Bestätigungsdialog kommt (Standard).
 Ob Tool- und Parametername (`send`/`code`) zur Bridge passen, steht erst nach diesem Test fest.
 
 ## 8. Ergebnis festhalten

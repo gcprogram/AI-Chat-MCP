@@ -55,7 +55,7 @@ python main.py
   `discard` (nur Statuszeile). Angezeigte Ergebnisse gehen erst mit der **nächsten Nutzernachricht** ans Modell
   (`_wire_history` verpackt sie dort; Rollen bleiben abwechselnd). Fehler gehen immer ans Modell. `raw: false` pro
   Server blendet rohe Tools aus. Eigene Server in `servers/` (Wetter, Websuche; Datumsrechnung im Server, nicht im Modell). **Werkzeugnamen, Parameter,
-  Beschreibungen und der Prompt-Abschnitt sind englisch** (`weather`, `weather-past`, `websearch`, `fan-low|medium|high|off`):
+  Beschreibungen und der Prompt-Abschnitt sind englisch** (`weather`, `weather-past`, `websearch`, `tv-p1`…, `tv-off`):
   kleine Modelle folgen englischen Anweisungen besser. Marker für nicht freigeschaltete Werkzeuge werden im Chat gemeldet
   (sonst wirkt ein Companion ohne `tools` wie „Werkzeuge gehen nicht“).
 - **Nativer Modus** (`Persona.tool_mode = "native"`, Schalter im Companion-Editor): Aliase gehen als `tools`-Parameter
