@@ -174,7 +174,8 @@ class _Handler(BaseHTTPRequestHandler):
         if body["messages"][-1]["content"].startswith(("[Ergebnis von", "[Fehler bei")):
             reply = "Dann eben nicht."
         else:
-            reply = {"show": "Ich schaue nach. [[mcp:sieben]] erfunden", "discard": "Mache ich. [[mcp:licht]]"}.get(
+            reply = {"show": "Ich schaue nach. [[mcp:sieben]] erfunden", "discard": "Mache ich. [[mcp:licht]]",
+                     "both": "Ich schaue nach. [[mcp:beides]] erfunden"}.get(
                 body["model"], "Gern geschehen.")
         data = sse(reply)
         self.send_response(200)
@@ -256,6 +257,18 @@ class GuiAliasTest(unittest.TestCase):
         with mock.patch("chat_app.gui.messagebox.askyesno", return_value=True) as ask:
             self.ask("Was ist 6 mal 7?", "show")
         self.assertEqual(ask.call_count, 0)  # Alias sagt confirm=false, obwohl global an
+
+    def test_both_mode_prints_result_and_the_model_answers_on_it(self):
+        self.registry.add_aliases({"beides": {"server": "demo", "tool": "calculate", "args": {"expression": "6*7"},
+                                              "result": "both", "confirm": False}})
+        self.app.session.persona.tools = ["beides"]
+        self.ask("Was ist 6 mal 7?", "both")
+        self.assertEqual(len(REQUESTS), 2)  # zweite Runde: das Modell antwortet auf das Ergebnis
+        self.assertEqual([m.kind for m in self.app.session.history], [CHAT, CHAT, TOOL_RESULT, CHAT])
+        text = self.app.chat.get("1.0", "end")
+        self.assertIn("\n42\n", text)  # Klartext im Chat ...
+        self.assertEqual(text.count("« Ergebnis von"), 0)  # ... statt der gekürzten Vorschau
+        self.assertIn("[Ergebnis von beides]\n42", REQUESTS[1]["messages"][-1]["content"])
 
     def test_declined_confirmation_goes_back_to_model(self):
         with mock.patch("chat_app.gui.messagebox.askyesno", return_value=False):

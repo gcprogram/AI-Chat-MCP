@@ -21,7 +21,7 @@ from .persona import PERSONAS_DIR, list_personas, load_persona
 from .persona_editor import PersonaEditor
 from .reply import Reply, StreamGuard, finalize_reply
 from .session import ChatSession
-from .tools import (RESULT_DISCARD, RESULT_SHOW, ToolCall, ToolOutcome, ToolRegistry, find_call, normalize_name,
+from .tools import (RESULT_BOTH, RESULT_DISCARD, RESULT_SHOW, ToolCall, ToolOutcome, ToolRegistry, find_call, normalize_name,
                     split_segments)
 
 log = logging.getLogger(__name__)
@@ -414,6 +414,11 @@ class ChatApp:
                 self.session.add_tool_shown(outcome.tool, outcome.status)
             self._append(f"✔ {outcome.status}\n\n", "tool")
             self._finish("Bereit")
+            return
+        if outcome.ok and outcome.mode == RESULT_BOTH:  # Klartext im Chat (nur Anzeige) UND das Modell antwortet darauf
+            self._show_message(Message("user", outcome.text, TOOL_SHOWN, outcome.tool))
+            self.session.add_tool_result(outcome.tool, outcome.text, True)
+            self._start_round()
             return
         self._show_message(self.session.add_tool_result(outcome.tool, outcome.text, outcome.ok))
         self._start_round()

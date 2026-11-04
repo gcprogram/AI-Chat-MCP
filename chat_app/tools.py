@@ -135,8 +135,8 @@ def _coerce(param: Param, value: Any) -> Any:
     return value
 
 
-RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD = "model", "show", "discard"
-RESULT_MODES = (RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD)
+RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD, RESULT_BOTH = "model", "show", "discard", "both"
+RESULT_MODES = (RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD, RESULT_BOTH)
 
 
 @dataclass
@@ -151,7 +151,7 @@ class ToolSpec:
     # Nur bei Aliasen aus dem Block "aliases":
     fixed: dict[str, Any] = field(default_factory=dict)  # feste Argumente, die das Modell nicht sieht
     defaults: dict[str, Any] = field(default_factory=dict)  # Ersatz für fehlende Argumente
-    result: str = RESULT_MODEL  # model: Modell antwortet | show: Klartext im Chat | discard: nur Statuszeile
+    result: str = RESULT_MODEL  # model: Modell antwortet | show: Klartext im Chat | discard: nur Statuszeile | both: Klartext UND Modell antwortet
     status: str = ""  # Statuszeile bei discard
     confirm: bool | None = None  # None = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
     remember: bool = False  # Ergebnis bei show/discard dem Modell im Verlauf zeigen

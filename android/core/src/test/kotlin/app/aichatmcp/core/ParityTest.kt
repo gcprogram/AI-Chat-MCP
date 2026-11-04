@@ -199,6 +199,10 @@ class ParityTest {
         // unbeantwortete letzte Frage kommt zurück (fürs Eingabefeld)
         assertEquals("Noch da?", session.load(listOf(Message("user", "Hi"), Message("assistant", "Hallo!"), Message("user", "Noch da?"))))
         assertEquals(2, session.history.size)
+        // angezeigtes Ergebnis am Ende bleibt (Endzustand von show) und wird nicht als Frage zurückgegeben
+        val shown = listOf(Message("user", "Wetter?"), Message("assistant", "[[mcp:weather]]"), Message("user", "sonnig", TOOL_SHOWN, "weather"))
+        assertEquals("", session.load(shown))
+        assertEquals(shown, session.history)
         assertNotNull(session.toolNames)
     }
 }

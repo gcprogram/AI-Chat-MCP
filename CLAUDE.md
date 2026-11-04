@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 85 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 87 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -52,7 +52,9 @@ python main.py
 - **Alias-Layer** (`aliases` in `mcp_servers.json`, `ToolSpec.fixed/defaults/result/status/confirm/remember`): Kurzname →
   echtes MCP-Tool mit festen Argumenten, damit das kleine Modell nur einen Namen (plus ≤1 Argument) schreiben muss.
   `result`: `model` (Antwortrunde) | `show` (Klartext im Chat, `Message.kind = tool_shown`, keine zweite Runde) |
-  `discard` (nur Statuszeile). Angezeigte Ergebnisse gehen erst mit der **nächsten Nutzernachricht** ans Modell
+  `discard` (nur Statuszeile) | `both` (Klartext im Chat als reine Anzeige UND Modellrunde auf das Ergebnis; im Verlauf `tool_result`).
+  Bei `show` ruft das 4B-Modell Folgefragen mit demselben Werkzeug erneut auf (Verlauf voller Aufrufe, nie eine Antwort); Versuche, Aufruf und Ergebnis
+  im Verlauf zu einer Assistenten-Nachricht zu verschmelzen, halfen nicht (ohne Marker erfindet es Daten) - `both` ist die Lösung. Angezeigte Ergebnisse gehen erst mit der **nächsten Nutzernachricht** ans Modell
   (`_wire_history` verpackt sie dort; Rollen bleiben abwechselnd). Fehler gehen immer ans Modell. `raw: false` pro
   Server blendet rohe Tools aus. Eigene Server in `servers/` (Wetter, Websuche; Datumsrechnung im Server, nicht im Modell). **Werkzeugnamen, Parameter,
   Beschreibungen und der Prompt-Abschnitt sind englisch** (`weather`, `weather-past`, `websearch`, `tv-p1`…, `tv-off`):
@@ -72,7 +74,7 @@ python main.py
   Tests stammen aus Python (`difflib`-Nachbau, Bereinigung, Wächter). Build mit **JDK 17** (JDK 25 bricht Kotlin 2.0).
   `ChatEngine` (core) führt ganze Runden (in Python steckt das in `gui.py`); pro Runde ein eigenes `CancelToken`
   (stilles Stoppen durch den Wächter darf nicht in die nächste Runde wirken). Eingebaute Server statt Unterprozesse;
-  Desktop-Konfiguration (`servers/weather_server.py`) wird erkannt. Tests: `cd android && gradlew :core:test` (41).
+  Desktop-Konfiguration (`servers/weather_server.py`) wird erkannt. Tests: `cd android && gradlew :core:test` (42).
   Auf dem Gerät noch nicht visuell geprüft (Handy war gesperrt), nativer Modus und Avatare fehlen.
 
 ## Offene Aufgaben (Reihenfolge)

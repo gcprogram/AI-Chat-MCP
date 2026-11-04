@@ -64,8 +64,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
     val listState = rememberLazyListState()
     val liveLength = vm.live?.let { it.content.length + it.reasoning.length } ?: 0
     LaunchedEffect(vm.messages.size, liveLength) {
-        val last = vm.messages.size + (if (vm.live != null) 1 else 0) - 1
-        if (last >= 0) listState.scrollToItem(last)
+        listState.scrollToItem(0) // neueste Nachricht unten sichtbar
     }
     Column(Modifier.fillMaxSize()) {
         TopBar(vm, open, onExport, onImport)
@@ -73,12 +72,13 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             SelectionContainer {
                 LazyColumn(
-                    Modifier.fillMaxSize().padding(horizontal = 10.dp), state = listState,
+                    Modifier.fillMaxSize().padding(horizontal = 10.dp), state = listState, reverseLayout = true,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    // reverseLayout: Eintrag 0 ist unten, die Liste bleibt am Ende verankert (wie bei Chat-Apps)
                     item { Spacer(Modifier.padding(2.dp)) }
-                    items(vm.messages) { MessageItem(it, vm.persona.name, vm.config.userName) }
                     vm.live?.let { live -> item { LiveItem(live, vm.persona.name) } }
+                    items(vm.messages.asReversed()) { MessageItem(it, vm.persona.name, vm.config.userName) }
                     item { Spacer(Modifier.padding(2.dp)) }
                 }
             }
@@ -200,9 +200,14 @@ private fun Bubble(name: String, text: String, background: Color, foreground: Co
 
 /** Werkzeugaufruf-Marker erscheinen als eigene, grüne Zeile. */
 private fun withToolCalls(text: String) = buildAnnotatedString {
-    for ((kind, part) in splitSegments(text)) {
-        if (kind == "call") withStyle(SpanStyle(color = ToolGreen, fontStyle = FontStyle.Italic)) { append("» Werkzeug $part\n") }
-        else append(part)
+    val segments = splitSegments(text)
+    segments.forEachIndexed { i, (kind, part) ->
+        if (kind == "call") {
+            withStyle(SpanStyle(color = ToolGreen, fontStyle = FontStyle.Italic)) { append("» Werkzeug $part") }
+            if (i < segments.lastIndex) append("\n")
+        } else {
+            append(part)
+        }
     }
 }
 

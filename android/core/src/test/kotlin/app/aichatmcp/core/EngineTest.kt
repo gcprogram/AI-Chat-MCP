@@ -18,7 +18,8 @@ class EngineTest {
     private val aliases = """{
         "calc": {"server": "demo", "tool": "calculate", "params": ["expression"]},
         "seven": {"server": "demo", "tool": "calculate", "args": {"expression": "6*7"}, "result": "show", "confirm": false},
-        "light": {"server": "demo", "tool": "calculate", "args": {"expression": "1+1"}, "result": "discard", "status": "Light on"}
+        "light": {"server": "demo", "tool": "calculate", "args": {"expression": "1+1"}, "result": "discard", "status": "Light on"},
+        "both": {"server": "demo", "tool": "calculate", "args": {"expression": "6*7"}, "result": "both", "confirm": false}
     }"""
 
     private class Rig(val engine: ChatEngine, val llm: FakeLlm, val confirms: MutableList<String>)
@@ -81,6 +82,23 @@ class EngineTest {
         val last = r.llm.lastUserContent(r.llm.requests[1])
         assertTrue("schon angezeigt]\n42" in last)
         assertTrue(last.endsWith("Danke dir"))
+    }
+
+    @Test
+    fun bothModeShowsTheResultAndTheModelAnswersOnIt() {
+        val r = rig(listOf("both")) { llm, req ->
+            if (llm.lastUserContent(req).startsWith("[Ergebnis von")) listOf("Das macht 42.") else listOf("Ich schaue nach. [[mcp:both]] erfunden")
+        }
+        val events = r.ask("Was ist 6 mal 7?")
+        assertEquals(2, r.llm.requests.size) // Modell antwortet auf das Ergebnis
+        assertEquals(listOf(CHAT, CHAT, TOOL_RESULT, CHAT), r.history().map { it.kind })
+        assertEquals("Das macht 42.", r.history().last().content)
+        val shown = events.filterIsInstance<ChatEvent.Added>().map { it.message }.filter { it.kind == TOOL_SHOWN }
+        assertEquals(listOf("42"), shown.map { it.content }) // Klartext im Chat, aber nur zur Anzeige
+        assertTrue(r.history().none { it.kind == TOOL_SHOWN })
+        // Folgefrage: das Modell hat Aufruf, Ergebnis und eigene Antwort im Verlauf
+        r.ask("Und plus eins?")
+        assertTrue(r.llm.requests.last().toString().contains("[Ergebnis von both]\\n42")) // im JSON steht der Zeilenumbruch als \n
     }
 
     @Test

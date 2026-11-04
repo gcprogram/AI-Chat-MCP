@@ -56,7 +56,7 @@
             },
             "hint": "Weather forecast for today or tomorrow",
             "example": "[[mcp:weather|Berlin|tomorrow]]",
-            "result": "show",
+            "result": "both",
             "confirm": false
         },
         "weather-past": {
@@ -71,7 +71,7 @@
             },
             "hint": "Weather on a past day",
             "example": "[[mcp:weather-past|Berlin|2020-11-25]]",
-            "result": "show",
+            "result": "both",
             "confirm": false
         },
         "websearch": {

@@ -67,8 +67,12 @@ class ChatSession(var config: Config, var persona: Persona, var registry: ToolRe
     fun load(messages: List<Message>): String {
         reset()
         history += messages
-        while (history.isNotEmpty() && history.last().isTool) history.removeAt(history.size - 1) // verwaist
-        if (history.isNotEmpty() && history.last().role == "user") return history.removeAt(history.size - 1).content
+        // Ein Ergebnis ohne Antwort des Modells ist verwaist. Ein angezeigtes Ergebnis (show) ist dagegen der gewollte
+        // Endzustand und geht mit der nächsten Nutzernachricht ans Modell - es bleibt (anders als in der Python-App).
+        while (history.isNotEmpty() && history.last().isTool && history.last().kind != TOOL_SHOWN) history.removeAt(history.size - 1)
+        if (history.isNotEmpty() && history.last().role == "user" && !history.last().isTool) {
+            return history.removeAt(history.size - 1).content
+        }
         return ""
     }
 
@@ -85,7 +89,7 @@ class ChatSession(var config: Config, var persona: Persona, var registry: ToolRe
                 var text = m.content
                 if (i < lastQuestion && text.length > OLD_RESULT_CHARS) text = text.substring(0, OLD_RESULT_CHARS).trimEnd() + " […]"
                 if (m.kind == TOOL_SHOWN) {
-                    shown += "[Ergebnis von ${m.tool}, ${config.userName} schon angezeigt]\n$text\n[Ende des Ergebnisses]"
+                    shown +="[Ergebnis von ${m.tool}, ${config.userName} schon angezeigt]\n$text\n[Ende des Ergebnisses]"
                     return@forEachIndexed
                 }
                 m = m.copy(content = resultMessage(m.tool, text, m.kind == TOOL_RESULT, config.userName))

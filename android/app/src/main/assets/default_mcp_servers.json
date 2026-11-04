@@ -15,13 +15,13 @@
             "server": "weather", "tool": "forecast", "params": ["place", "day"],
             "defaults": {"place": "Berlin", "day": "today"},
             "hint": "Weather forecast for today or tomorrow", "example": "[[mcp:weather|Berlin|tomorrow]]",
-            "result": "show", "confirm": false
+            "result": "both", "confirm": false
         },
         "weather-past": {
             "server": "weather", "tool": "historical", "params": ["place", "date"],
             "defaults": {"place": "Berlin"},
             "hint": "Weather on a past day", "example": "[[mcp:weather-past|Berlin|2020-11-25]]",
-            "result": "show", "confirm": false
+            "result": "both", "confirm": false
         },
         "websearch": {
             "server": "websearch", "tool": "search", "params": ["query"],

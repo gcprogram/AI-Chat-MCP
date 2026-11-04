@@ -24,7 +24,10 @@ private val QUOTES = mapOf('"' to '"', '\'' to '\'', '„' to '“', '“' to '�
 const val RESULT_MODEL = "model"
 const val RESULT_SHOW = "show"
 const val RESULT_DISCARD = "discard"
-val RESULT_MODES = listOf(RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD)
+
+/** Ergebnis unverändert im Chat zeigen UND dem Modell geben, das darauf antwortet (Folgefragen klappen). */
+const val RESULT_BOTH = "both"
+val RESULT_MODES = listOf(RESULT_MODEL, RESULT_SHOW, RESULT_DISCARD, RESULT_BOTH)
 
 data class ToolCall(
     val name: String,
@@ -141,7 +144,7 @@ data class ToolSpec(
     // Nur bei Aliasen aus dem Block "aliases":
     val fixed: Map<String, Any?> = emptyMap(), // feste Argumente, die das Modell nicht sieht
     val defaults: Map<String, Any?> = emptyMap(), // Ersatz für fehlende Argumente
-    val result: String = RESULT_MODEL, // model: Modell antwortet | show: Klartext im Chat | discard: nur Statuszeile
+    val result: String = RESULT_MODEL, // model: Modell antwortet | show: Klartext im Chat | discard: nur Statuszeile | both
     val status: String = "", // Statuszeile bei discard
     val confirm: Boolean? = null, // null = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
     val remember: Boolean = false, // Ergebnis bei show/discard dem Modell im Verlauf zeigen

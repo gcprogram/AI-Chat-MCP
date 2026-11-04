@@ -122,7 +122,7 @@ Je kürzer und einfacher das, was das Modell schreiben muss, desto zuverlässige
 | `params` | Argumente, die das Modell schreibt (Reihenfolge = Reihenfolge im Marker); ohne Angabe alle, die nicht in `args` stehen |
 | `defaults` | Ersatz für fehlende Argumente (das Argument wird dadurch optional) |
 | `hint`, `example` | Zeile im Prompt (je kürzer, desto weniger Kontext) |
-| `result` | `model` (Standard): Ergebnis geht ans Modell, das darauf antwortet · `show`: Klartext im Chat, keine zweite Modellrunde (spart Kontext, nichts wird verfälscht) · `discard`: Ergebnis verwerfen, nur Statuszeile `status` |
+| `result` | `model` (Standard): Ergebnis geht ans Modell, das darauf antwortet · `show`: Klartext im Chat, keine zweite Modellrunde (spart Kontext, nichts wird verfälscht) · `discard`: Ergebnis verwerfen, nur Statuszeile `status` · `both`: Klartext im Chat **und** das Modell bekommt das Ergebnis und antwortet darauf (Folgefragen wie „Brauche ich eine Jacke?“ klappen; bei `show` sieht ein kleines Modell nur eigene Aufrufe im Verlauf und ruft das Werkzeug erneut auf) |
 | `remember` | Ergebnis (bei `discard` der Status) dem Modell mit der nächsten Nutzernachricht zeigen; Standard: `true` bei `show`, sonst `false` |
 | `confirm` | `true`/`false` überstimmt die globale Rückfrage-Einstellung für diesen Alias |
 
@@ -185,7 +185,7 @@ gradlew :core:test :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-- `android/core`: reine Kotlin-Logik ohne Android (41 JVM-Tests; Erwartungswerte aus der Python-Version).
+- `android/core`: reine Kotlin-Logik ohne Android (42 JVM-Tests und 5 Geräte-Tests; Erwartungswerte aus der Python-Version).
 - `android/app`: Oberfläche (Chat, Einstellungen, Companions, Werkzeuge) und Speicher im privaten App-Ordner.
 - **Server erreichen**: im Heimnetz `http://<PC-IP>:1234/v1`; per USB `adb reverse tcp:1234 tcp:1234` und
   `http://127.0.0.1:1234/v1` (auch im Hotel-WLAN).

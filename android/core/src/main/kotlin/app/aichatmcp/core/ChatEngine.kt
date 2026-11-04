@@ -155,6 +155,11 @@ class ChatEngine(
                 emit(ChatEvent.Finished)
                 return@flow
             }
+            if (outcome.ok && outcome.mode == RESULT_BOTH) { // Klartext im Chat (nur Anzeige) UND das Modell antwortet darauf
+                emit(ChatEvent.Added(Message("user", outcome.text, TOOL_SHOWN, outcome.tool)))
+                session.addToolResult(outcome.tool, outcome.text, true)
+                continue
+            }
             emit(ChatEvent.Added(session.addToolResult(outcome.tool, outcome.text, outcome.ok))) // Modell antwortet darauf
         }
     }
