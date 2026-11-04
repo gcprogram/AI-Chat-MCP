@@ -12,3 +12,6 @@ chats/
 build/
 dist/
 main.spec
+
+.gradle/
+android/local.properties
