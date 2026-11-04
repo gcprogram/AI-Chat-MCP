@@ -64,7 +64,7 @@ Der Parser ist tolerant: Groß-/Kleinschreibung, `_` = `-`, Anführungszeichen, 
 Webseiten-Inhalt), und standardmäßig fragt das Programm vor jedem Aufruf nach.
 
 **Einrichtung**: `examples/mcp_servers.example.json` nach `mcp_servers.json` kopieren (Format wie bei Claude
-Desktop, `mcpServers` oder `servers`; nur stdio-Server). Pro Werkzeug kann ein kurzer deutscher `alias`, `hint`,
+Desktop, `mcpServers` oder `servers`; stdio-Server mit `command`, HTTP-Server mit `url`, siehe unten). Pro Werkzeug kann ein kurzer deutscher `alias`, `hint`,
 `example` und die sichtbaren `args` angegeben werden – je einfacher, desto zuverlässiger das kleine Modell.
 Dann in **Companions…** die Werkzeuge pro Companion ankreuzen; sie erscheinen im Prompt mit Beispielzeile. Die zweite
 Checkbox **ohne Rückfrage** genehmigt ein Werkzeug für diesen Companion vorab (`approved_tools` in der Persona-Datei):
@@ -73,6 +73,27 @@ Werkzeuge fragen weiter nach (globale Einstellung bzw. `confirm` des Alias); die
 `examples/demo_mcp_server.py` (Uhrzeit, Rechnen) dient zum Ausprobieren.
 
 **Namen und Beschreibungen sind englisch** (Alias, `hint`, `example`, Parameter, Prompt-Abschnitt "Tools:"): kleine Modelle folgen englischen Anweisungen zuverlässiger, und der Aufruf bleibt unabhängig von der Chat-Sprache.
+
+### HTTP-Server (Streamable HTTP)
+
+Statt eines Unterprozesses (`command`) kann ein Eintrag einen MCP-Server über HTTP ansprechen (`url`) – z. B. im Heimnetz
+oder die Fernbedienungs-App auf dem Handy direkt, ohne stdio-Bridge:
+
+```json
+"remote": {"url": "https://192.168.1.20:8443/mcp", "headers": {"Authorization": "Bearer ${BROADCAST_REMOTE_TOKEN}"},
+           "cert": "~/.broadcast-remote/cert.pem", "raw": false}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `url` | Endpunkt des Servers (`https://…`; `http://` nur für localhost, Heimnetz-Adressen und `.local`) |
+| `headers` | zusätzliche Header; `${NAME}` wird aus der Umgebungsvariable eingesetzt, der Token steht also nie in der Datei. Fehlt die Variable, steht ihr Name in der Fehlermeldung |
+| `cert` | Zertifikat (PEM) eines selbst signierten Servers als einziger Vertrauensanker; ohne Angabe gelten die System-Zertifikate |
+
+`raw`, `tools`, `disabled` und die Aliase funktionieren wie bei stdio. Antworten als JSON oder als SSE-Strom werden
+verstanden; läuft die Sitzung auf dem Server ab (Neustart), meldet sich der Client einmal selbst neu an. Weiterleitungen
+werden nicht verfolgt, damit der Token nicht an einen fremden Host geht. Verbindungsfehler (Handy aus, falsches WLAN)
+erscheinen wie bei stdio in der Statuszeile; die übrigen Server laufen weiter.
 
 ### Aliase (Kurznamen)
 
@@ -128,7 +149,7 @@ Ein Aufruf ohne Ergebnis (abgebrochen) wird beim nächsten Senden zu normalem Te
   wie `Langen` kann mehrdeutig sein: `Langen, Hesse` wählt beim Archiv den passenden Treffer. Ausgabe englisch.
 - `websearch_server.py` (Alias `websearch`): `search` über die HTML-Ausgabe von DuckDuckGo (Titel, Adresse, Auszug). Das Seitenformat
   ist nicht garantiert; ändert es sich, muss nur `parse_results()` angepasst werden.
-- Fernbedienung: die Bridge aus dem Projekt Broadcast-Remote ist selbst ein stdio-MCP-Server (`status`, `buttons`,
+- Fernbedienung: entweder direkt per HTTP (siehe oben) oder über die Bridge aus dem Projekt Broadcast-Remote, die selbst ein stdio-MCP-Server (`status`, `buttons`,
   `send(code)`, `off`). Der Token gehört in die Umgebungsvariable `BROADCAST_REMOTE_TOKEN` (wird an den Server
   durchgereicht), nicht in die Datei. Der Beispieleintrag ist deaktiviert und nicht gegen echte Hardware geprüft.
 
@@ -147,6 +168,6 @@ mehr ins Kontextfenster (Einstellung, Standard 8192), werden die ältesten Runde
 ## Roadmap
 
 - Kontext-Strategie ausbauen: alte Runden zusammenfassen statt nur abschneiden, feste „Erinnerungen“.
-- MCP: HTTP-Transport, keine Rückfrage für schreibgeschützte Tools (`readOnlyHint`).
+- MCP: keine Rückfrage für schreibgeschützte Tools (`readOnlyHint`).
 - Umschalten zwischen lokalem und Online-Modell (Profile).
 - Stimme (Sprachausgabe) pro Companion; evtl. Bild oder Video.

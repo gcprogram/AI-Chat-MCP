@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 74 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 85 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -44,6 +44,10 @@ python main.py
 - Companions: `personas/*.json` + `personas/avatars/`, Editor in `persona_editor.py`; Werkzeuge pro Companion
   (`tools`), davon vorab genehmigte ohne Rückfrage (`approved_tools`, schlägt globale Einstellung und Alias-`confirm`). Chats: `chatlog.py` (JSON vollständig, TXT lesbar/ladbar), Ordner `chats/` (gitignored).
 - `mcp_servers.json` ist gitignored (kann Schlüssel enthalten); Vorlage in `examples/`.
+- **MCP-Transporte**: `McpClient` (Basis, `mcp_client.py`) mit `McpServer` (stdio) und `HttpMcpServer` (`mcp_http.py`,
+  Streamable HTTP: JSON oder SSE, `Mcp-Session-Id`, einmalige Neuanmeldung bei 404). Eintrag mit `url` statt `command`;
+  Header mit `${ENV}` (Token nie in die Datei), `http://` nur lokal, `cert` als einziger Vertrauensanker, keine
+  Weiterleitungen. Nur gegen Fake-Server getestet, nicht gegen die echte Handy-App (war nicht erreichbar).
 - **Alias-Layer** (`aliases` in `mcp_servers.json`, `ToolSpec.fixed/defaults/result/status/confirm/remember`): Kurzname →
   echtes MCP-Tool mit festen Argumenten, damit das kleine Modell nur einen Namen (plus ≤1 Argument) schreiben muss.
   `result`: `model` (Antwortrunde) | `show` (Klartext im Chat, `Message.kind = tool_shown`, keine zweite Runde) |
@@ -72,11 +76,11 @@ python main.py
 2. **Kontext-Strategie** in `context.py` ausbauen: alte Runden zusammenfassen (Summary im System-Prompt), feste
    Erinnerungen behalten, Zusammenfassung ggf. durch das Modell selbst.
 3. **Profile** für lokal/online umschaltbar (URL, Token, Modell pro Profil; Token nicht im Klartext ins Repo).
-4. MCP: HTTP-Transport; Rückfrage nur für nicht schreibgeschützte Tools (`readOnlyHint` wird schon gelesen).
+4. MCP: Rückfrage nur für nicht schreibgeschützte Tools (`readOnlyHint` wird schon gelesen).
 5. Stimme (Sprachausgabe) pro Companion.
 
 ## Aufbau
 `chat_app/`: `config.py` · `persona.py` · `context.py` · `session.py` (Verlauf, baut Anfrage) · `llm_client.py`
-(SSE-Streaming) · `reply.py` · `tools.py` · `mcp_client.py` · `chatlog.py` · `avatar.py` · `persona_editor.py` ·
+(SSE-Streaming) · `reply.py` · `tools.py` · `mcp_client.py` · `mcp_http.py` · `chatlog.py` · `avatar.py` · `persona_editor.py` ·
 `gui.py` (Streaming-/Werkzeug-Thread → Queue → GUI). `servers/`: eigene MCP-Server (`mini_mcp.py`, `weather_server.py`,
 `websearch_server.py`). Nicht getestet: echte LM-Studio-Antworten, echte Fernbedienungs-Bridge.

@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import APP_DIR, MCP_CONFIG_PATH
-from .mcp_client import McpError, McpServer
+from .mcp_client import McpClient, McpError, McpServer
+from .mcp_http import HttpMcpServer
 
 log = logging.getLogger(__name__)
 
@@ -256,14 +257,14 @@ class ToolRegistry:
     """Alle Werkzeuge der konfigurierten MCP-Server. Pro Companion wird eine Auswahl freigeschaltet."""
 
     def __init__(self) -> None:
-        self.servers: dict[str, McpServer] = {}
+        self.servers: dict[str, McpClient] = {}
         self.tools: dict[str, ToolSpec] = {}  # was das Modell benutzen darf (Aliase)
         self.remote: dict[tuple[str, str], ToolSpec] = {}  # alle Werkzeuge der Server, auch unsichtbare
         self.errors: list[str] = []
 
     # --- Aufbau --------------------------------------------------------------------------------
 
-    def add_server(self, name: str, server: McpServer, overrides: dict | None = None,
+    def add_server(self, name: str, server: McpClient, overrides: dict | None = None,
                    *, expose_raw: bool = True) -> list[str]:
         """Startet den Server (blockierend) und registriert seine Werkzeuge. Liefert die neuen Aliase.
         Mit expose_raw=False bleiben die Werkzeuge unsichtbar und sind nur über "aliases" erreichbar."""
@@ -350,6 +351,19 @@ class ToolRegistry:
             fixed=dict(fixed), defaults=dict(defaults), result=mode, status=str(entry.get("status") or ""),
             confirm=confirm, remember=bool(remember))
 
+    @staticmethod
+    def _server_from_entry(name: str, entry: dict, base_dir: Path) -> McpClient:
+        """"command" = stdio-Unterprozess, "url" = HTTP-Server (headers mit ${UMGEBUNGSVARIABLE}, cert = Vertrauensanker)."""
+        if entry.get("url"):
+            headers = entry.get("headers") or {}
+            if not isinstance(headers, dict):
+                raise ValueError("'headers' muss ein Objekt sein")
+            return HttpMcpServer(str(entry["url"]), {str(k): str(v) for k, v in headers.items()},
+                                 str(entry["cert"]) if entry.get("cert") else None, name)
+        return McpServer(str(entry["command"]), [str(a) for a in entry.get("args", [])],
+                         {str(k): str(v) for k, v in (entry.get("env") or {}).items()},
+                         str(entry.get("cwd") or base_dir), name)
+
     def start_from_config(self, path: Path | str = MCP_CONFIG_PATH, base_dir: Path = APP_DIR) -> None:
         """Liest mcp_servers.json (Format wie bei Claude Desktop: "mcpServers"; zusätzlich "tools"-Hinweise)."""
         path = Path(path)
@@ -364,12 +378,10 @@ class ToolRegistry:
             self.errors.append(f"{path.name} nicht lesbar: {exc}")
             return
         for name, entry in servers.items():
-            if not isinstance(entry, dict) or entry.get("disabled") or not entry.get("command"):
+            if not isinstance(entry, dict) or entry.get("disabled") or not (entry.get("command") or entry.get("url")):
                 continue
-            server = McpServer(str(entry["command"]), [str(a) for a in entry.get("args", [])],
-                               {str(k): str(v) for k, v in (entry.get("env") or {}).items()},
-                               str(entry.get("cwd") or base_dir), name)
             try:
+                server = self._server_from_entry(name, entry, base_dir)
                 self.add_server(name, server, entry.get("tools"), expose_raw=entry.get("raw", True) is not False)
             except (McpError, OSError, ValueError, KeyError) as exc:
                 log.warning("MCP-Server '%s' nicht verfügbar: %s", name, exc)

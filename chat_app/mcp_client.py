@@ -1,6 +1,7 @@
 """Minimaler MCP-Client über stdio (JSON-RPC, eine Nachricht pro Zeile) - ohne externe Abhängigkeiten.
 
-Reicht für lokale MCP-Server (npx/uvx/python): initialize, tools/list, tools/call."""
+Reicht für lokale MCP-Server (npx/uvx/python): initialize, tools/list, tools/call. Den HTTP-Transport liefert
+`mcp_http.py` (gleiche Schnittstelle: `McpClient`)."""
 from __future__ import annotations
 
 import json
@@ -20,7 +21,51 @@ class McpError(Exception):
     pass
 
 
-class McpServer:
+class McpClient:
+    """Gemeinsame Schnittstelle der Transporte (stdio, HTTP): start, close, request; Werkzeuge darüber."""
+
+    name = "mcp"
+
+    def start(self, timeout: float = 30.0) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+    def request(self, method: str, params: dict | None = None, timeout: float = 30.0) -> dict:
+        raise NotImplementedError
+
+    # --- Werkzeuge -----------------------------------------------------------------------------
+
+    def list_tools(self, timeout: float = 30.0) -> list[dict]:
+        tools: list[dict] = []
+        cursor = None
+        for _ in range(20):  # Seitenlimit gegen Endlosschleifen
+            result = self.request("tools/list", {"cursor": cursor} if cursor else {}, timeout)
+            tools += [t for t in result.get("tools", []) if isinstance(t, dict) and t.get("name")]
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return tools
+
+    def call_tool(self, name: str, arguments: dict, timeout: float = 60.0) -> tuple[str, bool]:
+        """Liefert (Text, ist_Fehler)."""
+        result = self.request("tools/call", {"name": name, "arguments": arguments}, timeout)
+        parts = []
+        for item in result.get("content") or []:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("type")
+            if kind == "text":
+                parts.append(str(item.get("text", "")))
+            elif kind:
+                parts.append(f"[{kind}-Inhalt, nicht darstellbar]")
+        if not parts and result.get("structuredContent") is not None:
+            parts.append(json.dumps(result["structuredContent"], ensure_ascii=False))
+        return "\n".join(parts).strip(), bool(result.get("isError"))
+
+
+class McpServer(McpClient):
     def __init__(self, command: str, args: list[str] | tuple[str, ...] = (), env: dict[str, str] | None = None,
                  cwd: str | None = None, name: str = "mcp"):
         self.name = name
@@ -150,32 +195,3 @@ class McpServer:
     def _drain_stderr(self) -> None:
         for raw in self.proc.stderr:  # type: ignore[union-attr]
             log.debug("[%s] %s", self.name, raw.decode("utf-8", errors="replace").rstrip())
-
-    # --- Werkzeuge -----------------------------------------------------------------------------
-
-    def list_tools(self, timeout: float = 30.0) -> list[dict]:
-        tools: list[dict] = []
-        cursor = None
-        for _ in range(20):  # Seitenlimit gegen Endlosschleifen
-            result = self.request("tools/list", {"cursor": cursor} if cursor else {}, timeout)
-            tools += [t for t in result.get("tools", []) if isinstance(t, dict) and t.get("name")]
-            cursor = result.get("nextCursor")
-            if not cursor:
-                break
-        return tools
-
-    def call_tool(self, name: str, arguments: dict, timeout: float = 60.0) -> tuple[str, bool]:
-        """Liefert (Text, ist_Fehler)."""
-        result = self.request("tools/call", {"name": name, "arguments": arguments}, timeout)
-        parts = []
-        for item in result.get("content") or []:
-            if not isinstance(item, dict):
-                continue
-            kind = item.get("type")
-            if kind == "text":
-                parts.append(str(item.get("text", "")))
-            elif kind:
-                parts.append(f"[{kind}-Inhalt, nicht darstellbar]")
-        if not parts and result.get("structuredContent") is not None:
-            parts.append(json.dumps(result["structuredContent"], ensure_ascii=False))
-        return "\n".join(parts).strip(), bool(result.get("isError"))

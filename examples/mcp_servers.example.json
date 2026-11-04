@@ -34,13 +34,11 @@
         },
         "remote": {
             "disabled": true,
-            "command": "python",
-            "args": [
-                "C:/path/to/Broadcast-Remote/pc/broadcast_remote_bridge.py"
-            ],
-            "env": {
-                "BROADCAST_REMOTE_URL": "https://192.168.1.20:8443/mcp"
+            "url": "https://192.168.1.20:8443/mcp",
+            "headers": {
+                "Authorization": "Bearer ${BROADCAST_REMOTE_TOKEN}"
             },
+            "cert": "~/.broadcast-remote/cert.pem",
             "raw": false
         }
     },
