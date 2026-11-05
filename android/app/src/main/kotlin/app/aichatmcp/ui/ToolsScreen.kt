@@ -68,10 +68,19 @@ fun ToolsScreen(vm: ChatViewModel, onBack: () -> Unit, onImportMcp: () -> Unit, 
                 TextButton(onClick = { vm.deleteSecret(name) }) { Text("Löschen") }
             }
         }
+        // Fehlende Geheimnisse stehen als ${NAME} in der Konfiguration: den ersten davon als Namen vorschlagen
+        val missing = Regex("\\$\\{(\\w+)\\}").findAll(vm.mcpText).map { it.groupValues[1] }.distinct().filter { it !in vm.secretNames }.toList()
+        LaunchedEffect(missing) { if (secretName.isBlank()) missing.firstOrNull()?.let { secretName = it } }
+        if (missing.isNotEmpty()) {
+            Text("Es fehlt noch: ${missing.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
         TextSetting("Name (z. B. BROADCAST_REMOTE_TOKEN)", secretName, { secretName = it })
         TextSetting("Wert", secretValue, { secretValue = it }, secret = true)
         OutlinedButton(onClick = { vm.setSecret(secretName, secretValue); secretValue = "" }, enabled = secretName.isNotBlank() && secretValue.isNotEmpty()) {
             Text("Geheimnis speichern")
+        }
+        if (secretName.isBlank() && secretValue.isNotEmpty()) {
+            Text("Der Name fehlt: oben bei „Name“ eintragen (z. B. BROADCAST_REMOTE_TOKEN).", style = MaterialTheme.typography.bodySmall)
         }
 
         SectionTitle("Zertifikate (selbst signierte Server)")

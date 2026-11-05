@@ -603,9 +603,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSecret(name: String, value: String) {
         val clean = name.trim()
-        if (clean.isEmpty() || value.isEmpty()) return
-        storage.saveSecrets(storage.secrets() + (clean to value))
+        val token = value.trim() // beim Einfügen kommen oft Leerzeichen oder ein Zeilenumbruch mit
+        if (clean.isEmpty() || token.isEmpty()) return
+        storage.saveSecrets(storage.secrets() + (clean to token))
         secretNames = storage.secrets().keys.sorted()
+        reloadTools() // der Server, der das Geheimnis braucht, startet jetzt
     }
 
     fun deleteSecret(name: String) {
