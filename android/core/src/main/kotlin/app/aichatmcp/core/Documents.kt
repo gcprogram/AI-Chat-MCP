@@ -9,7 +9,7 @@ import java.util.zip.ZipInputStream
 /** Eine Datei konnte nicht gelesen werden (Text für die Anzeige). */
 class DocumentException(message: String) : Exception(message)
 
-enum class DocKind { TEXT, MARKDOWN, DOCX, PDF }
+enum class DocKind { TEXT, MARKDOWN, DOCX, PDF, IMAGE }
 
 /** Ein eingelesener Text, bereit für die Rückfrage "Was soll ich damit machen?". */
 data class DocText(val name: String, val kind: DocKind, val text: String)
@@ -26,10 +26,12 @@ object Documents {
     const val MAX_BYTES = 12_000_000
     const val MAX_CHARS = 600_000
     private const val MAX_XML_BYTES = 40_000_000
+    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "bmp", "webp", "heic")
 
     fun kindOf(name: String, mime: String? = null): DocKind? {
         val ext = name.substringAfterLast('.', "").lowercase()
         return when {
+            ext in IMAGE_EXTENSIONS || mime?.startsWith("image/") == true -> DocKind.IMAGE
             ext == "pdf" || mime == "application/pdf" -> DocKind.PDF
             ext == "docx" || mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> DocKind.DOCX
             ext == "md" || ext == "markdown" || mime == "text/markdown" || mime == "text/x-markdown" -> DocKind.MARKDOWN
@@ -42,6 +44,7 @@ object Documents {
     fun read(name: String, kind: DocKind, bytes: ByteArray, pdf: (ByteArray) -> String): DocText {
         if (bytes.size > MAX_BYTES) throw DocumentException("Die Datei ist zu groß (mehr als ${MAX_BYTES / 1_000_000} MB).")
         val raw = when (kind) {
+            DocKind.IMAGE -> throw DocumentException("Bilder werden vom Bildmodell beschrieben, nicht als Text gelesen.")
             DocKind.TEXT, DocKind.MARKDOWN -> decodeText(bytes)
             DocKind.DOCX -> docxText(bytes)
             DocKind.PDF -> try {
@@ -140,6 +143,20 @@ object Documents {
     /** Text fürs Eingabefeld: Kopfzeile mit dem Dateinamen, danach der (gekürzte) Inhalt; die Frage tippt der Nutzer dahinter. */
     fun inputText(name: String, fitted: Fitted): String =
         "[Datei: $name]\n${fitted.text}" + if (fitted.truncated) "\n[… gekürzt, ${fitted.totalChars} Zeichen insgesamt]" else ""
+
+    /**
+     * Schneidet einen mitten im Satz abgebrochenen Text (Token-Grenze) am letzten vollständigen Satz ab. Ist kein Satzende im
+     * hinteren Teil zu finden, bleibt der Text wie er ist.
+     */
+    fun completeSentences(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || trimmed.last() in ".!?…") return trimmed
+        val end = trimmed.lastIndexOfAny(charArrayOf('.', '!', '?', '…'))
+        return if (end >= trimmed.length / 2) trimmed.substring(0, end + 1) else trimmed
+    }
+
+    /** Beschreibung eines Bildes fürs Eingabefeld: Kopfzeile mit dem Dateinamen, die Frage schreibt der Nutzer dahinter. */
+    fun imageInputText(name: String, description: String): String = "[Bild: $name - Beschreibung des Bildmodells]\n${description.trim()}"
 
     /** Anweisung zur Zusammenfassung (englisch: kleine Modelle folgen englischen Anweisungen besser). */
     fun summaryPrompt(name: String, fitted: Fitted, language: String): String =

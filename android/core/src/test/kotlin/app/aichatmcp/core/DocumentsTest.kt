@@ -29,7 +29,11 @@ class DocumentsTest {
         assertEquals(DocKind.MARKDOWN, Documents.kindOf("README.md"))
         assertEquals(DocKind.TEXT, Documents.kindOf("notiz.txt"))
         assertEquals(DocKind.TEXT, Documents.kindOf("ohne-endung", "text/plain"))
-        assertNull(Documents.kindOf("bild.png", "image/png"))
+        assertEquals(DocKind.IMAGE, Documents.kindOf("bild.PNG"))
+        assertEquals(DocKind.IMAGE, Documents.kindOf("foto", "image/jpeg"))
+        assertNull(Documents.kindOf("film.mp4", "video/mp4"))
+        assertTrue(assertFailsWith<DocumentException> { Documents.read("a.jpg", DocKind.IMAGE, ByteArray(3), noPdf) }.message!!.contains("Bildmodell"))
+        assertEquals("[Bild: a.jpg - Beschreibung des Bildmodells]\nEine Katze.", Documents.imageInputText("a.jpg", " Eine Katze.\n"))
     }
 
     @Test
@@ -61,6 +65,15 @@ class DocumentsTest {
         assertTrue(assertFailsWith<DocumentException> { Documents.read("s.pdf", DocKind.PDF, ByteArray(10)) { "" } }.message!!.contains("Scan"))
         assertTrue(assertFailsWith<DocumentException> { Documents.read("k.pdf", DocKind.PDF, ByteArray(10)) { error("kaputt") } }.message!!.contains("PDF"))
         assertTrue(assertFailsWith<DocumentException> { Documents.read("g.txt", DocKind.TEXT, ByteArray(Documents.MAX_BYTES + 1), noPdf) }.message!!.contains("zu groß"))
+    }
+
+    @Test
+    fun completeSentencesCutsOffAnInterruptedLastSentence() {
+        assertEquals("Eine Katze sitzt. Sie ist grau.", Documents.completeSentences("Eine Katze sitzt. Sie ist grau. Im Hintergrund sind Qua"))
+        assertEquals("Fertig.", Documents.completeSentences(" Fertig. "))
+        assertEquals("Ein sehr langer Satz ohne Ende und", Documents.completeSentences("Ein sehr langer Satz ohne Ende und")) // kein Satzende: unverändert
+        assertEquals("Kurz. Und dann ein sehr langer abgebrochener zweiter Teil ohne Punkt", Documents.completeSentences("Kurz. Und dann ein sehr langer abgebrochener zweiter Teil ohne Punkt"))
+        assertEquals("", Documents.completeSentences("  "))
     }
 
     @Test

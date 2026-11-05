@@ -17,6 +17,8 @@ set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_APP OFF CACHE BOOL "" FORCE)
+# Nur die Bild-Bibliothek (libmtmd) ohne den Rest von tools/: für das Bildmodell (Bilder beschreiben).
+set(LLAMA_BUILD_MTMD ON CACHE BOOL "" FORCE)
 set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 
@@ -28,6 +30,6 @@ set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_DIR} llama.cpp)
 
-add_library(aichat_llama SHARED llama_jni.cpp)
-target_include_directories(aichat_llama PRIVATE ${LLAMA_DIR}/include ${LLAMA_DIR}/ggml/include)
-target_link_libraries(aichat_llama PRIVATE llama ggml log android)
+add_library(aichat_llama SHARED llama_jni.cpp vision_jni.cpp)
+target_include_directories(aichat_llama PRIVATE ${LLAMA_DIR}/include ${LLAMA_DIR}/ggml/include ${LLAMA_DIR}/tools/mtmd)
+target_link_libraries(aichat_llama PRIVATE mtmd llama ggml log android)

@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.PendingDoc
+import app.aichatmcp.PendingImage
 import app.aichatmcp.UiKind
 import app.aichatmcp.UiMessage
 import app.aichatmcp.core.ChatEvent
@@ -89,6 +90,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
             }
         }
         HorizontalDivider()
+        vm.pendingImage?.let { ImageCard(it, vm) }
         vm.pendingDoc?.let { DocCard(it, vm) }
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(vm.status, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -228,7 +230,14 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(vm.persona.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-            Text("Die Datei „${doc.name}“ ist da (${doc.text.length} Zeichen, ca. ${doc.tokens} Tokens). Was soll ich damit machen?", style = MaterialTheme.typography.bodyLarge)
+            if (doc.image) {
+                Text("${doc.name}: So sieht das Bildmodell es (englisch):", style = MaterialTheme.typography.bodyMedium)
+                // Die Karte darf den Chat nicht verdrängen: lange Beschreibungen erscheinen gekürzt (die Eingabe bekommt den ganzen Text)
+                Text(doc.text, style = MaterialTheme.typography.bodyLarge, maxLines = 7, overflow = TextOverflow.Ellipsis)
+                Text("Was soll ich damit machen?", style = MaterialTheme.typography.bodyLarge)
+            } else {
+                Text("Die Datei „${doc.name}“ ist da (${doc.text.length} Zeichen, ca. ${doc.tokens} Tokens). Was soll ich damit machen?", style = MaterialTheme.typography.bodyLarge)
+            }
             if (doc.tokens > doc.budget) {
                 Text(
                     "Der Text ist länger als mein Kontext (Platz für ca. ${doc.budget} Tokens): Beim Einlesen und Zusammenfassen berücksichtige ich nur den Anfang. Vorlesen geht vollständig.",
@@ -244,8 +253,40 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Button(onClick = vm::docAsInput) { Text("1 · Als Eingabe einlesen") }
                     Button(onClick = vm::docRead) { Text("2 · Vorlesen") }
-                    Button(onClick = vm::docSummarize, enabled = !vm.streaming) { Text("3 · Zusammenfassen") }
+                    if (!doc.image) Button(onClick = vm::docSummarize, enabled = !vm.streaming) { Text("3 · Zusammenfassen") }
                     TextButton(onClick = vm::dismissDoc) { Text("Verwerfen") }
+                }
+            }
+        }
+    }
+}
+
+/** Rückfrage zu einem gewählten Bild: Das kleine Bildmodell beschreibt es als Text (das Chat-Modell kann keine Bilder sehen). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ImageCard(image: PendingImage, vm: ChatViewModel) {
+    Surface(
+        shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(vm.persona.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+            Text("Das Bild „${image.name}“ ist da (${image.jpeg.size / 1000} KB). Soll ich es beschreiben lassen?", style = MaterialTheme.typography.bodyLarge)
+            if (!vm.visionAvailable) {
+                Text(
+                    "Dafür fehlt ein Bildmodell: Einstellungen → Bildmodell (ein kleines Modell wie SmolVLM, GGUF und mmproj-Datei).",
+                    style = MaterialTheme.typography.bodySmall, color = ErrorRed,
+                )
+            }
+            if (vm.imageBusy) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Beschreibe das Bild…", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = vm::cancelImage) { Text("Abbrechen") }
+                }
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(onClick = vm::describeImage, enabled = vm.visionAvailable && !vm.streaming) { Text("Beschreiben") }
+                    TextButton(onClick = vm::dismissImage) { Text("Verwerfen") }
                 }
             }
         }

@@ -44,6 +44,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.aichatmcp.local.LocalLlm
+import app.aichatmcp.local.VisionLlm
 import app.aichatmcp.local.effectiveConfig
 import app.aichatmcp.speech.SpeechInput
 import app.aichatmcp.speech.SpeechPacks
@@ -69,7 +70,16 @@ private val VOICE_SAMPLES = mapOf(
 )
 
 /** Ein hochgeladenes Dokument, zu dem die App fragt, was damit geschehen soll. [tokens] grob geschätzt, [budget] = Platz im Kontext. */
-data class PendingDoc(val name: String, val kind: DocKind, val text: String, val tokens: Int, val budget: Int)
+data class PendingDoc(val name: String, val kind: DocKind, val text: String, val tokens: Int, val budget: Int, val image: Boolean = false)
+
+/** Ein gewähltes Bild (verkleinert, als JPEG), das noch nicht beschrieben ist. */
+class PendingImage(val name: String, val jpeg: ByteArray)
+
+private sealed interface Loaded
+private class LoadedDoc(val doc: app.aichatmcp.core.DocText) : Loaded
+private class LoadedImage(val name: String, val jpeg: ByteArray) : Loaded
+
+private const val IMAGE_PROMPT = "Describe this image briefly in 3 to 5 sentences. Mention the people, important objects, colors, the setting and any text you can read."
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
@@ -121,6 +131,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var docBusy by mutableStateOf(false)
         private set
+    var pendingImage by mutableStateOf<PendingImage?>(null)
+        private set
+    var imageBusy by mutableStateOf(false)
+        private set
+    var visionBusy by mutableStateOf(false)
+        private set
+    var visionNote by mutableStateOf("")
+        private set
     var docReading by mutableStateOf(false)
         private set
     var docProgress by mutableStateOf("")
@@ -140,6 +158,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var avatarVersion by mutableStateOf(0)
         private set
     private val localLlm = LocalLlm(app)
+    private val vision = VisionLlm(app)
+    val visionAvailable: Boolean get() = visionVersion >= 0 && vision.available
+    private var visionVersion by mutableStateOf(0) // ändert sich beim Import/Entfernen, damit die Oberfläche neu liest
     private val speechIn = SpeechInput(app)
     private val speechOut = SpeechOutput(app)
     private val packs = SpeechPacks(app)
@@ -326,11 +347,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         status = "Lese Datei…"
         viewModelScope.launch {
             try {
-                val doc = withContext(Dispatchers.IO) { readDocument(uri) }
+                val loaded = withContext(Dispatchers.IO) { readFile(uri) }
                 speechOut.stop()
-                val tokens = (doc.text.length / session.context.charsPerToken).toInt()
-                pendingDoc = PendingDoc(doc.name, doc.kind, doc.text, tokens, session.documentBudgetTokens())
-                status = "Datei gelesen: ${doc.name}"
+                pendingDoc = null
+                pendingImage = null
+                when (loaded) {
+                    is LoadedDoc -> {
+                        val doc = loaded.doc
+                        val tokens = (doc.text.length / session.context.charsPerToken).toInt()
+                        pendingDoc = PendingDoc(doc.name, doc.kind, doc.text, tokens, session.documentBudgetTokens())
+                        status = "Datei gelesen: ${doc.name}"
+                    }
+                    is LoadedImage -> {
+                        pendingImage = PendingImage(loaded.name, loaded.jpeg)
+                        status = "Bild geladen: ${loaded.name}"
+                    }
+                }
             } catch (e: DocumentException) {
                 status = e.message.orEmpty()
                 messages += UiMessage(UiKind.ERROR, "[Datei] ${e.message}")
@@ -345,13 +377,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun readDocument(uri: Uri): app.aichatmcp.core.DocText {
+    private fun readFile(uri: Uri): Loaded {
         val app = getApplication<Application>()
         val resolver = app.contentResolver
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Datei"
         val kind = Documents.kindOf(name, resolver.getType(uri))
-            ?: throw DocumentException("Dieses Dateiformat wird nicht unterstützt (möglich: PDF, TXT, MD, DOCX).")
+            ?: throw DocumentException("Dieses Dateiformat wird nicht unterstützt (möglich: PDF, TXT, MD, DOCX, Bilder).")
+        if (kind == DocKind.IMAGE) return LoadedImage(name, ImagePrep.jpeg(app, uri))
         val bytes = resolver.openInputStream(uri)?.use { input ->
             val out = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(64 * 1024)
@@ -362,14 +395,88 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             out.toByteArray()
         } ?: throw DocumentException("Die Datei lässt sich nicht öffnen.")
-        return Documents.read(name, kind, bytes) { PdfText.extract(app, it) }
+        return LoadedDoc(Documents.read(name, kind, bytes) { PdfText.extract(app, it) })
+    }
+
+    // --- Bilder: ein kleines Bildmodell beschreibt sie als Text ---------------------------------------------
+
+    /** Das Bildmodell beschreibt das gewählte Bild; die Beschreibung wird zum Text, mit dem dieselben Möglichkeiten gelten. */
+    fun describeImage() {
+        val image = pendingImage ?: return
+        if (imageBusy || streaming) return
+        if (!vision.available) {
+            status = "Für Bilder fehlt das Bildmodell (Einstellungen → Bildmodell)."
+            return
+        }
+        imageBusy = true
+        status = "Beschreibe das Bild… (das Bildmodell wird geladen)"
+        viewModelScope.launch {
+            try {
+                val text = Documents.completeSentences(withContext(Dispatchers.IO) { vision.describe(image.jpeg, IMAGE_PROMPT, config.localThreads) })
+                if (text.isBlank()) {
+                    status = "Keine Beschreibung erhalten."
+                } else {
+                    pendingImage = null
+                    val tokens = (text.length / session.context.charsPerToken).toInt()
+                    pendingDoc = PendingDoc("Bild ${image.name}", DocKind.IMAGE, text, tokens, session.documentBudgetTokens(), image = true)
+                    status = "Bild beschrieben."
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                status = "Bild konnte nicht beschrieben werden"
+                messages += UiMessage(UiKind.ERROR, "[Bild] ${e.message ?: e::class.simpleName}")
+            } finally {
+                imageBusy = false
+            }
+        }
+    }
+
+    fun cancelImage() = vision.cancel()
+
+    fun dismissImage() {
+        vision.cancel()
+        pendingImage = null
+    }
+
+    /** Kopiert das Sprachmodell des Bildmodells (GGUF) in den privaten Speicher. */
+    fun importVisionModel(uri: Uri, name: String) = importVision(uri, vision.modelFile, name, true)
+
+    /** Kopiert die Bild-Hilfsdatei (mmproj-GGUF) in den privaten Speicher. */
+    fun importVisionProj(uri: Uri, name: String) = importVision(uri, vision.projFile, name, false)
+
+    private fun importVision(uri: Uri, target: java.io.File, name: String, model: Boolean) {
+        if (visionBusy) return
+        visionBusy = true
+        visionNote = "Kopiere $name…"
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { vision.importFile(uri, target) }
+                saveConfig(if (model) config.copy(visionModelName = name) else config.copy(visionProjName = name))
+                visionNote = "$name übernommen (${bytes / 1_000_000} MB)."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                visionNote = "Import fehlgeschlagen: ${e.message ?: e::class.simpleName}"
+            } finally {
+                visionBusy = false
+                visionVersion++
+            }
+        }
+    }
+
+    fun removeVision() {
+        vision.remove()
+        saveConfig(config.copy(visionModelName = "", visionProjName = ""))
+        visionNote = "Bildmodell entfernt."
+        visionVersion++
     }
 
     /** Alternative 1: Text ins Eingabefeld übernehmen (auf das Kontextfenster gekürzt); die Frage schreibt der Nutzer dahinter. */
     fun docAsInput() {
         val doc = pendingDoc ?: return
         val fitted = Documents.fit(doc.text, session.documentBudgetTokens(), session.context.charsPerToken)
-        input = Documents.inputText(doc.name, fitted) + "\n\n"
+        input = (if (doc.image) Documents.imageInputText(doc.name.removePrefix("Bild "), fitted.text) else Documents.inputText(doc.name, fitted)) + "\n\n"
         pendingDoc = null
         status = if (fitted.truncated) "Eingelesen, aber auf den Anfang gekürzt (Kontext reicht nicht für alles). Frage dahinter schreiben."
         else "Eingelesen. Frage dahinter schreiben und senden."
@@ -407,6 +514,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissDoc() {
         speechOut.stop()
+        vision.cancel()
+        pendingImage = null
         pendingDoc = null
         docReading = false
         docProgress = ""

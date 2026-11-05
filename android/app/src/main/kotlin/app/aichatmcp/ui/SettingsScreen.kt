@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,7 +31,7 @@ private const val SERVER_LABEL = "Server (LM Studio, OpenAI, …)"
 private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
 
 @Composable
-fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit) {
+fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
     var localPath by remember { mutableStateOf(c.localModel) }
@@ -160,6 +161,22 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
             if (vm.packNote.isNotEmpty()) Text(vm.packNote, style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = vm::refreshPacks) { Text("Status aktualisieren") }
         }
+
+        SectionTitle("Bildmodell (Bilder beschreiben)")
+        Text(
+            "Das Chat-Modell sieht keine Bilder. Ein kleines Bildmodell (z. B. SmolVLM-256M, GGUF) beschreibt ein hochgeladenes Bild " +
+                "als Text; die Beschreibung geht dann an den Companion. Dazu gehören zwei Dateien: das Modell und die passende " +
+                "mmproj-Datei. Beide werden in den App-Speicher kopiert, geladen wird nur während einer Beschreibung.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text("Modell: ${vm.config.visionModelName.ifEmpty { "(keins)" }}")
+        Text("mmproj: ${vm.config.visionProjName.ifEmpty { "(keine)" }}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPickVision, enabled = !vm.visionBusy) { Text("Modell wählen…") }
+            OutlinedButton(onClick = onPickVisionProj, enabled = !vm.visionBusy) { Text("mmproj wählen…") }
+        }
+        if (vm.visionAvailable) TextButton(onClick = vm::removeVision, enabled = !vm.visionBusy) { Text("Bildmodell entfernen") }
+        if (vm.visionNote.isNotEmpty()) Text(vm.visionNote, style = MaterialTheme.typography.bodySmall)
 
         SectionTitle("Stimmen (Sprachausgabe)")
         LaunchedEffect(Unit) { vm.refreshVoices() }

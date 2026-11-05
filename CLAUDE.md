@@ -95,6 +95,10 @@ python main.py
   (Zip + `word/document.xml`, ohne Bibliothek), PDF per `pdfbox-android` (MIME-Filter bewusst `*/*`: Dateimanager melden .md mit unbekanntem Typ; Format am Namen). Die Rückfrage stellt die App, nicht das
   Modell (4B-Modell unzuverlässig, Text soll nicht unnötig in den Kontext). Budget `ChatSession.documentBudgetTokens` = Fenster − Antwort − System-Prompt − 150; `Documents.fit` kürzt an Absatz/Satz.
   Vorlesen in Abschnitten (`SpeechOutput.readAloud`, 600 Zeichen, zwei Abschnitte Vorlauf, Fortschritt je Abschnitt). **Android-Regex = ICU:** literale `}` müssen als `\}` stehen (Absturz beim HTTP-MCP-Start).
+  **Bilder** (`local/VisionLlm.kt`, `cpp/vision_jni.cpp`, `ImagePrep.kt`): Chat-Modell bleibt reiner Text; ein kleines Bildmodell (SmolVLM-256M, `libmtmd` aus llama.cpp, CMake `LLAMA_BUILD_MTMD=ON`)
+  beschreibt das Bild, die Beschreibung läuft über dieselbe Rückfrage-Karte (`PendingDoc.image`). Modell + mmproj werden per Auswahldialog in `filesDir/vision/` kopiert (klein; `mtmd` lädt nur über Pfade),
+  geladen wird nur pro Beschreibung. Prompt bewusst kurz (3 bis 5 Sätze), `Documents.completeSentences` schneidet abgebrochene Sätze ab. Gemessen: 12 bis 35 s je Bild, Qualität grob.
+  Der Bild-Pfad ist nur von Hand auf dem Gerät geprüft (Modelldateien ~280 MB, nicht im Repo), kein automatischer Gerätetest.
   Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:

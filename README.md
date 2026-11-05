@@ -219,6 +219,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   Fortschritt und Stopp, ohne Modell und daher ohne Kontextgrenze) oder **3 · Zusammenfassen** (das Modell fasst zusammen). Das
   Kontextfenster ist klein: Einlesen und Zusammenfassen nehmen nur den Anfang, der hineinpasst (Fenster minus Antwort minus System-Prompt,
   bei 4096 Tokens ca. 2300), und die Karte sagt das. Lange Nutzernachrichten erscheinen im Chat gekürzt, das Modell bekommt den vollen Text.
+- **Bilder beschreiben** (📎, Bilddatei wählen): Das Chat-Modell kann keine Bilder sehen, deshalb beschreibt ein kleines **Bildmodell** (getestet mit
+  SmolVLM-256M-Instruct Q8_0, ca. 175 MB, plus `mmproj-SmolVLM-256M-Instruct-Q8_0.gguf`, ca. 104 MB, beide von `ggml-org/SmolVLM-256M-Instruct-GGUF`)
+  das Bild als Text. Beide Dateien in den Einstellungen unter *Bildmodell* wählen (werden in den App-Speicher kopiert; geladen wird nur
+  während einer Beschreibung). Danach gilt dieselbe Rückfrage wie bei Dokumenten: *Als Eingabe einlesen* (die Frage dazu an den Companion
+  schreibt man dahinter) oder *Vorlesen*. Die Beschreibung ist englisch und kurz; das Bild wird vorher auf 768 Pixel verkleinert.
+  Gemessen auf dem Galaxy S21: ca. 12 bis 35 s je Bild (das erste Mal nach dem Installieren langsamer). Das Bildmodell ersetzt keine Texterkennung
+  (Schrift im Bild liest es nur grob) und halluziniert Details.
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
   PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein

@@ -34,6 +34,9 @@ data class Config(
     @SerialName("local_model") val localModel: String = "",
     @SerialName("local_model_name") val localModelName: String = "",
     @SerialName("local_threads") val localThreads: Int = 4,
+    /** Bildmodell (beschreibt Bilder als Text): nur die Anzeigenamen, die Dateien liegen im privaten Speicher der App. */
+    @SerialName("vision_model_name") val visionModelName: String = "",
+    @SerialName("vision_proj_name") val visionProjName: String = "",
     /** Antworten des Companions vorlesen (Sprachausgabe des Geräts). */
     @SerialName("speak_replies") val speakReplies: Boolean = false,
     /** Nach der Spracheingabe die Nachricht sofort senden. */

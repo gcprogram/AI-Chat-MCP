@@ -116,6 +116,8 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             vm.setLocalModel(u.toString(), nameOf(u))
         }
     }
+    val pickVision = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.importVisionModel(it, nameOf(it)) } }
+    val pickVisionProj = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.importVisionProj(it, nameOf(it)) } }
     // Kein MIME-Filter: manche Dateimanager melden .md/.txt mit unbekanntem Typ. Das Format prüft die App am Namen.
     val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::loadDocument) }
     val importChat = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -136,7 +138,10 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onMic = ::onMic,
             onUpload = { pickDocument.launch(arrayOf("*/*")) },
         )
-        Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) })
+        Screen.SETTINGS -> SettingsScreen(
+            vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) },
+            onPickVision = { pickVision.launch(arrayOf("*/*")) }, onPickVisionProj = { pickVisionProj.launch(arrayOf("*/*")) },
+        )
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
             onImportAvatars = { avatarFolder.launch(null) },
