@@ -3,6 +3,9 @@ package app.aichatmcp.core
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+const val BACKEND_SERVER = "server"
+const val BACKEND_LOCAL = "local"
+
 /** Konfiguration (gleiche JSON-Schlüssel wie config.json der Python-App). Defekte Daten führen zu Defaults. */
 @Serializable
 data class Config(
@@ -25,6 +28,12 @@ data class Config(
     @SerialName("max_tool_calls") val maxToolCalls: Int = 3,
     @SerialName("tool_result_chars") val toolResultChars: Int = 2000,
     @SerialName("tool_timeout") val toolTimeout: Int = 60,
+    /** "server" (LM Studio, OpenAI, ...) oder "local" (llama.cpp auf dem Gerät, nur Android). */
+    val backend: String = BACKEND_SERVER,
+    /** Lokales Modell: Pfad zu einer GGUF-Datei oder eine content://-URI (vom Dateiauswahldialog). */
+    @SerialName("local_model") val localModel: String = "",
+    @SerialName("local_model_name") val localModelName: String = "",
+    @SerialName("local_threads") val localThreads: Int = 4,
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },
@@ -39,6 +48,8 @@ data class Config(
         maxToolCalls = maxToolCalls.coerceIn(0, 10),
         toolResultChars = toolResultChars.coerceIn(200, 20000),
         toolTimeout = toolTimeout.coerceIn(5, 600),
+        backend = if (backend == BACKEND_LOCAL) BACKEND_LOCAL else BACKEND_SERVER,
+        localThreads = localThreads.coerceIn(1, 16),
     )
 
     /** Zusätzliche Sampling-Parameter für die Anfrage; neutrale Werte werden weggelassen. */

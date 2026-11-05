@@ -175,8 +175,8 @@ mehr ins Kontextfenster (Einstellung, Standard 8192), werden die ältesten Runde
 
 Kotlin mit Jetpack Compose, gleiche Logik wie die Python-App: Companions (dieselben JSON-Dateien), Textmarker mit
 Aliasen, Antwort-Bereinigung, Kontextverwaltung, Chat speichern/laden (gleiches JSON-Format), HTTP-MCP.
-Das Modell läuft weiter in LM Studio (Server-URL und Token in den Einstellungen); ein Modell auf dem Handy ist noch
-nicht eingebaut.
+Das Modell läuft entweder in LM Studio (Server-URL und Token in den Einstellungen) oder **direkt auf dem Handy**
+(Einstellungen → Ausführung → *Auf dem Gerät*, `llama.cpp` nur CPU, GGUF-Datei über den Dateiauswahldialog).
 
 ```bash
 cd android
@@ -185,7 +185,7 @@ gradlew :core:test :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-- `android/core`: reine Kotlin-Logik ohne Android (42 JVM-Tests und 5 Geräte-Tests; Erwartungswerte aus der Python-Version).
+- `android/core`: reine Kotlin-Logik ohne Android (46 JVM-Tests und 5 Geräte-Tests; Erwartungswerte aus der Python-Version).
 - `android/app`: Oberfläche (Chat, Einstellungen, Companions, Werkzeuge) und Speicher im privaten App-Ordner.
 - **Server erreichen**: im Heimnetz `http://<PC-IP>:1234/v1`; per USB `adb reverse tcp:1234 tcp:1234` und
   `http://127.0.0.1:1234/v1` (auch im Hotel-WLAN).
@@ -195,7 +195,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   kommt aus den *Geheimnissen* der App, ein selbst signiertes Zertifikat wird dort per *Vom Server holen* (mit
   Fingerabdruck zum Vergleichen) oder aus einer PEM-Datei importiert und über `cert` (Dateiname) angegeben. Die
   Fernbedienungs-App auf demselben Handy ist unter `https://127.0.0.1:8443/mcp` erreichbar.
-- Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text.
+- **Modell auf dem Handy** (`android/app/src/main/cpp`, JNI zu `llama.cpp`, Version in `android/llama.cpp.version`, beim ersten
+  Build per `git` nach `android/third_party/` geholt; NDK 28.2, CMake 3.22.1, nur `arm64-v8a`). Die GGUF-Datei wird nicht
+  kopiert, sondern über ihren Dateideskriptor gelesen (gespeicherter Dateizugriff, überlebt Neustarts). Der Kontext ist auf
+  4096 Tokens begrenzt. Der Anfang des Verlaufs bleibt im KV-Cache, nur Neues wird berechnet. Gemessen auf einem Galaxy S21
+  (Exynos 2100, 4 Threads) mit einem 4B-Modell Q4_K_S: erste Antwort ca. 70 s (Modell wird eingelesen), danach ca. 1 s für
+  neue Nachrichten im Cache, 4 bis 5 Tokens/s beim Schreiben, ca. 3 GB Arbeitsspeicher.
+- Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text, Spracheingabe und -ausgabe.
 
 ## Roadmap
 

@@ -1,5 +1,6 @@
 package app.aichatmcp
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -70,6 +71,13 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             else toast("Keine PEM-Zertifikatsdatei")
         }
     }
+    val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { u ->
+            // Zugriff dauerhaft behalten, sonst ist die Datei nach einem Neustart nicht mehr lesbar
+            runCatching { context.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            vm.setLocalModel(u.toString(), nameOf(u))
+        }
+    }
     val importChat = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { vm.importChat(it)?.let(::toast) } ?: toast("Datei nicht lesbar") }
     }
@@ -86,7 +94,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onExport = { exportChat.launch("${vm.persona.id.ifEmpty { "chat" }}.json") },
             onImport = { importChat.launch("*/*") },
         )
-        Screen.SETTINGS -> SettingsScreen(vm) { screen = Screen.CHAT }
+        Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) })
         Screen.COMPANIONS -> CompanionsScreen(vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") })
         Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onImportCert = { importCert.launch("*/*") })
     }

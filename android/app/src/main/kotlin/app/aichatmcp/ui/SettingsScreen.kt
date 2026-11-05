@@ -19,11 +19,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.core.BACKEND_LOCAL
+import app.aichatmcp.core.BACKEND_SERVER
+import app.aichatmcp.local.LOCAL_MAX_CONTEXT
 import kotlinx.coroutines.launch
 
+private const val SERVER_LABEL = "Server (LM Studio, OpenAI, …)"
+private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
+
 @Composable
-fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit) {
     val c = vm.config
+    var backend by remember { mutableStateOf(c.backend) }
+    var localPath by remember { mutableStateOf(c.localModel) }
+    var threads by remember { mutableStateOf(c.localThreads.toString()) }
     var url by remember { mutableStateOf(c.baseUrl) }
     var key by remember { mutableStateOf(c.apiKey) }
     var model by remember { mutableStateOf(c.model) }
@@ -44,26 +53,48 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     ScreenFrame("Einstellungen", onBack) {
-        SectionTitle("Server")
-        TextSetting("Server-URL (inkl. /v1)", url, { url = it }, keyboard = KeyboardType.Uri)
-        TextSetting("API-Schlüssel", key, { key = it }, secret = true)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = {
-                modelStatus = "Lade Modelle…"
-                scope.launch {
-                    vm.fetchModels(url, key).fold(
-                        onSuccess = { list ->
-                            models = list
-                            if (model !in list && list.isNotEmpty()) model = list.first()
-                            modelStatus = "${list.size} Modelle gefunden"
-                        },
-                        onFailure = { modelStatus = it.message ?: "Fehler" },
-                    )
-                }
-            }) { Text("Modelle laden") }
-            Text(modelStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        SectionTitle("Modell")
+        DropdownField(
+            "Ausführung", listOf(SERVER_LABEL, LOCAL_LABEL), if (backend == BACKEND_LOCAL) LOCAL_LABEL else SERVER_LABEL,
+            { backend = if (it == LOCAL_LABEL) BACKEND_LOCAL else BACKEND_SERVER },
+        )
+        if (backend == BACKEND_LOCAL) {
+            // Datei aus dem Auswahldialog (wird nicht kopiert) oder ein Pfad, den die App lesen darf
+            Text(
+                if (vm.config.localModel.isEmpty()) "Noch keine Modelldatei gewählt."
+                else "Modell: ${vm.config.localModelName.ifEmpty { vm.config.localModel }}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(onClick = onPickModel) { Text("Modelldatei (GGUF) wählen…") }
+            TextSetting("Threads (Rechenkerne)", threads, { threads = it }, keyboard = KeyboardType.Number)
+            Text(
+                "Das Modell läuft komplett auf dem Handy (llama.cpp, nur CPU). Der Kontext ist auf $LOCAL_MAX_CONTEXT Tokens " +
+                    "begrenzt, der Arbeitsspeicher ist knapp. Die erste Antwort braucht länger, weil das Modell geladen wird.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            TextSetting("Server-URL (inkl. /v1)", url, { url = it }, keyboard = KeyboardType.Uri)
+            TextSetting("API-Schlüssel", key, { key = it }, secret = true)
         }
-        DropdownField("Modell", models.ifEmpty { listOfNotNull(model.ifEmpty { null }) }, model, { model = it })
+        if (backend != BACKEND_LOCAL) { // Modellliste des Servers
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = {
+                    modelStatus = "Lade Modelle…"
+                    scope.launch {
+                        vm.fetchModels(url, key).fold(
+                            onSuccess = { list ->
+                                models = list
+                                if (model !in list && list.isNotEmpty()) model = list.first()
+                                modelStatus = "${list.size} Modelle gefunden"
+                            },
+                            onFailure = { modelStatus = it.message ?: "Fehler" },
+                        )
+                    }
+                }) { Text("Modelle laden") }
+                Text(modelStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            }
+            DropdownField("Modell", models.ifEmpty { listOfNotNull(model.ifEmpty { null }) }, model, { model = it })
+        }
 
         SectionTitle("Chat")
         TextSetting("Dein Name", userName, { userName = it })
@@ -88,8 +119,8 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
 
         Button(onClick = {
             vm.saveConfig(
-                c.copy(
-                    baseUrl = url, apiKey = key, model = model, models = models, userName = userName,
+                vm.config.copy( // aktueller Stand: die Modelldatei kann gerade erst gewählt worden sein
+                    backend = backend, localThreads = threads.toIntOrNull() ?: c.localThreads, baseUrl = url, apiKey = key, model = model, models = models, userName = userName,
                     temperature = temperature.toDoubleOrNull() ?: c.temperature,
                     maxReplyTokens = maxReply.toIntOrNull() ?: c.maxReplyTokens,
                     contextTokens = contextTokens.toIntOrNull() ?: c.contextTokens,

@@ -50,9 +50,19 @@ class CancelToken {
     @Volatile
     internal var call: Call? = null
 
+    @Volatile
+    private var hook: (() -> Unit)? = null
+
+    /** Für Backends ohne HTTP-Verbindung (Modell auf dem Gerät): was beim Stoppen unterbrochen werden muss. */
+    fun onStop(action: () -> Unit) {
+        hook = action
+        if (stopped) action()
+    }
+
     fun stop() {
         stopped = true
         call?.cancel()
+        hook?.invoke()
     }
 
     fun cancel() {
@@ -61,7 +71,15 @@ class CancelToken {
     }
 }
 
-class ChatClient(baseUrl: String, private val apiKey: String = "", http: OkHttpClient = OkHttpClient()) {
+/** Woher die Antwort kommt: von einem OpenAI-kompatiblen Server (ChatClient) oder von einem Modell auf dem Gerät. */
+interface LlmBackend {
+    fun streamChat(
+        model: String, messages: List<WireMessage>, temperature: Double, maxTokens: Int,
+        stop: List<String> = emptyList(), cancel: CancelToken = CancelToken(), extra: Map<String, Double> = emptyMap(),
+    ): Flow<StreamEvent>
+}
+
+class ChatClient(baseUrl: String, private val apiKey: String = "", http: OkHttpClient = OkHttpClient()) : LlmBackend {
     private val baseUrl = baseUrl.trimEnd('/')
 
     // Lese-Timeout großzügig: LM Studio lädt das Modell beim ersten Request nach.
@@ -93,9 +111,9 @@ class ChatClient(baseUrl: String, private val apiKey: String = "", http: OkHttpC
         }
     }
 
-    fun streamChat(
+    override fun streamChat(
         model: String, messages: List<WireMessage>, temperature: Double, maxTokens: Int,
-        stop: List<String> = emptyList(), cancel: CancelToken = CancelToken(), extra: Map<String, Double> = emptyMap(),
+        stop: List<String>, cancel: CancelToken, extra: Map<String, Double>,
     ): Flow<StreamEvent> = flow {
         val payload = buildJsonObject {
             put("model", model)

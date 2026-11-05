@@ -13,6 +13,7 @@ import app.aichatmcp.core.ChatEngine
 import app.aichatmcp.core.ChatEvent
 import app.aichatmcp.core.ChatFileException
 import app.aichatmcp.core.ChatLog
+import app.aichatmcp.core.BACKEND_LOCAL
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.DefaultServerFactory
@@ -31,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import app.aichatmcp.local.LocalLlm
+import app.aichatmcp.local.effectiveConfig
 import kotlinx.serialization.json.JsonObject
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
@@ -79,6 +82,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var certNames by mutableStateOf<List<String>>(emptyList())
         private set
 
+    private val localLlm = LocalLlm(app)
     private var registry = ToolRegistry()
     private val session: ChatSession
     private val engine: ChatEngine
@@ -90,8 +94,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         personaIds = storage.personas.list()
         val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
         persona = storage.personas.load(id)
-        session = ChatSession(config, persona, registry)
-        engine = ChatEngine(session, { ChatClient(it.baseUrl, it.apiKey) }) { call, spec -> askUser(call, spec) }
+        session = ChatSession(effectiveConfig(config), persona, registry)
+        engine = ChatEngine(
+            session,
+            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey) },
+        ) { call, spec -> askUser(call, spec) }
         restoreChat()
         mcpText = storage.mcpJson()
         secretNames = storage.secrets().keys.sorted()
@@ -124,7 +131,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun updateContext() {
-        var text = "Kontext ≈ ${session.estimatedTokens()}/${config.contextTokens} Tokens"
+        var text = "Kontext ≈ ${session.estimatedTokens()}/${session.config.contextTokens} Tokens"
         if (session.dropped > 0) text += " · ${session.dropped} ältere ausgeblendet"
         contextLabel = text
     }
@@ -144,12 +151,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun send() {
         val text = input.trim()
         if (streaming || text.isEmpty()) return
-        if (config.model.isEmpty()) {
+        if (config.backend == BACKEND_LOCAL && config.localModel.isEmpty()) {
+            status = "Bitte zuerst in den Einstellungen eine Modelldatei wählen."
+            return
+        }
+        if (config.backend != BACKEND_LOCAL && config.model.isEmpty()) {
             status = "Bitte zuerst in den Einstellungen ein Modell wählen."
             return
         }
         input = ""
-        session.config = config
+        session.config = effectiveConfig(config)
         streaming = true
         turn = viewModelScope.launch {
             try {
@@ -236,8 +247,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun saveConfig(newConfig: Config) {
         config = newConfig.sanitize()
         storage.saveConfig(config)
-        session.config = config
+        session.config = effectiveConfig(config)
         updateContext()
+    }
+
+    /** Modelldatei für die Ausführung auf dem Gerät übernehmen (URI aus dem Auswahldialog) und umschalten. */
+    fun setLocalModel(uri: String, name: String) {
+        saveConfig(config.copy(backend = BACKEND_LOCAL, localModel = uri, localModelName = name))
+        status = "Modell: $name"
     }
 
     /** Modelle des Servers abfragen (für die Einstellungen); Fehlertext statt Ausnahme. */
@@ -356,6 +373,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        localLlm.unload()
         registry.shutdown()
     }
 }

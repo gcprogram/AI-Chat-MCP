@@ -31,7 +31,7 @@ enum class NoticeKind { INFO, ERROR, TOOL }
  */
 class ChatEngine(
     val session: ChatSession,
-    private val clientFor: (Config) -> ChatClient = { ChatClient(it.baseUrl, it.apiKey) },
+    private val clientFor: (Config) -> LlmBackend = { ChatClient(it.baseUrl, it.apiKey) },
     /** Rückfrage vor einem Werkzeugaufruf; true = ausführen. */
     private val confirm: suspend (ToolCall, ToolSpec?) -> Boolean = { _, _ -> true },
 ) {

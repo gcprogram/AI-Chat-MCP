@@ -6,6 +6,7 @@ mcp_servers.json
 chats/
 *.txt
 !requirements.txt
+!CMakeLists.txt
 *.docx
 *.epub
 *.pdf
@@ -15,3 +16,6 @@ main.spec
 
 .gradle/
 android/local.properties
+
+android/third_party/
+.cxx/

@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "app.aichatmcp"
     compileSdk = 35
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "app.aichatmcp"
@@ -15,6 +16,16 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += listOf("arm64-v8a") // Handys; ein Emulator (x86_64) bräuchte einen eigenen Build
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -38,6 +49,16 @@ android {
         }
     }
 }
+
+// llama.cpp (Modellausführung auf dem Gerät): feste Version aus llama.cpp.version, beim ersten Build per git geholt.
+val llamaVersion = file("../llama.cpp.version").readText().trim()
+val llamaDir = file("../third_party/llama.cpp")
+val fetchLlama by tasks.registering(Exec::class) {
+    onlyIf { !llamaDir.resolve("CMakeLists.txt").exists() }
+    commandLine("git", "clone", "--depth", "1", "--branch", llamaVersion, "https://github.com/ggml-org/llama.cpp", llamaDir.absolutePath)
+}
+tasks.matching { it.name == "preBuild" || it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
+    .configureEach { dependsOn(fetchLlama) }
 
 dependencies {
     implementation(project(":core"))
