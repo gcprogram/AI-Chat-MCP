@@ -104,7 +104,7 @@ private sealed interface Loaded
 private class LoadedDoc(val doc: app.aichatmcp.core.DocText) : Loaded
 private class LoadedImage(val name: String, val jpeg: ByteArray) : Loaded
 
-private const val IMAGE_PROMPT = "Describe this image in exactly 7 sentences. Sentence 1: the main subject. Sentence 2: appearance and clothing. Sentence 3: face and expression. Sentence 4: pose and action. Sentence 5: the background and setting. Sentence 6: colors and lighting. Sentence 7: the overall mood. Also mention any text you can read."
+internal const val IMAGE_PROMPT = "Describe this image in 5 to 7 sentences. Start with the main subject, then the setting and background, then colors, lighting and notable details, and end with the overall impression. Describe only what is clearly visible. Do not invent people, objects or text; if something is not in the image, leave it out. Quote text only if you can actually read it. Write plain sentences only: no lists, no bullet points, no markdown, no headings."
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 

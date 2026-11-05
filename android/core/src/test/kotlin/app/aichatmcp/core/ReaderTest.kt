@@ -157,6 +157,18 @@ class ReaderTest {
     }
 
     @Test
+    fun pictureIsOrderedFiveSectionsAheadSoALargerModelIsInTime() {
+        val items = (0..6).map { ReadItem.Speech("s$it") } + ReadItem.Picture("img", "Hafen")
+        val (r, f) = reader(items)
+        r.play()
+        assertEquals(emptyList<String>(), f.prefetched) // Bild ist 7 Abschnitte entfernt
+        r.utteranceDone(f.spoken.first { it.text == "s0" }.id)
+        assertEquals(emptyList<String>(), f.prefetched) // noch 6
+        r.utteranceDone(f.spoken.first { it.text == "s1" }.id)
+        assertEquals(listOf("img"), f.prefetched) // jetzt 5 voraus
+    }
+
+    @Test
     fun withoutADescriptionTheAltTextIsReadAndWithoutThatTheImageIsSkipped() {
         val items = listOf(ReadItem.Picture("a", "Der Hafen"), ReadItem.Picture("b", ""), ReadItem.Speech("Text"))
         val (r, f) = reader(items)

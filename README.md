@@ -241,7 +241,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   während einer Beschreibung). Danach gilt dieselbe Rückfrage wie bei Dokumenten: *Als Eingabe einlesen* (die Frage dazu an den Companion
   schreibt man dahinter) oder *Vorlesen*. Die Beschreibung ist englisch und kurz; das Bild wird vorher auf 768 Pixel verkleinert.
   Gemessen auf dem Galaxy S21: ca. 12 bis 35 s je Bild (das erste Mal nach dem Installieren langsamer). Das Bildmodell ersetzt keine Texterkennung
-  (Schrift im Bild liest es nur grob) und halluziniert Details. Der Prompt verlangt 7 Sätze in fester Gliederung; das kleine Modell schreibt meist nur 5 (ohne Gliederung 2).
+  (Schrift im Bild liest es nur grob) und halluziniert Details. Der Prompt ist neutral (nur Sichtbares, nichts erfinden, keine Listen). Eine feste Gliederung
+  (Gesicht, Kleidung, ...) hat bei Bildern ohne Person Dinge erfunden und wurde entfernt. 7 Sätze lassen sich mit den kleinen Modellen nicht erzwingen: Gemessen
+  an 6 Bildern liefert SmolVLM-**500M** (`ggml-org/SmolVLM-500M-Instruct-GGUF`, Q8_0 437 MB + mmproj 109 MB) meist 1 bis 3 treffende Sätze in 11 bis 28 s
+  (kaum langsamer als 256M) und liest einfachen Text im Bild korrekt ab; das 256M erfand dort Orte und Zahlen. Beide Modelle können Diagramme falsch deuten.
+  Vergleich auf dem Gerät: `VisionOnDeviceTest` (Bilder und Modelle per `adb`/`run-as` nach `cache/vlm/`, siehe Kopf der Datei).
 - **Schlüsselwörter** (Einstellungen → *Schlüsselwörter lösen Werkzeuge aus*, Standard aus): Ein Alias in `mcp_servers.json` kann
   `"keywords": ["\bprogramm\s*1\b", "channel one"]` haben (reguläre Ausdrücke, Groß-/Kleinschreibung egal; Gruppen werden zu Argumenten). Kommt ein
   Ausdruck in der Eingabe, in der Antwort des Modells, im vorgelesenen Text oder in einer Bildbeschreibung vor, läuft das Werkzeug ohne das Modell.

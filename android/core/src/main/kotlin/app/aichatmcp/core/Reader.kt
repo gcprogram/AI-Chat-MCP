@@ -244,7 +244,12 @@ class Reader(
     }
 
     private fun prefetchPictureAfter(i: Int) {
-        for (k in 1..2) (plan.items.getOrNull(i + k) as? ReadItem.Picture)?.let { pictures.prefetch(it) }
+        for (k in 1..PREFETCH_ITEMS) (plan.items.getOrNull(i + k) as? ReadItem.Picture)?.let { pictures.prefetch(it) }
+    }
+
+    companion object {
+        /** So viele Abschnitte im Voraus werden Bildbeschreibungen bestellt (5 x ca. 25 s: auch ein größeres Bildmodell ist rechtzeitig fertig). */
+        const val PREFETCH_ITEMS = 5
     }
 
     private fun describePicture(i: Int, picture: ReadItem.Picture) {

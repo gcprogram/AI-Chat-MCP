@@ -117,7 +117,7 @@ class DescribedPictures(
             val text = withContext(Dispatchers.IO) {
                 runCatching {
                     val bytes = doc?.images?.invoke(ref) ?: error("Bild nicht ladbar")
-                    Documents.completeSentences(vision.describe(ImagePrep.jpegFromBytes(bytes), prompt, threads(), 320))
+                    Documents.completeSentences(vision.describe(ImagePrep.jpegFromBytes(bytes), prompt, threads(), 320) { mine != epoch })
                 }.getOrNull()?.takeIf { it.isNotBlank() }
             }
             running.remove(ref)

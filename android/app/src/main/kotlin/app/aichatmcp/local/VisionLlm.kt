@@ -54,8 +54,9 @@ class VisionLlm(private val context: Context) {
     }
 
     /** Beschreibt das Bild. Läuft lange (Laden, Bild verarbeiten): nicht auf dem Hauptthread aufrufen. */
-    fun describe(image: ByteArray, prompt: String, threads: Int, maxTokens: Int = 320): String = synchronized(runLock) {
+    fun describe(image: ByteArray, prompt: String, threads: Int, maxTokens: Int = 320, cancelled: () -> Boolean = { false }): String = synchronized(runLock) {
         if (!available) throw LlmException("Kein Bildmodell eingerichtet (Einstellungen).")
+        if (cancelled()) throw LlmException("Abgebrochen.") // wartete auf die Sperre, während der Vorleser sprang oder pausierte
         val handle = VisionNative.load(modelFile.path, projFile.path, threads)
         if (handle == 0L) throw LlmException(VisionNative.lastError())
         synchronized(guard) { running = handle }

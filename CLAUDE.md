@@ -97,7 +97,7 @@ python main.py
   Vorlesen in Abschnitten (`SpeechOutput.readAloud`, 600 Zeichen, zwei Abschnitte Vorlauf, Fortschritt je Abschnitt). **Android-Regex = ICU:** literale `}` müssen als `\}` stehen (Absturz beim HTTP-MCP-Start).
   **Bilder** (`local/VisionLlm.kt`, `cpp/vision_jni.cpp`, `ImagePrep.kt`): Chat-Modell bleibt reiner Text; ein kleines Bildmodell (SmolVLM-256M, `libmtmd` aus llama.cpp, CMake `LLAMA_BUILD_MTMD=ON`)
   beschreibt das Bild, die Beschreibung läuft über dieselbe Rückfrage-Karte (`PendingDoc.image`). Modell + mmproj werden per Auswahldialog in `filesDir/vision/` kopiert (klein; `mtmd` lädt nur über Pfade),
-  geladen wird nur pro Beschreibung. Prompt bewusst kurz (3 bis 5 Sätze), `Documents.completeSentences` schneidet abgebrochene Sätze ab. Gemessen: 12 bis 35 s je Bild, Qualität grob.
+  geladen wird nur pro Beschreibung. Prompt neutral (`IMAGE_PROMPT`: nur Sichtbares, nichts erfinden, keine Listen), `Documents.completeSentences` schneidet abgebrochene Sätze ab. Gemessen: 11 bis 28 s je Bild (256M und 500M fast gleich), Qualität grob.
   Der Bild-Pfad ist nur von Hand auf dem Gerät geprüft (Modelldateien ~280 MB, nicht im Repo), kein automatischer Gerätetest.
   **Vorleser** (`core/Reader.kt` = reine Zustandsmaschine mit Fakes testbar, `ReadPlan`/`Readable.kt` für Seiten/Bilder, `speech/ReaderSupport.kt` Tonfokus + Bildbeschreibung,
   `ChatViewModel` verdrahtet): Abschnitte à 400 Zeichen, nächster Abschnitt wird schon angehängt (keine Lücke), Callback-IDs `r:<Generation>:<Index>` gegen späte Rückmeldungen;
@@ -107,7 +107,9 @@ python main.py
   prüft die Regexe unter ICU. Auf dem Gerät von Hand geprüft: Tasten (+1/+10/-10/-1), Pause/Play/Stopp, Marke nach Neustart (Menü), gelöschte Datei (Fehler + Marke weg, andere Marken bleiben), Sprache erkannt
   (Französisch trotz englischem Companion → Dialog), EPUB mit zwei Bildern (Seiten 1/2, Beschreibungen vorgelesen), Schlüsselwort "wetter in" (Werkzeug ohne Modell). NICHT geprüft: Anruf-/Audio-Pause
   (`ReaderFocus`, nur über die Zustandsmaschine getestet), Sprechgeschwindigkeit-Einstellung, HTML auf dem Gerät. **Kotlin-Falle:** `init {}` muss am ENDE von `ChatViewModel` stehen (sonst sind spätere
-  Eigenschaften beim Aufruf aus init noch null: Absturz beim Start, kam erst beim Test auf dem Gerät heraus). Bildbeschreibung: 256M-Modell hält "7 Sätze" nicht ein (Gliederung ergibt ~5).
+  Eigenschaften beim Aufruf aus init noch null: Absturz beim Start, kam erst beim Test auf dem Gerät heraus). Bildbeschreibung: "7 Sätze" erzwingen die kleinen Modelle nicht (Gliederung mit Gesicht/Kleidung erfindet Personen: entfernt; ohne Gliederung kommen 1 bis 3 Sätze,
+  mit "keine Listen" kein erfundener Text mehr). SmolVLM-500M ist bei gleicher Dauer treffender als 256M (`VisionOnDeviceTest`, nur Protokoll). Vorleser bestellt Bilder `Reader.PREFETCH_ITEMS` (5) Abschnitte vorab;
+  wartende Bestellungen prüfen vor dem Laden `cancelled` (sonst rechnen sie nach einem Sprung unnötig weiter).
   Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:
