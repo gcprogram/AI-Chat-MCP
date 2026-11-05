@@ -121,7 +121,16 @@ class WeatherServer(name: String, private val fetcher: Fetcher, private val toda
         val day = DAYS[key] ?: throw ToolError("day must be today, tomorrow or day after tomorrow.")
         val start = intArg(arguments, "from_hour", 6, 0, 23)
         val end = intArg(arguments, "to_hour", 21, 1, 24)
-        val data = fetchJson(fetcher, "https://wttr.in/${urlEncode(place)}?format=j1")
+        // wttr.in antwortet bei einem unbekannten Ort mit Klartext ("location not found"), nicht mit JSON
+        val raw = fetcher.fetch("https://wttr.in/${urlEncode(place)}?format=j1", null)
+        val data = try {
+            AppJson.parseToJsonElement(raw) as JsonObject
+        } catch (_: Exception) {
+            if (raw.contains("not found", ignoreCase = true) || raw.contains("unknown location", ignoreCase = true)) {
+                throw ToolError(NOT_FOUND.format(place))
+            }
+            throw ToolError("The weather service returned no valid answer.")
+        }
         return forecastText(data, day, start, maxOf(end, start + 1), intArg(arguments, "step", 3, 1, 12))
     }
 
@@ -141,7 +150,7 @@ class WeatherServer(name: String, private val fetcher: Fetcher, private val toda
             val hint = if ("," in place) place.substringAfter(",") else ""
             val geo = fetchJson(fetcher, "https://geocoding-api.open-meteo.com/v1/search?name=${urlEncode(namePart)}&count=10&language=en&format=json")
             val results = (geo["results"] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
-            if (results.isEmpty()) throw ToolError("Place '$place' not found.")
+            if (results.isEmpty()) throw ToolError(NOT_FOUND.format(place))
             val found = pickPlace(results, hint)
             lat = found["latitude"].toString(); lon = found["longitude"].toString()
             name = listOfNotNull(found.string("name"), found.string("admin1")).filter { it.isNotEmpty() }.joinToString(", ")
@@ -155,6 +164,9 @@ class WeatherServer(name: String, private val fetcher: Fetcher, private val toda
     }
 
     companion object {
+        /** Klare Anweisung an das Modell, sonst deutet es den Fehler als "kein Zugriff auf Wetterdaten". */
+        private const val NOT_FOUND =
+            "Place '%s' not found. Tell the user that this place was not found and ask them to check the spelling. Do not call the tool again."
         private val DIRECTIONS = listOf("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
         private val DAYS = mapOf(
             "today" to 0, "heute" to 0, "tomorrow" to 1, "morgen" to 1, "day after tomorrow" to 2,

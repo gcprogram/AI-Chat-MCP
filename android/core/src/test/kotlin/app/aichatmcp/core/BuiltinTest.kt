@@ -85,6 +85,16 @@ class BuiltinTest {
         assertEquals("Unbekanntes Werkzeug: x" to true, server.callTool("x", emptyMap()))
     }
 
+    @Test
+    fun unknownPlaceGivesAClearInstructionInsteadOfAParseError() {
+        val server = WeatherServer("weather", { _, _ -> "location not found: location not found" }, { today })
+        val (text, isError) = server.callTool("forecast", mapOf("place" to "Padaborn"))
+        assertTrue(isError)
+        assertTrue("'Padaborn' not found" in text && "check the spelling" in text, text)
+        val (other, otherError) = WeatherServer("weather", { _, _ -> "<html>oops</html>" }, { today }).callTool("forecast", mapOf("place" to "Berlin"))
+        assertTrue(otherError && "no valid answer" in other)
+    }
+
     private val page = """
     <div class="result"><h2 class="result__title"><a rel="nofollow" class="result__a"
       href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fa%3Fx%3D1&amp;rut=abc">Titel <b>A</b> &amp; Co</a></h2>

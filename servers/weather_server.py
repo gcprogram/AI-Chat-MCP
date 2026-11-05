@@ -5,11 +5,16 @@ historical Wetter an einem vergangenen Tag (Open-Meteo-Archiv)
 
 Kleine Modelle rechnen nicht zuverlässig mit Daten: 'historical' versteht deshalb 'yesterday', 'the day before
 yesterday', '2020-11-25', '25.11.2020' und '25.11.' selbst (deutsche Wörter wie 'gestern' gehen auch)."""
+import json
 import re
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
-from mini_mcp import ToolError, fetch_json, serve, tool
+from mini_mcp import ToolError, fetch, fetch_json, serve, tool
+
+# Klare Anweisung an das Modell, sonst deutet es den Fehler als "kein Zugriff auf Wetterdaten"
+NOT_FOUND = ("Place '%s' not found. Tell the user that this place was not found and ask them to check the spelling. "
+             "Do not call the tool again.")
 
 DIRECTIONS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
 DAYS = {"today": 0, "heute": 0, "tomorrow": 1, "morgen": 1, "day after tomorrow": 2, "uebermorgen": 2,
@@ -120,7 +125,14 @@ def forecast(arguments):
     if day is None:
         raise ToolError("day must be today, tomorrow or day after tomorrow.")
     start, end = _int(arguments, "from_hour", 6, 0, 23), _int(arguments, "to_hour", 21, 1, 24)
-    data = fetch_json(f"https://wttr.in/{quote(place)}?format=j1")
+    # wttr.in antwortet bei einem unbekannten Ort mit Klartext ("location not found"), nicht mit JSON
+    raw = fetch(f"https://wttr.in/{quote(place)}?format=j1")
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        if "not found" in raw.lower() or "unknown location" in raw.lower():
+            raise ToolError(NOT_FOUND % place)
+        raise ToolError("The weather service returned no valid answer.")
     return forecast_text(data, day, start, max(end, start + 1), _int(arguments, "step", 3, 1, 12))
 
 
@@ -148,7 +160,7 @@ def historical(arguments):
         geo = fetch_json(f"https://geocoding-api.open-meteo.com/v1/search?name={quote(name_part.strip())}"
                          f"&count=10&language=en&format=json")
         if not geo.get("results"):
-            raise ToolError(f"Place '{place}' not found.")
+            raise ToolError(NOT_FOUND % place)
         found = pick_place(geo["results"], hint)
         lat, lon = found["latitude"], found["longitude"]
         name = ", ".join(filter(None, (found.get("name"), found.get("admin1"))))
