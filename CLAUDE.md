@@ -104,7 +104,10 @@ python main.py
   Pause = Stopp + Position (Android-TTS kann nicht pausieren). Marken `ReadMarks` (`reading_marks.json`), Datei über `takePersistableUriPermission`. EPUB = Zip + OPF-Spine,
   HTML-Parser mit Regex (kein XmlPullParser, JVM-testbar), Bilder nach dem Absatz. Sprache `LanguageDetect` (Kosinus über Buchstabenprofile). Tonfokus `ReaderFocus`
   (`setWillPauseWhenDucked`). **Schlüsselwörter** `core/Keywords.kt` + `ToolSpec.keywords` (nur Android; Eingabe mit Treffer geht NICHT ans Modell). Gerätetest `DocumentsOnDeviceTest`
-  prüft die Regexe unter ICU. Noch nicht von Hand auf dem Gerät geprüft: Tasten, Marke nach Neustart, Anruf-Pause, EPUB mit Bildern, Schlüsselwörter.
+  prüft die Regexe unter ICU. Auf dem Gerät von Hand geprüft: Tasten (+1/+10/-10/-1), Pause/Play/Stopp, Marke nach Neustart (Menü), gelöschte Datei (Fehler + Marke weg, andere Marken bleiben), Sprache erkannt
+  (Französisch trotz englischem Companion → Dialog), EPUB mit zwei Bildern (Seiten 1/2, Beschreibungen vorgelesen), Schlüsselwort "wetter in" (Werkzeug ohne Modell). NICHT geprüft: Anruf-/Audio-Pause
+  (`ReaderFocus`, nur über die Zustandsmaschine getestet), Sprechgeschwindigkeit-Einstellung, HTML auf dem Gerät. **Kotlin-Falle:** `init {}` muss am ENDE von `ChatViewModel` stehen (sonst sind spätere
+  Eigenschaften beim Aufruf aus init noch null: Absturz beim Start, kam erst beim Test auf dem Gerät heraus). Bildbeschreibung: 256M-Modell hält "7 Sätze" nicht ein (Gliederung ergibt ~5).
   Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:

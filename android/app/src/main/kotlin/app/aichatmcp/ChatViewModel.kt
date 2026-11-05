@@ -104,7 +104,7 @@ private sealed interface Loaded
 private class LoadedDoc(val doc: app.aichatmcp.core.DocText) : Loaded
 private class LoadedImage(val name: String, val jpeg: ByteArray) : Loaded
 
-private const val IMAGE_PROMPT = "Describe this image in 7 sentences. Mention the people, important objects, colors, the setting and any text you can read."
+private const val IMAGE_PROMPT = "Describe this image in exactly 7 sentences. Sentence 1: the main subject. Sentence 2: appearance and clothing. Sentence 3: face and expression. Sentence 4: pose and action. Sentence 5: the background and setting. Sentence 6: colors and lighting. Sentence 7: the overall mood. Also mention any text you can read."
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
@@ -190,23 +190,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val engine: ChatEngine
     private var turn: Job? = null
 
-    init {
-        storage.ensureDefaults()
-        config = storage.loadConfig()
-        personaIds = storage.personas.list()
-        val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
-        persona = storage.personas.load(id)
-        session = ChatSession(effectiveConfig(config), persona, registry)
-        engine = ChatEngine(
-            session,
-            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey) },
-        ) { call, spec -> askUser(call, spec) }
-        restoreChat()
-        mcpText = storage.mcpJson()
-        secretNames = storage.secrets().keys.sorted()
-        certNames = storage.certNames()
-        reloadTools()
-    }
 
     // --- Anzeige ------------------------------------------------------------------------------------------
 
@@ -728,7 +711,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 markList = marks.all()
                 runCatching { getApplication<Application>().contentResolver.releasePersistableUriPermission(Uri.parse(mark.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 status = "Die Datei „${mark.name}“ ist nicht mehr lesbar. Die Vorlese-Marke wurde gelöscht."
-                messages += UiMessage(UiKind.ERROR, "[Vorlesen] Die Datei „${mark.name}“ ist nicht mehr da oder nicht lesbar (${e.message ?: e::class.simpleName}). Die Vorlese-Marke wurde gelöscht.")
+                val reason = (e.message ?: e::class.simpleName).orEmpty().substringBefore(" from pid").take(110) // ohne die langen technischen Angaben
+                messages += UiMessage(UiKind.ERROR, "[Vorlesen] Die Datei „${mark.name}“ ist nicht mehr da oder nicht lesbar ($reason). Die Vorlese-Marke wurde gelöscht.")
             } finally {
                 docBusy = false
             }
@@ -942,6 +926,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveConfig(newConfig: Config) {
         config = newConfig.sanitize()
+        speechOut.rate = config.speechRate.toFloat()
         storage.saveConfig(config)
         session.config = effectiveConfig(config)
         updateContext()
@@ -1145,5 +1130,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.shutdown()
         localLlm.unload()
         registry.shutdown()
+    }
+
+    // Muss am Ende der Klasse stehen: Eigenschaften werden in der Reihenfolge des Quelltextes angelegt, und renderHistory() und die
+    // Werkzeuge greifen auf Eigenschaften weiter unten zu (Vorleser, Tonfokus, Marken). Steht init oben, sind sie dann noch null.
+    init {
+        storage.ensureDefaults()
+        config = storage.loadConfig()
+        speechOut.rate = config.speechRate.toFloat()
+        personaIds = storage.personas.list()
+        val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
+        persona = storage.personas.load(id)
+        session = ChatSession(effectiveConfig(config), persona, registry)
+        engine = ChatEngine(
+            session,
+            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey) },
+        ) { call, spec -> askUser(call, spec) }
+        restoreChat()
+        mcpText = storage.mcpJson()
+        secretNames = storage.secrets().keys.sorted()
+        certNames = storage.certNames()
+        reloadTools()
     }
 }

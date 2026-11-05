@@ -167,6 +167,7 @@ class SpeechOutput(private val context: Context) {
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 onProblem("Keine Stimme für ${locale.toLanguageTag()} installiert (Einstellungen → Sprachausgabe).")
             }
+            engine.setSpeechRate(rate)
             chunks.forEachIndexed { i, chunk ->
                 engine.speak(chunk, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "reply-$i")
             }
@@ -187,6 +188,9 @@ class SpeechOutput(private val context: Context) {
     }
 
     private var itemSink: ItemSink? = null
+    /** Sprechgeschwindigkeit (1.0 = normal), gilt für Antworten und das Vorlesen. */
+    @Volatile var rate: Float = 1.0f
+
     private var currentLanguage: String? = UNKNOWN_LANGUAGE // "?" = unbekannt (noch nie gesetzt oder von Antworten verändert)
     private val main = Handler(Looper.getMainLooper())
 
@@ -221,6 +225,7 @@ class SpeechOutput(private val context: Context) {
                     onProblem("Keine Stimme für ${locale.toLanguageTag()} installiert (Einstellungen → Stimmen).")
                 }
             }
+            engine.setSpeechRate(rate)
             engine.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
         }
     }

@@ -45,11 +45,14 @@ data class Config(
     @SerialName("speech_online") val speechOnline: Boolean = true,
     /** Schlüsselwörter aus mcp_servers.json (`keywords` je Alias) lösen Werkzeuge aus. Standard: aus. */
     @SerialName("keywords_enabled") val keywordsEnabled: Boolean = false,
+    /** Sprechgeschwindigkeit der Sprachausgabe (1.0 = normal; die deutsche Stimme spricht etwa 20 % langsamer als die englische). */
+    @SerialName("speech_rate") val speechRate: Double = 1.0,
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },
         userName = userName.trim().ifEmpty { "Nutzer" },
         temperature = temperature.coerceIn(0.0, 2.0),
+        speechRate = speechRate.coerceIn(0.5, 2.5),
         maxReplyTokens = maxReplyTokens.coerceIn(16, 8192),
         contextTokens = contextTokens.coerceIn(1024, 1_000_000),
         topP = topP.coerceIn(0.05, 1.0),

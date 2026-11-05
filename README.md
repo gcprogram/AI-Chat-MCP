@@ -225,6 +225,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   - **Vorlese-Marke**: Die Stelle wird je Text gespeichert (`reading_marks.json`, der Text über dauerhaften Dateizugriff wiedergefunden) und überlebt
     einen Neustart. Fortsetzen über die Karte (*Weiterlesen*, wenn dieselbe Datei wieder gewählt wird) oder im Menü ⋮ → *Weiterlesen: …*. Ist die
     Datei weg, gibt es eine Fehlermeldung und die Marke wird gelöscht. Marken anderer Texte bleiben. Ganz am Anfang oder am Ende gibt es keine Marke.
+  - **Geschwindigkeit**: Einstellungen → *Sprechgeschwindigkeit* (Standard 1.0). Gemessen auf dem Galaxy S21 spricht die deutsche Google-Stimme etwa 18 % langsamer
+    pro Zeichen als die englische (15,3 gegenüber 18,6 Zeichen/s; pro Wort ca. 35 %, deutsche Wörter sind länger). Für Deutsch passt oft 1.2.
   - **Anruf oder anderes Audio**: Das Vorlesen pausiert (Tonfokus) und geht danach von selbst weiter. Übernimmt eine andere App den Ton dauerhaft
     (Musik), bleibt es pausiert, bis du Play drückst. Läuft der Bildschirm aus, hängt es vom System ab, ob das Vorlesen weitergeht (kein Hintergrunddienst).
   - **Sprache des Textes**: wird über die Buchstabenhäufigkeit erkannt (Deutsch, Englisch, Französisch, Spanisch, Italienisch; Japanisch an der Schrift),
@@ -239,7 +241,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   während einer Beschreibung). Danach gilt dieselbe Rückfrage wie bei Dokumenten: *Als Eingabe einlesen* (die Frage dazu an den Companion
   schreibt man dahinter) oder *Vorlesen*. Die Beschreibung ist englisch und kurz; das Bild wird vorher auf 768 Pixel verkleinert.
   Gemessen auf dem Galaxy S21: ca. 12 bis 35 s je Bild (das erste Mal nach dem Installieren langsamer). Das Bildmodell ersetzt keine Texterkennung
-  (Schrift im Bild liest es nur grob) und halluziniert Details. Die Beschreibung hat 7 Sätze.
+  (Schrift im Bild liest es nur grob) und halluziniert Details. Der Prompt verlangt 7 Sätze in fester Gliederung; das kleine Modell schreibt meist nur 5 (ohne Gliederung 2).
 - **Schlüsselwörter** (Einstellungen → *Schlüsselwörter lösen Werkzeuge aus*, Standard aus): Ein Alias in `mcp_servers.json` kann
   `"keywords": ["\bprogramm\s*1\b", "channel one"]` haben (reguläre Ausdrücke, Groß-/Kleinschreibung egal; Gruppen werden zu Argumenten). Kommt ein
   Ausdruck in der Eingabe, in der Antwort des Modells, im vorgelesenen Text oder in einer Bildbeschreibung vor, läuft das Werkzeug ohne das Modell.

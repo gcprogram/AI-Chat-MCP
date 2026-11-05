@@ -37,6 +37,36 @@ class SpeechOnDeviceTest {
         }
     }
 
+    /** Dauer einer WAV-Datei der Sprachausgabe in Sekunden (Kopf: Byte-Rate ab Byte 28, Daten ab Byte 44). */
+    private fun wavSeconds(file: File): Double {
+        val bytes = file.readBytes()
+        val byteRate = (bytes[28].toInt() and 0xFF) or ((bytes[29].toInt() and 0xFF) shl 8) or ((bytes[30].toInt() and 0xFF) shl 16) or ((bytes[31].toInt() and 0xFF) shl 24)
+        return (bytes.size - 44).toDouble() / byteRate
+    }
+
+    /** Misst, wie lange die Stimmen für gleichen Inhalt brauchen (nur Protokoll im Log, Tag AiChatSpeech). */
+    @Test
+    fun measuresSpeakingSpeedPerLanguage() {
+        val texts = listOf(
+            "de-DE" to "Der Hafen von Rotterdam ist der größte Seehafen Europas. Jährlich werden dort mehr als vierhundert Millionen Tonnen Güter umgeschlagen.",
+            "en-US" to "The port of Rotterdam is the largest seaport in Europe. Every year more than four hundred million tons of goods are handled there.",
+        )
+        val output = SpeechOutput(context)
+        try {
+            for ((tag, text) in texts) {
+                val file = File(context.cacheDir, "speed-$tag.wav")
+                file.delete()
+                assertTrue("Keine Audiodatei für $tag", output.synthesizeToFile(text, tag, file))
+                val seconds = wavSeconds(file)
+                val words = text.split(" ").size
+                Log.i("AiChatSpeech", "Tempo $tag: ${text.length} Zeichen, $words Wörter, %.2f s => %.1f Zeichen/s, %.2f Wörter/s".format(seconds, text.length / seconds, words / seconds))
+                file.delete()
+            }
+        } finally {
+            output.shutdown()
+        }
+    }
+
     @Test
     fun reportsVoicesAndRecognition() {
         val ready = CountDownLatch(1)

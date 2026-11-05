@@ -53,6 +53,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
     var voiceAutoSend by remember { mutableStateOf(c.voiceAutoSend) }
     var speechOnline by remember { mutableStateOf(c.speechOnline) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
+    var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
     var resultChars by remember { mutableStateOf(c.toolResultChars.toString()) }
     var timeout by remember { mutableStateOf(c.toolTimeout.toString()) }
@@ -120,6 +121,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
             Text("Antworten vorlesen", modifier = Modifier.weight(1f))
             Switch(checked = speakReplies, onCheckedChange = { speakReplies = it })
         }
+        NumberSetting("Sprechgeschwindigkeit (1.0 = normal, Deutsch gern 1.2)", speechRate) { speechRate = it }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Nach Spracheingabe sofort senden", modifier = Modifier.weight(1f))
             Switch(checked = voiceAutoSend, onCheckedChange = { voiceAutoSend = it })
@@ -237,6 +239,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                     confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled,
+                    speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                     maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
                     toolResultChars = resultChars.toIntOrNull() ?: c.toolResultChars,
                     toolTimeout = timeout.toIntOrNull() ?: c.toolTimeout,
