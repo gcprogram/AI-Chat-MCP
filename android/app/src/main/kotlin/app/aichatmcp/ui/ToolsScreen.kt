@@ -32,6 +32,7 @@ fun ToolsScreen(vm: ChatViewModel, onBack: () -> Unit, onImportMcp: () -> Unit, 
     var jsonError by remember { mutableStateOf("") }
     var secretName by remember { mutableStateOf("") }
     var secretValue by remember { mutableStateOf("") }
+    var secretStatus by remember { mutableStateOf("") }
     var hostPort by remember { mutableStateOf("127.0.0.1:8443") }
     var certName by remember { mutableStateOf("remote.pem") }
     var certStatus by remember { mutableStateOf("") }
@@ -74,9 +75,25 @@ fun ToolsScreen(vm: ChatViewModel, onBack: () -> Unit, onImportMcp: () -> Unit, 
         if (missing.isNotEmpty()) {
             Text("Es fehlt noch: ${missing.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
+        if (vm.secretNames.isNotEmpty()) {
+            Text(
+                "Gespeicherte Geheimnisse stehen oben (der Wert bleibt verborgen). Die Felder darunter sind nur für ein weiteres " +
+                    "Geheimnis oder zum Ersetzen eines vorhandenen (gleicher Name).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (secretStatus.isNotEmpty()) Text(secretStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         TextSetting("Name (z. B. BROADCAST_REMOTE_TOKEN)", secretName, { secretName = it })
         TextSetting("Wert", secretValue, { secretValue = it }, secret = true)
-        OutlinedButton(onClick = { vm.setSecret(secretName, secretValue); secretValue = "" }, enabled = secretName.isNotBlank() && secretValue.isNotEmpty()) {
+        OutlinedButton(
+            onClick = {
+                vm.setSecret(secretName, secretValue)
+                secretStatus = "Gespeichert: ${secretName.trim()} - die Werkzeuge werden neu gestartet."
+                secretValue = ""
+                secretName = ""
+            },
+            enabled = secretName.isNotBlank() && secretValue.isNotEmpty(),
+        ) {
             Text("Geheimnis speichern")
         }
         if (secretName.isBlank() && secretValue.isNotEmpty()) {
