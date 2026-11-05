@@ -38,6 +38,16 @@ import app.aichatmcp.ui.SettingsScreen
 import app.aichatmcp.ui.ToolsScreen
 
 class MainActivity : ComponentActivity() {
+    override fun onStop() {
+        android.util.Log.i("AiChat", "Activity onStop, finishing=$isFinishing")
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        android.util.Log.i("AiChat", "Activity onDestroy, finishing=$isFinishing, changing=$isChangingConfigurations")
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

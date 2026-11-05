@@ -209,6 +209,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Offline-Sprachpakete** (Android 13+): Die Einstellungen zeigen unter *Offline-Sprachpakete* je Sprache, ob das Google-Paket
   installiert ist, und laden es per *Laden* herunter (Google fragt mit einem Dialog nach der Größe, ca. 50 bis 60 MB). Den Fortschritt
   meldet der Dienst nicht zuverlässig, die App prüft deshalb regelmäßig, bis das Paket da ist.
+- **Stimmen (Sprachausgabe)**: Die Einstellungen zeigen je Sprache, ob eine Google-Stimme installiert ist, und sprechen mit *Anhören* einen
+  Beispielsatz. *Stimmen laden…* öffnet die Stimmenverwaltung von Google. Automatisches Vorlesen der Antworten schaltet *Antworten vorlesen* ein (Standard: aus).
+- **Vorwärmen**: Mit dem lokalen Modell werden Modell und bisheriger Verlauf nach dem Start im Hintergrund vorberechnet (Status *Modell wird vorbereitet…*);
+  sonst braucht die erste Antwort nach jedem App-Start mehrere Minuten (ca. 10 Prompt-Tokens/s).
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
   PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein

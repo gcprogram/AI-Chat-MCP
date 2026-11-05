@@ -161,6 +161,32 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
             OutlinedButton(onClick = vm::refreshPacks) { Text("Status aktualisieren") }
         }
 
+        SectionTitle("Stimmen (Sprachausgabe)")
+        LaunchedEffect(Unit) { vm.refreshVoices() }
+        Text(
+            "Vorgelesen wird mit der Google-Sprachausgabe, wenn oben „Antworten vorlesen“ an ist. Je Sprache wird die " +
+                "installierte Stimme verwendet; „Anhören“ spricht einen Beispielsatz.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        vm.voiceRows.forEach { row ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(row.name)
+                    Text(
+                        if (row.state == "installed") "Stimme installiert" else "keine Stimme installiert",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (row.state == "installed") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    )
+                }
+                OutlinedButton(onClick = { vm.testVoice(row.tag) }) { Text("Anhören") }
+            }
+        }
+        if (vm.voiceNote.isNotEmpty()) Text(vm.voiceNote, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = vm::installVoices) { Text("Stimmen laden…") }
+            OutlinedButton(onClick = vm::refreshVoices) { Text("Status aktualisieren") }
+        }
+
         SectionTitle("Werkzeuge")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Vor jedem Werkzeugaufruf nachfragen", modifier = Modifier.weight(1f))

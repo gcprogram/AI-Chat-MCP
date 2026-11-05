@@ -88,6 +88,10 @@ python main.py
   `DownloadActivity` (`com.google.recognition.action.DOWNLOAD_LANGUAGE`) zu starten, was Android 15 als Hintergrundstart blockiert (`BAL_BLOCK`) - es kommt
   nie eine Rückmeldung, der Fortschritt bleibt bei 0 %. Deshalb startet die App den Dialog selbst (`openDownloadDialog`, Extra `EXTRA_LANGUAGE`) und fragt
   den Status alle 4 s ab (`pollPack`, 5 min). Auf dem Gerät geprüft (de, en-US, ja-JP).
+  **Stimmen** (`SpeechOutput.installedVoices`: `Voice.features` ohne `notInstalled`; `openVoiceInstall` = `ACTION_INSTALL_TTS_DATA`) und Test-Satz in den Einstellungen.
+  `Antworten vorlesen` ist standardmäßig aus (Ursache für „Sprachausgabe fehlt“). **Vorwärmen** (`ChatViewModel.warmUp`, nach `reloadTools`/`saveConfig`): ein
+  1-Token-Lauf über den bisherigen Verlauf füllt den Präfix-Cache; ohne ihn dauert die erste Antwort nach App-Start ~2-3 min (Prompt ~10 Tokens/s, 4 Threads).
+  Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:
   Dateien aus dem Auswahldialog kann `llama.cpp` NICHT über `/proc/self/fd/N` öffnen (Permission denied), deshalb `loadFd` mit

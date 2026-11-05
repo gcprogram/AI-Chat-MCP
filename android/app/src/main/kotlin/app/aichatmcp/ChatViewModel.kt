@@ -19,6 +19,7 @@ import app.aichatmcp.core.ChatEvent
 import app.aichatmcp.core.ChatFileException
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.BACKEND_LOCAL
+import app.aichatmcp.core.CancelToken
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.DefaultServerFactory
@@ -51,6 +52,16 @@ data class PackRow(val tag: String, val name: String, val state: String, val pro
 private val PACK_LANGUAGES = listOf(
     "de-DE" to "Deutsch", "en-US" to "English (US)", "en-GB" to "English (UK)", "ja-JP" to "Japanisch (日本語)",
     "fr-FR" to "Französisch", "es-ES" to "Spanisch", "it-IT" to "Italienisch",
+)
+
+private val VOICE_SAMPLES = mapOf(
+    "de-DE" to "Hallo, ich bin deine Begleiterin. So klingt meine Stimme.",
+    "en-US" to "Hello, this is how my voice sounds.",
+    "en-GB" to "Hello, this is how my voice sounds.",
+    "ja-JP" to "こんにちは、これが私の声です。",
+    "fr-FR" to "Bonjour, voici ma voix.",
+    "es-ES" to "Hola, así suena mi voz.",
+    "it-IT" to "Ciao, ecco come suona la mia voce.",
 )
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
@@ -97,6 +108,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var packRows by mutableStateOf<List<PackRow>>(emptyList())
         private set
     var packNote by mutableStateOf("")
+        private set
+    var voiceRows by mutableStateOf<List<PackRow>>(emptyList())
+        private set
+    var voiceNote by mutableStateOf("")
         private set
     var mcpText by mutableStateOf("")
         private set
@@ -210,6 +225,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop() {
+        android.util.Log.w("AiChat", "stop() aufgerufen", Throwable())
         speechOut.stop()
         engine.cancel()
     }
@@ -277,6 +293,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 packNote = ""
             }.onFailure { packNote = "Sprachpakete lassen sich nicht abfragen (${it.message})." }
         }
+    }
+
+    // --- Stimmen der Sprachausgabe ------------------------------------------------------------------------
+
+    fun refreshVoices() {
+        speechOut.installedVoices(PACK_LANGUAGES.map { it.first }) { installed ->
+            voiceRows = PACK_LANGUAGES.map { (tag, name) -> PackRow(tag, name, if (installed[tag] == true) "installed" else "available") }
+        }
+    }
+
+    /** Spricht einen Beispielsatz, damit sich Stimme und Lautstärke prüfen lassen. */
+    fun testVoice(tag: String) {
+        voiceNote = ""
+        speechOut.speak(VOICE_SAMPLES[tag] ?: "Test", tag) { voiceNote = it }
+    }
+
+    fun installVoices() {
+        voiceNote = if (speechOut.openVoiceInstall()) "Stimmen in der Google-Sprachausgabe laden, danach hier „Status aktualisieren“."
+        else "Die Google-Sprachausgabe lässt sich nicht öffnen (Android-Einstellungen → Sprachausgabe)."
     }
 
     fun downloadPack(tag: String) {
@@ -400,6 +435,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         storage.saveConfig(config)
         session.config = effectiveConfig(config)
         updateContext()
+        warmUp()
     }
 
     /** Modelldatei für die Ausführung auf dem Gerät übernehmen (URI aus dem Auswahldialog) und umschalten. */
@@ -515,6 +551,36 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             status = if (fresh.errors.isNotEmpty()) "Werkzeuge: " + fresh.errors.joinToString(" | ")
             else "Werkzeuge bereit: ${fresh.available().joinToString(", ").ifEmpty { "keine" }}"
             updateContext()
+            warmUp()
+        }
+    }
+
+    private var warming = false
+
+    /**
+     * Lädt das lokale Modell und berechnet den bisherigen Verlauf vorab, solange noch nichts gefragt wurde: Die erste Antwort
+     * nach einem App-Start braucht sonst mehrere Minuten, weil der ganze Prompt (Persona, Werkzeuge, Verlauf) neu verarbeitet
+     * wird. Die spätere Anfrage nutzt den Zwischenspeicher für den gemeinsamen Anfang.
+     */
+    private fun warmUp() {
+        if (warming || streaming || config.backend != BACKEND_LOCAL || config.localModel.isEmpty() || session.history.isEmpty()) return
+        val cfg = effectiveConfig(config)
+        val messages = session.requestMessages()
+        val stop = session.stopSequences
+        warming = true
+        status = "Modell wird vorbereitet…"
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    localLlm.backend(cfg).streamChat(cfg.model, messages, cfg.temperature, 1, stop, CancelToken(), cfg.samplingParams()).collect { }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) { // Vorwärmen ist nur eine Beschleunigung; Fehler zeigt die erste echte Anfrage
+            } finally {
+                warming = false
+                if (status == "Modell wird vorbereitet…") status = "Bereit"
+            }
         }
     }
 
@@ -562,6 +628,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        android.util.Log.w("AiChat", "ViewModel onCleared")
         speechIn.stop()
         speechOut.shutdown()
         localLlm.unload()

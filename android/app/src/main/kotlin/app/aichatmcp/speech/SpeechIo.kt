@@ -175,6 +175,32 @@ class SpeechOutput(private val context: Context) {
         pending.clear()
     }
 
+    /**
+     * Für welche Sprachen eine Stimme installiert ist. Google markiert noch nicht geladene Stimmen mit dem Merkmal
+     * "notInstalled"; sie würden beim Sprechen erst nachgeladen (online) oder fehlen.
+     */
+    fun installedVoices(tags: List<String>, onResult: (Map<String, Boolean>) -> Unit) {
+        withEngine {
+            val voices = tts?.voices.orEmpty()
+            onResult(
+                tags.associateWith { tag ->
+                    val wanted = Locale.forLanguageTag(tag)
+                    voices.any { it.locale.language == wanted.language && it.locale.country == wanted.country && "notInstalled" !in it.features }
+                },
+            )
+        }
+    }
+
+    /** Öffnet die Stimmenverwaltung von Google (dort lassen sich Stimmen je Sprache laden). */
+    fun openVoiceInstall(): Boolean = try {
+        context.startActivity(
+            Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage("com.google.android.tts").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     fun shutdown() {
         tts?.shutdown()
         tts = null
