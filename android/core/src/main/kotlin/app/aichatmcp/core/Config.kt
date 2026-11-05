@@ -38,6 +38,8 @@ data class Config(
     @SerialName("speak_replies") val speakReplies: Boolean = false,
     /** Nach der Spracheingabe die Nachricht sofort senden. */
     @SerialName("voice_auto_send") val voiceAutoSend: Boolean = false,
+    /** Fehlt das Offline-Sprachpaket, die Online-Erkennung von Google benutzen (das Audio geht dann an Google). */
+    @SerialName("speech_online") val speechOnline: Boolean = true,
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },

@@ -1,10 +1,13 @@
 package app.aichatmcp.speech
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
+import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
@@ -13,18 +16,50 @@ import app.aichatmcp.core.Speech
 import java.util.Locale
 
 /**
- * Spracheingabe mit der Spracherkennung von Android (Bordmittel, keine eigene Modelldatei). Wo es das Gerät anbietet,
- * läuft die Erkennung auf dem Gerät; sonst wird Offline bevorzugt. Muss auf dem Hauptthread benutzt werden.
+ * Spracheingabe mit der Spracherkennung von Google (Bordmittel, keine eigene Modelldatei). Offline wird bevorzugt: Ist das
+ * Sprachpaket installiert, bleibt das Audio auf dem Gerät, sonst nutzt Google die Online-Erkennung. Hauptthread.
  */
+private val GOOGLE_PACKAGES = listOf("com.google.android.tts", "com.google.android.googlequicksearchbox")
+
 class SpeechInput(private val context: Context) {
     private var recognizer: SpeechRecognizer? = null
 
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
-    fun start(languageTag: String?, onPartial: (String) -> Unit, onResult: (String) -> Unit, onError: (String) -> Unit) {
+    /**
+     * Der Erkennungsdienst von Google (Spracherkennung und -synthese von Google bzw. Google-App), falls installiert.
+     * Der separate On-Device-Erkenner mancher Geräte (createOnDeviceSpeechRecognizer) kennt oft nur wenige Sprachen und
+     * die Erkennung des Herstellers ist schlechter; ohne Google-Dienst gilt der Standard des Systems.
+     */
+    private fun googleService(): ComponentName? {
+        val services = context.packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
+        for (pkg in GOOGLE_PACKAGES) {
+            services.firstOrNull { it.serviceInfo.packageName == pkg }?.let {
+                return ComponentName(it.serviceInfo.packageName, it.serviceInfo.name)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Startet die Aufnahme. Erst wird die Erkennung auf dem Gerät versucht (Audio bleibt auf dem Handy). Fehlt dafür das
+     * Sprachpaket (Fehler 11 bis 13) und ist [allowOnline] gesetzt, wird einmal mit der Online-Erkennung von Google
+     * wiederholt; [onNote] sagt das dann an.
+     */
+    fun start(
+        languageTag: String?, allowOnline: Boolean, onPartial: (String) -> Unit, onResult: (String) -> Unit,
+        onError: (String) -> Unit, onNote: (String) -> Unit,
+    ) {
         stop()
-        val onDevice = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
-        val r = if (onDevice) SpeechRecognizer.createOnDeviceSpeechRecognizer(context) else SpeechRecognizer.createSpeechRecognizer(context)
+        begin(languageTag, preferOffline = true, allowOnline, onPartial, onResult, onError, onNote)
+    }
+
+    private fun begin(
+        languageTag: String?, preferOffline: Boolean, allowOnline: Boolean, onPartial: (String) -> Unit,
+        onResult: (String) -> Unit, onError: (String) -> Unit, onNote: (String) -> Unit,
+    ) {
+        val google = googleService()
+        val r = if (google != null) SpeechRecognizer.createSpeechRecognizer(context, google) else SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
             private fun best(bundle: Bundle?) = bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
@@ -38,7 +73,14 @@ class SpeechInput(private val context: Context) {
 
             override fun onError(error: Int) {
                 release()
-                onError(describe(error))
+                if (preferOffline && allowOnline && error in 11..13) { // Sprachpaket fehlt: einmal online wiederholen
+                    onNote("Kein Offline-Sprachpaket – Online-Erkennung von Google")
+                    Handler(Looper.getMainLooper()).post {
+                        begin(languageTag, preferOffline = false, allowOnline, onPartial, onResult, onError, onNote)
+                    }
+                } else {
+                    onError(describe(error))
+                }
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -51,7 +93,7 @@ class SpeechInput(private val context: Context) {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             languageTag?.let { putExtra(RecognizerIntent.EXTRA_LANGUAGE, it) }
         }
@@ -81,7 +123,7 @@ class SpeechInput(private val context: Context) {
         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Die Spracherkennung ist gerade belegt."
         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER ->
             "Spracherkennung nicht erreichbar (Offline-Sprachpaket installieren?)."
-        11, 12, 13 -> "Diese Sprache ist für die Erkennung nicht verfügbar (Offline-Sprachpaket installieren)."
+        11, 12, 13 -> "Diese Sprache ist für die Erkennung nicht verfügbar (Offline-Sprachpaket installieren oder Online-Erkennung erlauben)."
         else -> "Spracherkennung fehlgeschlagen (Fehler $error)."
     }
 }

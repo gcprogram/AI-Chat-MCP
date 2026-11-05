@@ -48,6 +48,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
     var confirmTools by remember { mutableStateOf(c.confirmTools) }
     var speakReplies by remember { mutableStateOf(c.speakReplies) }
     var voiceAutoSend by remember { mutableStateOf(c.voiceAutoSend) }
+    var speechOnline by remember { mutableStateOf(c.speechOnline) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
     var resultChars by remember { mutableStateOf(c.toolResultChars.toString()) }
     var timeout by remember { mutableStateOf(c.toolTimeout.toString()) }
@@ -119,9 +120,15 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
             Text("Nach Spracheingabe sofort senden", modifier = Modifier.weight(1f))
             Switch(checked = voiceAutoSend, onCheckedChange = { voiceAutoSend = it })
         }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Online-Erkennung erlauben, wenn das Offline-Sprachpaket fehlt", modifier = Modifier.weight(1f))
+            Switch(checked = speechOnline, onCheckedChange = { speechOnline = it })
+        }
         Text(
-            "Spracherkennung und Stimme sind die des Geräts (Android), die Sprache folgt der Antwortsprache des Companions. " +
-                "Offline-Erkennung braucht das Sprachpaket in den Android-Einstellungen.",
+            "Erkennung und Stimme sind die von Google (Spracherkennung und -synthese von Google), die Sprache folgt der " +
+                "Antwortsprache des Companions. Es wird zuerst offline erkannt (Audio bleibt auf dem Handy). Fehlt das " +
+                "Sprachpaket (Google-Einstellungen → Sprache → Offline-Spracherkennung), geht das Audio bei erlaubter " +
+                "Online-Erkennung an Google.",
             style = MaterialTheme.typography.bodySmall,
         )
 
@@ -145,7 +152,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
                     frequencyPenalty = frequency.toDoubleOrNull() ?: c.frequencyPenalty,
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
-                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend,
+                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline,
                     maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
                     toolResultChars = resultChars.toIntOrNull() ?: c.toolResultChars,
                     toolTimeout = timeout.toIntOrNull() ?: c.toolTimeout,

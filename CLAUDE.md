@@ -78,7 +78,9 @@ python main.py
   Auf dem Gerät geprüft (Galaxy S21, per `adb`). Nativer Modus und Avatare fehlen.
   **Android-Regex ist ICU**: kein `(?U)`, `\p{L}\p{N}` statt `\w` für Unicode; `androidTest/CoreOnDeviceTest` prüft die Logik auf dem
   echten Laufzeitsystem (`adb install -t` + `am instrument`, Gradle `connected…` würde die App deinstallieren).
-- **Sprache** (`speech/SpeechIo.kt`): `SpeechInput` = Android-`SpeechRecognizer` (On-Device wenn verfügbar), `SpeechOutput` = `TextToSpeech`;
+- **Sprache** (`speech/SpeechIo.kt`): `SpeechInput` = Android-`SpeechRecognizer` mit gezielt dem Google-Dienst (`com.google.android.tts`; `createOnDeviceSpeechRecognizer` NICHT
+  benutzen: Geräte-Erkenner kennt die Sprache nicht), erst offline, bei Fehler 11 bis 13 (Sprachpaket fehlt) einmal online (`speech_online`);
+  `SpeechOutput` = `TextToSpeech` (Systemstandard, bei diesem Gerät Google);
   Sprachwahl/Textaufbereitung testbar im Kern (`Speech`). Der Geräte-Test lässt die Synthese in eine Datei schreiben (kein Ton) und prüft
   nur die Verfügbarkeit der Erkennung (Sprechen kann ein Test nicht). Echte Spracheingabe per Mikrofon noch nicht von Hand geprüft.
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.

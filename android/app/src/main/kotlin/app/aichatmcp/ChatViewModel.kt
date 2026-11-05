@@ -212,6 +212,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         status = "Höre zu…"
         speechIn.start(
             languageTag(),
+            config.speechOnline,
             onPartial = { input = it },
             onResult = { text ->
                 listening = false
@@ -223,6 +224,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 listening = false
                 status = message
             },
+            onNote = { status = it },
         )
     }
 

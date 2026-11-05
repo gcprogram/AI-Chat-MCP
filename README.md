@@ -201,9 +201,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   4096 Tokens begrenzt. Der Anfang des Verlaufs bleibt im KV-Cache, nur Neues wird berechnet. Gemessen auf einem Galaxy S21
   (Exynos 2100, 4 Threads) mit einem 4B-Modell Q4_K_S: erste Antwort ca. 70 s (Modell wird eingelesen), danach ca. 1 s für
   neue Nachrichten im Cache, 4 bis 5 Tokens/s beim Schreiben, ca. 3 GB Arbeitsspeicher.
-- **Sprache** mit den Bordmitteln von Android (keine eigene Modelldatei): Mikrofon-Knopf neben „Senden“ (Spracherkennung, auf dem
-  Gerät wo verfügbar, sonst Offline bevorzugt; beim ersten Mal wird die Mikrofon-Berechtigung abgefragt) und „Antworten vorlesen“
-  (Sprachsynthese). Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
+- **Sprache** mit den Google-Diensten des Geräts (keine eigene Modelldatei): Mikrofon-Knopf neben „Senden“ (beim ersten Mal wird die
+  Mikrofon-Berechtigung abgefragt) und „Antworten vorlesen“ (Sprachsynthese). Die Erkennung nutzt gezielt den Google-Dienst
+  (nicht den Hersteller-Erkenner) und versucht zuerst offline. Fehlt das Offline-Sprachpaket (Fehler 13), wird mit der
+  Online-Erkennung von Google wiederholt, sofern der Schalter *Online-Erkennung erlauben* an ist (Standard); die Statuszeile sagt es. Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
   Companions (`Deutsch` → `de-DE`). Werkzeugaufrufe werden nicht vorgelesen.
 - Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text, eigene Sprachmodelle (Whisper/Piper).
 
