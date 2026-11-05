@@ -75,7 +75,8 @@ python main.py
   `ChatEngine` (core) führt ganze Runden (in Python steckt das in `gui.py`); pro Runde ein eigenes `CancelToken`
   (stilles Stoppen durch den Wächter darf nicht in die nächste Runde wirken). Eingebaute Server statt Unterprozesse;
   Desktop-Konfiguration (`servers/weather_server.py`) wird erkannt. Tests: `cd android && gradlew :core:test` (49).
-  Auf dem Gerät geprüft (Galaxy S21, per `adb`). Nativer Modus und Avatare fehlen.
+  Auf dem Gerät geprüft (Galaxy S21, per `adb`). Nativer Modus fehlt. Avatare: `AppStorage.avatarFile/importAvatar`, Import über
+  `OpenDocumentTree` (Samsung-Picker fragt den Ordnerzugriff mit einem Dialog ab) oder `OpenDocument`; `AvatarView` lädt verkleinert.
   **Android-Regex ist ICU**: kein `(?U)`, `\p{L}\p{N}` statt `\w` für Unicode; `androidTest/CoreOnDeviceTest` prüft die Logik auf dem
   echten Laufzeitsystem (`adb install -t` + `am instrument`, Gradle `connected…` würde die App deinstallieren).
 - **Sprache** (`speech/SpeechIo.kt`): `SpeechInput` = Android-`SpeechRecognizer` mit gezielt dem Google-Dienst (`com.google.android.tts`; `createOnDeviceSpeechRecognizer` NICHT

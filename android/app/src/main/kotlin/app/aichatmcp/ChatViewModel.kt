@@ -1,6 +1,9 @@
 package app.aichatmcp
 
 import android.app.Application
+import android.net.Uri
+import android.provider.DocumentsContract
+import java.io.File
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +90,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var certNames by mutableStateOf<List<String>>(emptyList())
         private set
 
+    /** Wird bei jedem Bildimport erhöht, damit angezeigte Avatare neu geladen werden. */
+    var avatarVersion by mutableStateOf(0)
+        private set
     private val localLlm = LocalLlm(app)
     private val speechIn = SpeechInput(app)
     private val speechOut = SpeechOutput(app)
@@ -348,6 +354,44 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadPersona(id: String): Persona = storage.personas.load(id)
+
+    fun avatarFile(persona: Persona): File? = storage.avatarFile(persona.avatar)
+
+    /** Alle Bilder eines Ordners (aus dem Auswahldialog) in den Avatar-Ordner der App kopieren. Liefert die Anzahl. */
+    suspend fun importAvatarFolder(tree: Uri): Int = withContext(Dispatchers.IO) {
+        val resolver = getApplication<Application>().contentResolver
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        var count = 0
+        resolver.query(
+            children,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
+            null, null, null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val (id, name, mime) = Triple(cursor.getString(0), cursor.getString(1), cursor.getString(2))
+                if (mime?.startsWith("image/") != true) continue
+                val input = resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, id)) ?: continue
+                input.use { storage.importAvatar(name, it) }
+                count++
+            }
+        }
+        avatarVersion++
+        count
+    }
+
+    /** Ein Bild als Avatar eines gespeicherten Companions übernehmen. */
+    suspend fun setAvatar(personaId: String, uri: Uri, displayName: String): Boolean = withContext(Dispatchers.IO) {
+        val input = getApplication<Application>().contentResolver.openInputStream(uri) ?: return@withContext false
+        val relative = input.use { storage.importAvatar(displayName, it) }
+        savePersona(storage.personas.load(personaId).copy(avatar = relative))
+        avatarVersion++
+        true
+    }
+
+    fun removeAvatar(personaId: String) {
+        savePersona(storage.personas.load(personaId).copy(avatar = ""))
+        avatarVersion++
+    }
 
     /** Companion aus einer JSON-Datei der PC-App übernehmen. Liefert die neue ID. */
     fun importPersona(text: String, fileName: String): String {

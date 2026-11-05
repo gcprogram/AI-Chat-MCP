@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
+import java.io.InputStream
 
 /**
  * Alles, was die App im privaten Speicher ablegt (nur für die App lesbar): Einstellungen, Companions,
@@ -36,6 +37,24 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
                 File(personasDir, "companion.json").writeText(it)
             }
         }
+    }
+
+    // --- Avatare (Bilder der Companions, relativ zum Companion-Ordner: "avatars/name.png") -------------------
+
+    /** Die Bilddatei eines Companions, falls vorhanden. Pfade außerhalb des Companion-Ordners werden ignoriert. */
+    fun avatarFile(avatar: String): File? {
+        if (avatar.isBlank()) return null
+        val base = personasDir.canonicalFile
+        val file = File(personasDir, avatar).canonicalFile
+        return file.takeIf { it.isFile && it.path.startsWith(base.path + File.separator) }
+    }
+
+    /** Legt ein Bild unter avatars/ ab (Dateiname wie am PC, damit die Companion-Dateien es wiederfinden). */
+    fun importAvatar(name: String, input: InputStream): String {
+        val dir = File(personasDir, "avatars").apply { mkdirs() }
+        val clean = File(name).name.ifBlank { "avatar.png" }
+        File(dir, clean).outputStream().use { input.copyTo(it) }
+        return "avatars/$clean"
     }
 
     // --- Einstellungen ------------------------------------------------------------------------------------

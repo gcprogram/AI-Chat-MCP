@@ -206,7 +206,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   (nicht den Hersteller-Erkenner) und versucht zuerst offline. Fehlt das Offline-Sprachpaket (Fehler 13), wird mit der
   Online-Erkennung von Google wiederholt, sofern der Schalter *Online-Erkennung erlauben* an ist (Standard); die Statuszeile sagt es. Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
   Companions (`Deutsch` → `de-DE`). Werkzeugaufrufe werden nicht vorgelesen.
-- Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text, eigene Sprachmodelle (Whisper/Piper).
+- **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
+  lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
+  PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein
+  Einzelbild für einen gespeicherten Companion.
+- Noch nicht in der App: nativer Werkzeug-Modus, Chat-Export als Text, eigene Sprachmodelle (Whisper/Piper).
 
 ## Roadmap
 

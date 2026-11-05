@@ -1,6 +1,7 @@
 package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
@@ -26,7 +27,9 @@ import app.aichatmcp.core.normalizeName
 private const val NEW_ENTRY = "(Neu)"
 
 @Composable
-fun CompanionsScreen(vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit) {
+fun CompanionsScreen(
+    vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit, onImportAvatars: () -> Unit, onPickAvatar: (String) -> Unit,
+) {
     var selected by remember { mutableStateOf(vm.persona.id) }
     ScreenFrame("Companions", onBack) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -36,11 +39,16 @@ fun CompanionsScreen(vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit
             )
             OutlinedButton(onClick = onImport) { Text("Importieren") }
         }
+        OutlinedButton(onClick = onImportAvatars) { Text("Avatare aus Ordner holen…") }
         key(selected) {
             PersonaForm(
                 initial = if (selected.isEmpty()) Persona(name = "", description = "Du bist eine freundliche, neugierige Gesprächspartnerin.", greeting = "Hallo! Schön, dass du da bist.")
                 else vm.loadPersona(selected),
                 available = vm.tools.available,
+                avatarFile = vm.avatarFile(if (selected.isEmpty()) Persona() else vm.loadPersona(selected)).also { vm.avatarVersion },
+                personaId = selected,
+                onPickAvatar = { onPickAvatar(selected) },
+                onRemoveAvatar = { vm.removeAvatar(selected) },
                 canDelete = selected.isNotEmpty() && vm.personaIds.size > 1,
                 onSave = { selected = vm.savePersona(it) },
                 onDelete = { vm.deletePersona(selected); selected = vm.persona.id },
@@ -50,7 +58,10 @@ fun CompanionsScreen(vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit
 }
 
 @Composable
-private fun PersonaForm(initial: Persona, available: List<String>, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit) {
+private fun PersonaForm(
+    initial: Persona, available: List<String>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
+    onRemoveAvatar: () -> Unit, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit,
+) {
     var name by remember { mutableStateOf(initial.name) }
     var description by remember { mutableStateOf(initial.description) }
     var language by remember { mutableStateOf(initial.language) }
@@ -63,6 +74,20 @@ private fun PersonaForm(initial: Persona, available: List<String>, canDelete: Bo
     val hidden = initial.tools.filter { normalizeName(it) !in available }
     val hiddenApproved = initial.approvedTools.filter { normalizeName(it) !in available }
 
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        AvatarView(avatarFile, name.ifBlank { "?" }, 72.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            OutlinedButton(onClick = onPickAvatar, enabled = personaId.isNotEmpty()) { Text("Bild wählen…") }
+            if (initial.avatar.isNotEmpty()) TextButton(onClick = onRemoveAvatar) { Text("Bild entfernen") }
+        }
+    }
+    when {
+        personaId.isEmpty() -> Text("Zum Wählen eines Bildes den Companion zuerst speichern.", style = MaterialTheme.typography.bodySmall)
+        initial.avatar.isNotEmpty() && avatarFile == null -> Text(
+            "Das Bild '${initial.avatar}' fehlt: \"Avatare aus Ordner holen…\" oder ein Bild wählen.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+        )
+    }
     TextSetting("Name", name, { name = it })
     TextSetting("Beschreibung", description, { description = it }, minLines = 3, maxLines = 8)
     TextSetting("Sprache der Antworten", language, { language = it })

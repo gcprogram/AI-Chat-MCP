@@ -23,6 +23,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -74,6 +76,22 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             else toast("Keine PEM-Zertifikatsdatei")
         }
     }
+    val scope = rememberCoroutineScope()
+    var avatarTarget by remember { mutableStateOf("") }
+    val avatarFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            scope.launch {
+                runCatching { vm.importAvatarFolder(it) }
+                    .onSuccess { n -> toast(if (n > 0) "$n Bilder übernommen" else "Keine Bilder im gewählten Ordner (bitte den Ordner avatars wählen)") }
+                    .onFailure { e -> toast("Import fehlgeschlagen: ${e.message}") }
+            }
+        }
+    }
+    val avatarPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { u ->
+            scope.launch { toast(if (runCatching { vm.setAvatar(avatarTarget, u, nameOf(u)) }.getOrDefault(false)) "Avatar gesetzt" else "Bild nicht lesbar") }
+        }
+    }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) vm.toggleListening() else toast("Ohne Mikrofon-Berechtigung keine Spracheingabe.")
     }
@@ -106,7 +124,11 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onMic = ::onMic,
         )
         Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) })
-        Screen.COMPANIONS -> CompanionsScreen(vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") })
+        Screen.COMPANIONS -> CompanionsScreen(
+            vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
+            onImportAvatars = { avatarFolder.launch(null) },
+            onPickAvatar = { id -> avatarTarget = id; avatarPick.launch(arrayOf("image/*")) },
+        )
         Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onImportCert = { importCert.launch("*/*") })
     }
 }

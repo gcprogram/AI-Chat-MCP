@@ -124,7 +124,9 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
     var moreMenu by remember { mutableStateOf(false) }
     var confirmNew by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Avatar(vm.persona.name)
+        val avatar = remember(vm.persona.avatar, vm.avatarVersion) { vm.avatarFile(vm.persona) }
+        AvatarView(avatar, vm.persona.name)
+        Spacer(Modifier.padding(start = 4.dp))
         Box {
             TextButton(onClick = { personaMenu = true }, enabled = !vm.streaming) {
                 Text(vm.persona.name.ifEmpty { vm.persona.id }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 150.dp))
@@ -159,16 +161,6 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
             dismissButton = { TextButton(onClick = { confirmNew = false }) { Text("Abbrechen") } },
         )
     }
-}
-
-/** Platzhalter-Avatar: Anfangsbuchstabe auf einer aus dem Namen abgeleiteten Farbe. */
-@Composable
-private fun Avatar(name: String) {
-    val hue = (name.fold(0) { acc, c -> acc * 31 + c.code }.mod(360)).toFloat()
-    Box(
-        Modifier.size(34.dp).clip(CircleShape).background(Color.hsv(hue, 0.45f, 0.75f)),
-        contentAlignment = Alignment.Center,
-    ) { Text(name.take(1).uppercase(), color = Color.White, style = MaterialTheme.typography.titleMedium) }
 }
 
 @Composable

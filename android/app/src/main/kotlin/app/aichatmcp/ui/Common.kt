@@ -1,6 +1,22 @@
 package app.aichatmcp.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -89,4 +105,30 @@ fun DropdownField(label: String, options: List<String>, selected: String, onSele
             }
         }
     }
+}
+
+/** Das Bild eines Companions als Kreis; ohne Bild der Anfangsbuchstabe auf einer aus dem Namen abgeleiteten Farbe. */
+@Composable
+fun AvatarView(file: File?, name: String, size: Dp = 40.dp) {
+    val bitmap by produceState<ImageBitmap?>(null, file?.path, file?.lastModified()) {
+        value = file?.let { withContext(Dispatchers.IO) { decodeAvatar(it) } }
+    }
+    val image = bitmap
+    if (image != null) {
+        Image(image, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+    } else {
+        val hue = (name.fold(0) { acc, c -> acc * 31 + c.code }.mod(360)).toFloat()
+        Box(Modifier.size(size).clip(CircleShape).background(Color.hsv(hue, 0.45f, 0.75f)), contentAlignment = Alignment.Center) {
+            Text(name.take(1).uppercase(), color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/** Lädt das Bild verkleinert (die Dateien sind oft mehrere Megapixel groß, angezeigt werden wenige Dutzend dp). */
+private fun decodeAvatar(file: File, target: Int = 256): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.path, bounds)
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= target && bounds.outHeight / (sample * 2) >= target) sample *= 2
+    return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
 }
