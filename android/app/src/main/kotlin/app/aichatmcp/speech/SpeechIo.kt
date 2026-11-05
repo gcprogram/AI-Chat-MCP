@@ -3,6 +3,11 @@ package app.aichatmcp.speech
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.speech.RecognitionSupport
+import android.speech.RecognitionSupportCallback
+import android.speech.ModelDownloadListener
+import androidx.annotation.RequiresApi
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -21,25 +26,25 @@ import java.util.Locale
  */
 private val GOOGLE_PACKAGES = listOf("com.google.android.tts", "com.google.android.googlequicksearchbox")
 
+/**
+ * Der Erkennungsdienst von Google (Spracherkennung und -synthese von Google bzw. Google-App), falls installiert.
+ * Der separate On-Device-Erkenner mancher Geräte (createOnDeviceSpeechRecognizer) kennt oft nur wenige Sprachen und
+ * die Erkennung des Herstellers ist schlechter; ohne Google-Dienst gilt der Standard des Systems.
+ */
+fun googleRecognitionService(context: Context): ComponentName? {
+    val services = context.packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
+    for (pkg in GOOGLE_PACKAGES) {
+        services.firstOrNull { it.serviceInfo.packageName == pkg }?.let {
+            return ComponentName(it.serviceInfo.packageName, it.serviceInfo.name)
+        }
+    }
+    return null
+}
+
 class SpeechInput(private val context: Context) {
     private var recognizer: SpeechRecognizer? = null
 
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
-
-    /**
-     * Der Erkennungsdienst von Google (Spracherkennung und -synthese von Google bzw. Google-App), falls installiert.
-     * Der separate On-Device-Erkenner mancher Geräte (createOnDeviceSpeechRecognizer) kennt oft nur wenige Sprachen und
-     * die Erkennung des Herstellers ist schlechter; ohne Google-Dienst gilt der Standard des Systems.
-     */
-    private fun googleService(): ComponentName? {
-        val services = context.packageManager.queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
-        for (pkg in GOOGLE_PACKAGES) {
-            services.firstOrNull { it.serviceInfo.packageName == pkg }?.let {
-                return ComponentName(it.serviceInfo.packageName, it.serviceInfo.name)
-            }
-        }
-        return null
-    }
 
     /**
      * Startet die Aufnahme. Erst wird die Erkennung auf dem Gerät versucht (Audio bleibt auf dem Handy). Fehlt dafür das
@@ -59,7 +64,7 @@ class SpeechInput(private val context: Context) {
         onResult: (String) -> Unit, onError: (String) -> Unit, onMode: (Boolean) -> Unit,
     ) {
         onMode(preferOffline)
-        val google = googleService()
+        val google = googleRecognitionService(context)
         val r = if (google != null) SpeechRecognizer.createSpeechRecognizer(context, google) else SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
@@ -197,5 +202,100 @@ class SpeechOutput(private val context: Context) {
         }
         latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
         return done && file.length() > 0
+    }
+}
+
+/**
+ * Offline-Sprachpakete der Google-Spracherkennung verwalten (Android 13+): welche Sprachen installiert sind und das
+ * Herunterladen weiterer. Die Oberfläche des Herstellers zeigt das oft nicht an, die Schnittstelle gibt es trotzdem.
+ * Alle Rückrufe kommen auf dem Hauptthread.
+ */
+class SpeechPacks(private val context: Context) {
+    data class Support(val installed: Set<String>, val downloadable: Set<String>, val pending: Set<String>)
+
+    val isSupported: Boolean get() = Build.VERSION.SDK_INT >= 33
+
+    private fun newRecognizer(): SpeechRecognizer {
+        val google = googleRecognitionService(context)
+        return if (google != null) SpeechRecognizer.createSpeechRecognizer(context, google) else SpeechRecognizer.createSpeechRecognizer(context)
+    }
+
+    private fun baseIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+
+    @RequiresApi(33)
+    fun check(attempt: Int = 0, onResult: (Result<Support>) -> Unit) {
+        val recognizer = newRecognizer()
+        recognizer.checkRecognitionSupport(baseIntent(), context.mainExecutor, object : RecognitionSupportCallback {
+            override fun onSupportResult(recognitionSupport: RecognitionSupport) {
+                recognizer.destroy()
+                onResult(
+                    Result.success(
+                        Support(
+                            recognitionSupport.installedOnDeviceLanguages.toSet(),
+                            recognitionSupport.supportedOnDeviceLanguages.toSet(),
+                            recognitionSupport.pendingOnDeviceLanguages.toSet(),
+                        ),
+                    ),
+                )
+            }
+
+            override fun onError(error: Int) {
+                recognizer.destroy()
+                if (error == SpeechRecognizer.ERROR_CANNOT_CHECK_SUPPORT && attempt < 2) { // direkt nach dem Anbinden manchmal noch nicht bereit
+                    Handler(Looper.getMainLooper()).postDelayed({ check(attempt + 1, onResult) }, 1000)
+                } else {
+                    onResult(Result.failure(IllegalStateException("Fehler $error")))
+                }
+            }
+        })
+    }
+
+    private var downloader: SpeechRecognizer? = null
+
+    /** Lädt das Offline-Paket einer Sprache (z. B. "en-US"). [onProgress] liefert Prozent (ab Android 14), [onDone] das Ende. */
+    @RequiresApi(33)
+    fun download(tag: String, onProgress: (Int) -> Unit, onDone: (Result<String>) -> Unit) {
+        downloader?.destroy()
+        val recognizer = newRecognizer().also { downloader = it }
+        val intent = baseIntent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
+        fun finish(result: Result<String>) {
+            recognizer.destroy()
+            if (downloader === recognizer) downloader = null
+            onDone(result)
+        }
+        if (Build.VERSION.SDK_INT >= 34) {
+            recognizer.triggerModelDownload(intent, context.mainExecutor, object : ModelDownloadListener {
+                override fun onProgress(completedPercent: Int) = onProgress(completedPercent)
+                override fun onSuccess() = finish(Result.success("installiert"))
+                override fun onScheduled() = finish(Result.success("geplant (startet bei WLAN/Ladegerät)"))
+                override fun onError(error: Int) = finish(Result.failure(IllegalStateException("Fehler $error")))
+            })
+        } else {
+            recognizer.triggerModelDownload(intent) // ohne Rückmeldung: der Aufrufer prüft später erneut
+            Handler(Looper.getMainLooper()).postDelayed({ finish(Result.success("angestoßen")) }, 1500)
+        }
+    }
+
+    /**
+     * Öffnet Googles Download-Dialog für die Sprache. Der Erkennungsdienst versucht das beim Anstoßen selbst, wird dabei aber
+     * als Hintergrundprozess blockiert (Android 15: BAL_BLOCK) - dann kommt nie eine Rückmeldung. Aus der sichtbaren App
+     * heraus ist der Start erlaubt.
+     */
+    fun openDownloadDialog(tag: String): Boolean = try {
+        context.startActivity(
+            Intent("com.google.recognition.action.DOWNLOAD_LANGUAGE")
+                .setPackage("com.google.android.tts")
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    fun cancelDownload() {
+        downloader?.destroy()
+        downloader = null
     }
 }

@@ -206,6 +206,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   (nicht den Hersteller-Erkenner) und versucht zuerst offline. Fehlt das Offline-Sprachpaket (Fehler 13), wird mit der
   Online-Erkennung von Google wiederholt, sofern der Schalter *Online-Erkennung erlauben* an ist (Standard); die Statuszeile zeigt beim Zuhören und nach dem Ergebnis, womit erkannt wurde (`offline` oder `online, Google`). Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
   Companions (`Deutsch` → `de-DE`). Werkzeugaufrufe werden nicht vorgelesen.
+- **Offline-Sprachpakete** (Android 13+): Die Einstellungen zeigen unter *Offline-Sprachpakete* je Sprache, ob das Google-Paket
+  installiert ist, und laden es per *Laden* herunter (Google fragt mit einem Dialog nach der Größe, ca. 50 bis 60 MB). Den Fortschritt
+  meldet der Dienst nicht zuverlässig, die App prüft deshalb regelmäßig, bis das Paket da ist.
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
   PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein

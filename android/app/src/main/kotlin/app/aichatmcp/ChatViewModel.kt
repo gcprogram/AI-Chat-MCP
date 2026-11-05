@@ -1,6 +1,8 @@
 package app.aichatmcp
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
@@ -39,8 +41,17 @@ import kotlinx.coroutines.withContext
 import app.aichatmcp.local.LocalLlm
 import app.aichatmcp.local.effectiveConfig
 import app.aichatmcp.speech.SpeechInput
+import app.aichatmcp.speech.SpeechPacks
 import app.aichatmcp.speech.SpeechOutput
 import kotlinx.serialization.json.JsonObject
+
+/** Eine Sprache der Offline-Spracherkennung: state = installed | available | downloading | unsupported. */
+data class PackRow(val tag: String, val name: String, val state: String, val progress: Int = 0)
+
+private val PACK_LANGUAGES = listOf(
+    "de-DE" to "Deutsch", "en-US" to "English (US)", "en-GB" to "English (UK)", "ja-JP" to "Japanisch (日本語)",
+    "fr-FR" to "Französisch", "es-ES" to "Spanisch", "it-IT" to "Italienisch",
+)
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
@@ -83,6 +94,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var listening by mutableStateOf(false)
         private set
+    var packRows by mutableStateOf<List<PackRow>>(emptyList())
+        private set
+    var packNote by mutableStateOf("")
+        private set
     var mcpText by mutableStateOf("")
         private set
     var secretNames by mutableStateOf<List<String>>(emptyList())
@@ -96,6 +111,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val localLlm = LocalLlm(app)
     private val speechIn = SpeechInput(app)
     private val speechOut = SpeechOutput(app)
+    private val packs = SpeechPacks(app)
     private var registry = ToolRegistry()
     private val session: ChatSession
     private val engine: ChatEngine
@@ -236,6 +252,75 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = "Höre zu… ($speechMode)"
             },
         )
+    }
+
+    // --- Offline-Sprachpakete der Spracherkennung -----------------------------------------------------------
+
+    val packsSupported: Boolean get() = packs.isSupported
+
+    fun refreshPacks() {
+        if (!packs.isSupported) return
+        packNote = "Prüfe installierte Sprachpakete…"
+        packs.check { result ->
+            result.onSuccess { support ->
+                val downloading = packRows.filter { it.state == "downloading" }.associateBy { it.tag }
+                packRows = PACK_LANGUAGES.map { (tag, name) ->
+                    downloading[tag] ?: PackRow(
+                        tag, name,
+                        when {
+                            tag in support.installed -> "installed"
+                            tag in support.downloadable || tag in support.pending -> "available"
+                            else -> "unsupported"
+                        },
+                    )
+                }
+                packNote = ""
+            }.onFailure { packNote = "Sprachpakete lassen sich nicht abfragen (${it.message})." }
+        }
+    }
+
+    fun downloadPack(tag: String) {
+        if (!packs.isSupported) return
+        fun set(state: String, progress: Int = 0) {
+            packRows = packRows.map { if (it.tag == tag) it.copy(state = state, progress = progress) else it }
+        }
+        set("downloading")
+        packNote = "Lade Sprachpaket $tag…"
+        packs.download(
+            tag,
+            onProgress = { set("downloading", it) },
+            onDone = { result ->
+                result.onFailure {
+                    set("available")
+                    packNote = "Download fehlgeschlagen (${it.message})"
+                }
+                result.onSuccess { if (it == "installiert") packNote = "Sprachpaket $tag: $it" }
+                refreshPacks()
+            },
+        )
+        packs.openDownloadDialog(tag)
+        pollPack(tag, System.currentTimeMillis() + 5 * 60_000)
+    }
+
+    /** Der Dienst meldet den Fortschritt oft nicht: regelmäßig nachsehen, bis das Paket da ist oder die Zeit abläuft. */
+    private fun pollPack(tag: String, until: Long) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (packRows.none { it.tag == tag && it.state == "downloading" }) return@postDelayed
+            packs.check { result ->
+                when {
+                    result.getOrNull()?.installed?.contains(tag) == true -> {
+                        packNote = "Sprachpaket $tag: installiert"
+                        refreshPacks()
+                    }
+                    System.currentTimeMillis() < until -> pollPack(tag, until)
+                    else -> {
+                        packRows = packRows.map { if (it.tag == tag) it.copy(state = "available", progress = 0) else it }
+                        packNote = "Sprachpaket $tag wurde nicht installiert (Internetverbindung prüfen, dann erneut laden)."
+                        refreshPacks()
+                    }
+                }
+            }
+        }, 4000)
     }
 
     /** Womit die letzte Spracherkennung lief (für die Statuszeile). */

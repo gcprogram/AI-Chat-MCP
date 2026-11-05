@@ -1,6 +1,7 @@
 package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
@@ -18,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.core.BACKEND_LOCAL
 import app.aichatmcp.core.BACKEND_SERVER
@@ -131,6 +133,33 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
                 "Online-Erkennung an Google.",
             style = MaterialTheme.typography.bodySmall,
         )
+
+        SectionTitle("Offline-Sprachpakete (Spracherkennung)")
+        if (!vm.packsSupported) {
+            Text("Das Verwalten der Sprachpakete braucht Android 13 oder neuer.", style = MaterialTheme.typography.bodySmall)
+        } else {
+            LaunchedEffect(Unit) { vm.refreshPacks() }
+            vm.packRows.forEach { row ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(row.name)
+                        Text(
+                            when (row.state) {
+                                "installed" -> "offline installiert"
+                                "downloading" -> if (row.progress > 0) "wird geladen… ${row.progress} %" else "wird geladen…"
+                                "available" -> "nicht installiert (es wird online erkannt)"
+                                else -> "für Offline-Erkennung nicht angeboten"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (row.state == "installed") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                    if (row.state == "available") OutlinedButton(onClick = { vm.downloadPack(row.tag) }) { Text("Laden") }
+                }
+            }
+            if (vm.packNote.isNotEmpty()) Text(vm.packNote, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = vm::refreshPacks) { Text("Status aktualisieren") }
+        }
 
         SectionTitle("Werkzeuge")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

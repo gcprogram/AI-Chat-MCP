@@ -84,6 +84,10 @@ python main.py
   `SpeechOutput` = `TextToSpeech` (Systemstandard, bei diesem Gerät Google);
   Sprachwahl/Textaufbereitung testbar im Kern (`Speech`). Der Geräte-Test lässt die Synthese in eine Datei schreiben (kein Ton) und prüft
   nur die Verfügbarkeit der Erkennung (Sprechen kann ein Test nicht). Echte Spracheingabe per Mikrofon noch nicht von Hand geprüft.
+  **Offline-Pakete** (`SpeechPacks`: `checkRecognitionSupport` API 33, `triggerModelDownload` API 34): Der Google-Dienst versucht dabei, eine eigene
+  `DownloadActivity` (`com.google.recognition.action.DOWNLOAD_LANGUAGE`) zu starten, was Android 15 als Hintergrundstart blockiert (`BAL_BLOCK`) - es kommt
+  nie eine Rückmeldung, der Fortschritt bleibt bei 0 %. Deshalb startet die App den Dialog selbst (`openDownloadDialog`, Extra `EXTRA_LANGUAGE`) und fragt
+  den Status alle 4 s ab (`pollPack`, 5 min). Auf dem Gerät geprüft (de, en-US, ja-JP).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:
   Dateien aus dem Auswahldialog kann `llama.cpp` NICHT über `/proc/self/fd/N` öffnen (Permission denied), deshalb `loadFd` mit
