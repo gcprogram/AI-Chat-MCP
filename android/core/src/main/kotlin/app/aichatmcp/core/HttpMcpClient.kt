@@ -37,7 +37,8 @@ import javax.net.ssl.X509TrustManager
 
 const val HTTP_PROTOCOL_VERSION = "2025-03-26"
 private const val MAX_RESPONSE_BYTES = 2_000_000L
-private val ENV_RE = Regex("\\$\\{(\\w+)}")
+// Android (ICU) verlangt für eine literale schließende Klammer den Schrägstrich (\}); die JVM nimmt auch ein blankes }
+private val ENV_RE = Regex("\\$\\{(\\w+)\\}")
 
 private class SessionLost(message: String) : Exception(message)
 

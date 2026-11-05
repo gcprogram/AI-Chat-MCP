@@ -1,38 +1,252 @@
 {
-    "servers": {
-        "weather": {"builtin": "weather", "raw": false},
-        "websearch": {"builtin": "websearch", "raw": false},
-        "remote": {
-            "disabled": true,
-            "url": "https://127.0.0.1:8443/mcp",
-            "headers": {"Authorization": "Bearer ${BROADCAST_REMOTE_TOKEN}"},
-            "cert": "remote.pem",
-            "raw": false
-        }
+  "servers": {
+    "weather": {
+      "builtin": "weather",
+      "raw": false
     },
-    "aliases": {
-        "weather": {
-            "server": "weather", "tool": "forecast", "params": ["place", "day"],
-            "defaults": {"place": "Berlin", "day": "today"},
-            "hint": "Weather forecast for today or tomorrow", "example": "[[mcp:weather|Berlin|tomorrow]]",
-            "result": "both", "confirm": false
-        },
-        "weather-past": {
-            "server": "weather", "tool": "historical", "params": ["place", "date"],
-            "defaults": {"place": "Berlin"},
-            "hint": "Weather on a past day", "example": "[[mcp:weather-past|Berlin|2020-11-25]]",
-            "result": "both", "confirm": false
-        },
-        "websearch": {
-            "server": "websearch", "tool": "search", "params": ["query"],
-            "hint": "Searches the web", "example": "[[mcp:websearch|AI news today]]",
-            "result": "model", "confirm": false
-        },
-        "tv-p1": {"server": "remote", "tool": "send", "args": {"code": "0x11"},
-                  "hint": "Switch the TV to program 1", "result": "discard", "status": "TV: Program 1"},
-        "tv-p2": {"server": "remote", "tool": "send", "args": {"code": "0x12"},
-                  "hint": "Switch the TV to program 2", "result": "discard", "status": "TV: Program 2"},
-        "tv-off": {"server": "remote", "tool": "off",
-                   "hint": "Switch the TV off", "result": "discard", "status": "TV: off"}
+    "websearch": {
+      "builtin": "websearch",
+      "raw": false
+    },
+    "remote": {
+      "disabled": true,
+      "url": "https://127.0.0.1:8443/mcp",
+      "headers": {
+        "Authorization": "Bearer ${BROADCAST_REMOTE_TOKEN}"
+      },
+      "cert": "remote.pem",
+      "raw": false
     }
+  },
+  "aliases": {
+    "weather": {
+      "server": "weather",
+      "tool": "forecast",
+      "params": [
+        "place",
+        "day"
+      ],
+      "defaults": {
+        "place": "Berlin",
+        "day": "today"
+      },
+      "hint": "Weather forecast for today or tomorrow",
+      "example": "[[mcp:weather|Berlin|tomorrow]]",
+      "result": "both",
+      "confirm": false
+    },
+    "weather-past": {
+      "server": "weather",
+      "tool": "historical",
+      "params": [
+        "place",
+        "date"
+      ],
+      "defaults": {
+        "place": "Berlin"
+      },
+      "hint": "Weather on a past day",
+      "example": "[[mcp:weather-past|Berlin|2020-11-25]]",
+      "result": "both",
+      "confirm": false
+    },
+    "websearch": {
+      "server": "websearch",
+      "tool": "search",
+      "params": [
+        "query"
+      ],
+      "hint": "Searches the web",
+      "example": "[[mcp:websearch|AI news today]]",
+      "result": "model",
+      "confirm": false
+    },
+    "tv-p1": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x11"
+      },
+      "hint": "Switch the TV to program 1",
+      "result": "discard",
+      "status": "TV: Program 1"
+    },
+    "tv-p2": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x12"
+      },
+      "hint": "Switch the TV to program 2",
+      "result": "discard",
+      "status": "TV: Program 2"
+    },
+    "tv-p3": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x13"
+      },
+      "hint": "Switch the TV to program 3",
+      "result": "discard",
+      "status": "TV: Program 3"
+    },
+    "tv-p4": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x14"
+      },
+      "hint": "Switch the TV to program 4",
+      "result": "discard",
+      "status": "TV: Program 4"
+    },
+    "tv-p5": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x15"
+      },
+      "hint": "Switch the TV to program 5",
+      "result": "discard",
+      "status": "TV: Program 5"
+    },
+    "tv-p6": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x16"
+      },
+      "hint": "Switch the TV to program 6",
+      "result": "discard",
+      "status": "TV: Program 6"
+    },
+    "tv-p7": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x17"
+      },
+      "hint": "Switch the TV to program 7",
+      "result": "discard",
+      "status": "TV: Program 7"
+    },
+    "tv-p8": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x18"
+      },
+      "hint": "Switch the TV to program 8",
+      "result": "discard",
+      "status": "TV: Program 8"
+    },
+    "tv-p9": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x19"
+      },
+      "hint": "Switch the TV to program 9",
+      "result": "discard",
+      "status": "TV: Program 9"
+    },
+    "tv-p10": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x20"
+      },
+      "hint": "Switch the TV to program 10",
+      "result": "discard",
+      "status": "TV: Program 10"
+    },
+    "tv-m1": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x0c"
+      },
+      "hint": "Switch the TV to manga 1",
+      "result": "discard",
+      "status": "TV: Manga 1"
+    },
+    "tv-m2": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x0b"
+      },
+      "hint": "Switch the TV to manga 2",
+      "result": "discard",
+      "status": "TV: Manga 2"
+    },
+    "tv-m3": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x34"
+      },
+      "hint": "Switch the TV to manga 3",
+      "result": "discard",
+      "status": "TV: Manga 3"
+    },
+    "tv-s1": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x38"
+      },
+      "hint": "Switch the TV to special 1",
+      "result": "discard",
+      "status": "TV: Special 1"
+    },
+    "tv-s2": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x36"
+      },
+      "hint": "Switch the TV to special 2",
+      "result": "discard",
+      "status": "TV: Special 2"
+    },
+    "tv-s3": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x37"
+      },
+      "hint": "Switch the TV to special 3",
+      "result": "discard",
+      "status": "TV: Special 3"
+    },
+    "tv-x1": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x39"
+      },
+      "hint": "Switch the TV to NSFW program 1",
+      "result": "discard",
+      "status": "TV: NSFW program 1"
+    },
+    "tv-x2": {
+      "server": "remote",
+      "tool": "send",
+      "args": {
+        "code": "0x35"
+      },
+      "hint": "Switch the TV to NSFW program 2",
+      "result": "discard",
+      "status": "TV: NSFW program 2"
+    },
+    "tv-off": {
+      "server": "remote",
+      "tool": "off",
+      "hint": "Switch the TV off",
+      "result": "discard",
+      "status": "TV: off"
+    }
+  }
 }

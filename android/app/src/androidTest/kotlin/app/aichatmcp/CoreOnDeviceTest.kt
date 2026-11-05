@@ -11,7 +11,9 @@ import app.aichatmcp.core.TOOL_SHOWN
 import app.aichatmcp.core.ToolSpec
 import app.aichatmcp.core.WeatherServer
 import app.aichatmcp.core.WebsearchServer
+import app.aichatmcp.core.expandSecrets
 import app.aichatmcp.core.finalizeReply
+import app.aichatmcp.core.isLocalHost
 import app.aichatmcp.core.findCall
 import app.aichatmcp.core.neutralize
 import app.aichatmcp.core.splitSegments
@@ -85,6 +87,15 @@ class CoreOnDeviceTest {
         assertTrue("Antwortsprache: English." in persona.systemPrompt("Stefan"))
         val log = listOf(Message("user", "Hi"), Message("assistant", "[[mcp:weather]]"), Message("user", "sonnig", TOOL_SHOWN, "weather"))
         assertEquals(log, ChatLog.fromJson(ChatLog.toJson(log, "fern", "Stefan")).messages)
+    }
+
+    @Test
+    fun httpMcpHelpersWorkOnAndroidRegex() {
+        // Absturz beim Start des Fernbedienungs-Servers: der Regex für ${NAME} war unter ICU ungültig
+        assertEquals("Bearer abc", expandSecrets("Bearer \${TOKEN}", "test") { if (it == "TOKEN") "abc" else null })
+        assertTrue(isLocalHost("127.0.0.1"))
+        assertTrue(isLocalHost("192.168.1.5"))
+        assertTrue(!isLocalHost("8.8.8.8"))
     }
 
     @Test
