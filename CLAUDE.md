@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 87 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 88 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 

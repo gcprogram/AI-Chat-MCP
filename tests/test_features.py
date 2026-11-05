@@ -486,6 +486,24 @@ class GuiToolsTest(unittest.TestCase):
         self.assertEqual(editor.save(), "mia")
         self.assertEqual(load_persona("mia", self.personas).approved_tools, ["rechnen"])
 
+    def test_editor_language_is_a_dropdown_and_keeps_custom_values(self):
+        from chat_app.persona_editor import LANGUAGES, PersonaEditor
+
+        editor = PersonaEditor(self.app, select="mia")
+        self.addCleanup(editor.destroy)
+        self.assertEqual(list(editor.language.cget("values")), LANGUAGES)
+        editor.language.set("Japanese")
+        self.assertEqual(editor.save(), "mia")
+        self.assertEqual(load_persona("mia", self.personas).language, "Japanese")
+        custom = load_persona("mia", self.personas)
+        custom.language = "Plattdeutsch"  # früher frei eingegebener Wert darf nicht verloren gehen
+        save_persona(custom, self.personas)
+        editor._load("mia")
+        self.assertEqual(editor.language.get(), "Plattdeutsch")
+        self.assertIn("Plattdeutsch", editor.language.cget("values"))
+        self.assertEqual(editor.save(), "mia")
+        self.assertEqual(load_persona("mia", self.personas).language, "Plattdeutsch")
+
     def test_loaded_text_chat_and_trailing_question_goes_to_input(self):
         path = Path(self.tmp.name) / "alt.txt"
         path.write_text("Alex: Hi Mia\n\nMia: Hallo!\n\nAlex: Noch da?", encoding="utf-8")

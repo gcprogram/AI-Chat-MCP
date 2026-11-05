@@ -10,6 +10,8 @@ from .persona import (Persona, delete_persona, list_personas, load_persona, remo
                       unique_id)
 
 
+# Antwortsprachen zur Auswahl (wie in der Android-App)
+LANGUAGES = ["Deutsch", "English", "English (UK)", "Français", "Español", "Italiano", "Japanese"]
 MODE_LABELS = {"marker": "Textmarker (für kleine Modelle)", "native": "Nativ (tools-Parameter der API)"}
 
 
@@ -39,7 +41,9 @@ class PersonaEditor(tk.Toplevel):
 
         self.name = self._entry("Name:", 1)
         self.description = self._text("Beschreibung:", 2, 5)
-        self.language = self._entry("Sprache:", 3)
+        ttk.Label(self, text="Sprache:").grid(row=3, column=0, sticky="nw", padx=10, pady=5)
+        self.language = ttk.Combobox(self, state="readonly", width=24, values=LANGUAGES)
+        self.language.grid(row=3, column=1, sticky="w", padx=10, pady=5)
         self.greeting = self._text("Begrüßung:", 4, 3)
         self.rules = self._text("Regeln (eine pro Zeile):", 5, 4)
 
@@ -124,8 +128,9 @@ class PersonaEditor(tk.Toplevel):
         self.current_id, self.avatar_new, self.avatar_saved = persona.id, None, persona.avatar
         self.name.delete(0, tk.END)
         self.name.insert(0, persona.name)
-        self.language.delete(0, tk.END)
-        self.language.insert(0, persona.language)
+        # ein bereits gespeicherter freier Wert (z. B. "Plattdeutsch") bleibt auswählbar
+        self.language.configure(values=LANGUAGES + ([persona.language] if persona.language not in LANGUAGES else []))
+        self.language.set(persona.language)
         for widget, value in ((self.description, persona.description), (self.greeting, persona.greeting),
                               (self.rules, "\n".join(persona.rules))):
             widget.delete("1.0", tk.END)
