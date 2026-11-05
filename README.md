@@ -213,19 +213,38 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   Beispielsatz. *Stimmen laden…* öffnet die Stimmenverwaltung von Google. Automatisches Vorlesen der Antworten schaltet *Antworten vorlesen* ein (Standard: aus).
 - **Vorwärmen**: Mit dem lokalen Modell werden Modell und bisheriger Verlauf nach dem Start im Hintergrund vorberechnet (Status *Modell wird vorbereitet…*);
   sonst braucht die erste Antwort nach jedem App-Start mehrere Minuten (ca. 10 Prompt-Tokens/s).
-- **Dokumente hochladen** (📎 neben dem Nachrichtenfeld): TXT, MD, DOCX und PDF (PDF mit PdfBox für Android; ein Scan ohne Textebene
+- **Dokumente hochladen** (📎 neben dem Nachrichtenfeld): TXT, MD, DOCX, EPUB, HTML und PDF (PDF mit PdfBox für Android; ein Scan ohne Textebene
   liefert keinen Text und wird so gemeldet). Danach fragt die App (nicht das Modell) „Was soll ich damit machen?“: **1 · Als Eingabe
   einlesen** (Text und Dateiname landen im Eingabefeld, die Frage schreibt man dahinter), **2 · Vorlesen** (Abschnitt für Abschnitt mit
   Fortschritt und Stopp, ohne Modell und daher ohne Kontextgrenze) oder **3 · Zusammenfassen** (das Modell fasst zusammen). Das
   Kontextfenster ist klein: Einlesen und Zusammenfassen nehmen nur den Anfang, der hineinpasst (Fenster minus Antwort minus System-Prompt,
   bei 4096 Tokens ca. 2300), und die Karte sagt das. Lange Nutzernachrichten erscheinen im Chat gekürzt, das Modell bekommt den vollen Text.
+- **Vorlese-Modus** (Karte → *Vorlesen*): Tasten `<<` `<` `■` `▶` `||` `>` `>>`. `<`/`>` springen einen Abschnitt (ca. 25 s Sprechzeit, das
+  ist als Schritt klein genug und kostet keine Wartezeit), `<<`/`>>` eine **Seite** (PDF-Seiten, EPUB-Kapitel), ohne echte Seiten (TXT, MD, DOCX,
+  HTML) 10 Abschnitte. Pause hält an der Stelle an, Play beginnt den Abschnitt von vorn (Android kann nicht mitten im Abschnitt anhalten).
+  - **Vorlese-Marke**: Die Stelle wird je Text gespeichert (`reading_marks.json`, der Text über dauerhaften Dateizugriff wiedergefunden) und überlebt
+    einen Neustart. Fortsetzen über die Karte (*Weiterlesen*, wenn dieselbe Datei wieder gewählt wird) oder im Menü ⋮ → *Weiterlesen: …*. Ist die
+    Datei weg, gibt es eine Fehlermeldung und die Marke wird gelöscht. Marken anderer Texte bleiben. Ganz am Anfang oder am Ende gibt es keine Marke.
+  - **Anruf oder anderes Audio**: Das Vorlesen pausiert (Tonfokus) und geht danach von selbst weiter. Übernimmt eine andere App den Ton dauerhaft
+    (Musik), bleibt es pausiert, bis du Play drückst. Läuft der Bildschirm aus, hängt es vom System ab, ob das Vorlesen weitergeht (kein Hintergrunddienst).
+  - **Sprache des Textes**: wird über die Buchstabenhäufigkeit erkannt (Deutsch, Englisch, Französisch, Spanisch, Italienisch; Japanisch an der Schrift),
+    nicht nach dem Companion; zu kurze oder unklare Texte nehmen die Sprache des Companions. Fehlt die Stimme, fragt ein Dialog (*Stimmen laden…* oder
+    *Trotzdem vorlesen*).
+  - **Bilder im Text** (EPUB, HTML mit eingebetteten Bildern): nach dem Absatz beschreibt das Bildmodell das Bild (schon beim Abschnitt davor
+    bestellt, damit keine lange Pause entsteht), die Beschreibung (englisch) wird vorgelesen, dann geht der Text weiter. Ohne Bildmodell wird der
+    Ersatztext (`alt`) gelesen. Relative Bilder einer einzelnen HTML-Datei sind nicht ladbar.
 - **Bilder beschreiben** (📎, Bilddatei wählen): Das Chat-Modell kann keine Bilder sehen, deshalb beschreibt ein kleines **Bildmodell** (getestet mit
   SmolVLM-256M-Instruct Q8_0, ca. 175 MB, plus `mmproj-SmolVLM-256M-Instruct-Q8_0.gguf`, ca. 104 MB, beide von `ggml-org/SmolVLM-256M-Instruct-GGUF`)
   das Bild als Text. Beide Dateien in den Einstellungen unter *Bildmodell* wählen (werden in den App-Speicher kopiert; geladen wird nur
   während einer Beschreibung). Danach gilt dieselbe Rückfrage wie bei Dokumenten: *Als Eingabe einlesen* (die Frage dazu an den Companion
   schreibt man dahinter) oder *Vorlesen*. Die Beschreibung ist englisch und kurz; das Bild wird vorher auf 768 Pixel verkleinert.
   Gemessen auf dem Galaxy S21: ca. 12 bis 35 s je Bild (das erste Mal nach dem Installieren langsamer). Das Bildmodell ersetzt keine Texterkennung
-  (Schrift im Bild liest es nur grob) und halluziniert Details.
+  (Schrift im Bild liest es nur grob) und halluziniert Details. Die Beschreibung hat 7 Sätze.
+- **Schlüsselwörter** (Einstellungen → *Schlüsselwörter lösen Werkzeuge aus*, Standard aus): Ein Alias in `mcp_servers.json` kann
+  `"keywords": ["\bprogramm\s*1\b", "channel one"]` haben (reguläre Ausdrücke, Groß-/Kleinschreibung egal; Gruppen werden zu Argumenten). Kommt ein
+  Ausdruck in der Eingabe, in der Antwort des Modells, im vorgelesenen Text oder in einer Bildbeschreibung vor, läuft das Werkzeug ohne das Modell.
+  Eine Eingabe mit Treffer geht nicht an das Modell. Es gelten Freigabe des Companions und Rückfrage; dasselbe Werkzeug löst höchstens alle 30 s
+  aus. **Vorsicht:** Auch fremde Texte (Dateien, Bilder) können so Werkzeuge auslösen. Nur in der Android-App, die Python-App ignoriert `keywords`.
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
   PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein

@@ -1,12 +1,14 @@
 package app.aichatmcp
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import java.io.File
+import java.util.Locale
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +24,22 @@ import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.BACKEND_LOCAL
 import app.aichatmcp.core.CancelToken
 import app.aichatmcp.core.DocKind
+import app.aichatmcp.core.DocText
+import app.aichatmcp.core.KeywordHit
+import app.aichatmcp.core.KeywordRules
+import app.aichatmcp.core.KeywordThrottle
+import app.aichatmcp.core.LanguageDetect
+import app.aichatmcp.core.RESULT_BOTH
+import app.aichatmcp.core.RESULT_SHOW
+import app.aichatmcp.core.ReadMark
+import app.aichatmcp.core.ReadMarks
+import app.aichatmcp.core.ReadPlan
+import app.aichatmcp.core.Reader
+import app.aichatmcp.core.ReaderEvents
+import app.aichatmcp.core.ReaderState
+import app.aichatmcp.core.ToolOutcome
+import app.aichatmcp.core.normalizeName
+import app.aichatmcp.core.splitSegments
 import app.aichatmcp.core.DocumentException
 import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ChatSession
@@ -46,7 +64,10 @@ import kotlinx.coroutines.withContext
 import app.aichatmcp.local.LocalLlm
 import app.aichatmcp.local.VisionLlm
 import app.aichatmcp.local.effectiveConfig
+import app.aichatmcp.speech.DescribedPictures
+import app.aichatmcp.speech.ReaderFocus
 import app.aichatmcp.speech.SpeechInput
+import app.aichatmcp.speech.SpeechReaderOutput
 import app.aichatmcp.speech.SpeechPacks
 import app.aichatmcp.speech.SpeechOutput
 import kotlinx.serialization.json.JsonObject
@@ -70,7 +91,11 @@ private val VOICE_SAMPLES = mapOf(
 )
 
 /** Ein hochgeladenes Dokument, zu dem die App fragt, was damit geschehen soll. [tokens] grob geschätzt, [budget] = Platz im Kontext. */
-data class PendingDoc(val name: String, val kind: DocKind, val text: String, val tokens: Int, val budget: Int, val image: Boolean = false)
+data class PendingDoc(
+    val name: String, val kind: DocKind, val text: String, val tokens: Int, val budget: Int, val image: Boolean = false,
+    /** Woher die Datei kam (für die Vorlese-Marke; leer bei Bildbeschreibungen) und das eingelesene Dokument mit Seiten und Bildern. */
+    val uri: String = "", val doc: DocText? = null,
+)
 
 /** Ein gewähltes Bild (verkleinert, als JPEG), das noch nicht beschrieben ist. */
 class PendingImage(val name: String, val jpeg: ByteArray)
@@ -79,7 +104,7 @@ private sealed interface Loaded
 private class LoadedDoc(val doc: app.aichatmcp.core.DocText) : Loaded
 private class LoadedImage(val name: String, val jpeg: ByteArray) : Loaded
 
-private const val IMAGE_PROMPT = "Describe this image briefly in 3 to 5 sentences. Mention the people, important objects, colors, the setting and any text you can read."
+private const val IMAGE_PROMPT = "Describe this image in 7 sentences. Mention the people, important objects, colors, the setting and any text you can read."
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
@@ -138,10 +163,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var visionBusy by mutableStateOf(false)
         private set
     var visionNote by mutableStateOf("")
-        private set
-    var docReading by mutableStateOf(false)
-        private set
-    var docProgress by mutableStateOf("")
         private set
     var voiceRows by mutableStateOf<List<PackRow>>(emptyList())
         private set
@@ -238,6 +259,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun send() {
         val text = input.trim()
         if (streaming || text.isEmpty()) return
+        // Schlüsselwörter in der Eingabe lösen das Werkzeug direkt aus; das Modell wird dann nicht gefragt (Entlastung, deterministisch)
+        if (config.keywordsEnabled && !keywordRules().isEmpty && keywordRules().match(text).isNotEmpty()) {
+            input = ""
+            messages += UiMessage(UiKind.USER, shortened(text))
+            triggerKeywords(text, "Eingabe", throttled = false)
+            return
+        }
+        readerPause()
         if (config.backend == BACKEND_LOCAL && config.localModel.isEmpty()) {
             status = "Bitte zuerst in den Einstellungen eine Modelldatei wählen."
             return
@@ -288,6 +317,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             status = "Keine Spracherkennung auf diesem Gerät."
             return
         }
+        readerPause()
         speechOut.stop()
         listening = true
         speechMode = "offline"
@@ -347,17 +377,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         status = "Lese Datei…"
         viewModelScope.launch {
             try {
+                // dauerhafter Zugriff, damit sich das Vorlesen nach einem Neustart fortsetzen lässt (Vorlese-Marke)
+                runCatching { getApplication<Application>().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 val loaded = withContext(Dispatchers.IO) { readFile(uri) }
-                speechOut.stop()
+                endReading()
                 pendingDoc = null
                 pendingImage = null
                 when (loaded) {
-                    is LoadedDoc -> {
-                        val doc = loaded.doc
-                        val tokens = (doc.text.length / session.context.charsPerToken).toInt()
-                        pendingDoc = PendingDoc(doc.name, doc.kind, doc.text, tokens, session.documentBudgetTokens())
-                        status = "Datei gelesen: ${doc.name}"
-                    }
+                    is LoadedDoc -> showDocument(loaded.doc, uri.toString())
                     is LoadedImage -> {
                         pendingImage = PendingImage(loaded.name, loaded.jpeg)
                         status = "Bild geladen: ${loaded.name}"
@@ -377,13 +404,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun readFile(uri: Uri): Loaded {
+    /** Liest eine Datei. [nameHint] ist der bekannte Dateiname (bei gelöschten Dateien liefert die Abfrage keinen). */
+    private fun readFile(uri: Uri, nameHint: String? = null): Loaded {
         val app = getApplication<Application>()
         val resolver = app.contentResolver
-        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        val name = nameHint ?: resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Datei"
-        val kind = Documents.kindOf(name, resolver.getType(uri))
-            ?: throw DocumentException("Dieses Dateiformat wird nicht unterstützt (möglich: PDF, TXT, MD, DOCX, Bilder).")
+        val kind = Documents.kindOf(name, if (nameHint == null) resolver.getType(uri) else null)
+            ?: throw DocumentException("Dieses Dateiformat wird nicht unterstützt (möglich: PDF, TXT, MD, DOCX, EPUB, HTML, Bilder).")
         if (kind == DocKind.IMAGE) return LoadedImage(name, ImagePrep.jpeg(app, uri))
         val bytes = resolver.openInputStream(uri)?.use { input ->
             val out = java.io.ByteArrayOutputStream()
@@ -420,6 +448,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val tokens = (text.length / session.context.charsPerToken).toInt()
                     pendingDoc = PendingDoc("Bild ${image.name}", DocKind.IMAGE, text, tokens, session.documentBudgetTokens(), image = true)
                     status = "Bild beschrieben."
+                    triggerKeywords(text, "Bildbeschreibung")
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -492,33 +521,282 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         send()
     }
 
-    /** Alternative 2: Vorlesen, Abschnitt für Abschnitt (ohne Modell, daher ohne Kontextgrenze). */
-    fun docRead() {
+    // --- Vorleser: Tasten, Marken, Tonfokus --------------------------------------------------------------------------
+
+    /** Eine Stimme für die erkannte Sprache des Textes fehlt: Der Nutzer entscheidet, ob er sie lädt oder trotzdem vorlesen lässt. */
+    class VoicePrompt(val tag: String, val name: String, val proceed: () -> Unit)
+
+    private var reader: Reader? = null
+    private var pictures: DescribedPictures? = null
+    private var readerDoc: PendingDoc? = null
+    private val marks = storage.loadMarks()
+
+    var readerState by mutableStateOf(ReaderState.STOPPED)
+        private set
+    var readerIndex by mutableStateOf(0)
+        private set
+    var readerTotal by mutableStateOf(0)
+        private set
+    var readerPage by mutableStateOf(0)
+        private set
+    var readerPages by mutableStateOf(0)
+        private set
+    var readerNote by mutableStateOf("")
+        private set
+    var voicePrompt by mutableStateOf<VoicePrompt?>(null)
+        private set
+    var markList by mutableStateOf(marks.all())
+        private set
+
+    /** Läuft gerade eine Vorlese-Sitzung (spielend oder pausiert)? */
+    val docReading: Boolean get() = readerState != ReaderState.STOPPED || reader != null
+
+    private val focus: ReaderFocus = ReaderFocus(getApplication(), object : ReaderFocus.Listener {
+        override fun lostTemporarily() {
+            if (reader?.state == ReaderState.PLAYING) status = "Vorlesen pausiert (Anruf oder anderer Ton), es geht danach weiter."
+            reader?.focusLostTemporarily()
+        }
+
+        override fun lostPermanently() {
+            if (reader?.state == ReaderState.PLAYING) status = "Vorlesen pausiert (eine andere App spielt Ton)."
+            reader?.focusLostPermanently()
+            abandonFocus()
+        }
+
+        override fun gained() {
+            reader?.focusGained()
+        }
+    })
+
+    private fun abandonFocus() = focus.abandon()
+
+    private fun languageName(tag: String): String = PACK_LANGUAGES.firstOrNull { it.first == tag }?.second ?: tag
+
+    /**
+     * Alternative 2: Vorlesen, Abschnitt für Abschnitt (ohne Modell, daher ohne Kontextgrenze). Die Sprache richtet sich nach dem
+     * Text (Buchstabenhäufigkeit), nicht nach dem Companion; fehlt dafür eine Stimme, fragt ein Dialog. Mit [fromMark] geht es dort
+     * weiter, wo es zuletzt stehen geblieben ist.
+     */
+    fun docRead(fromMark: Boolean = false) {
         val doc = pendingDoc ?: return
-        docReading = true
-        speechOut.readAloud(
-            Documents.speechChunks(doc.text), languageTag(),
-            onProgress = { index, total -> docProgress = "Lese Abschnitt ${index + 1} von $total" },
-            onFinished = { completed ->
-                docReading = false
-                docProgress = ""
-                status = if (completed) "Vorlesen beendet." else "Vorlesen abgebrochen."
-                if (completed) pendingDoc = null
-            },
-            onProblem = { status = it },
-        )
+        val source = doc.doc ?: DocText(doc.name, doc.kind, doc.text)
+        val plan = ReadPlan.of(source)
+        if (plan.size == 0) {
+            status = "Es gibt nichts zum Vorlesen."
+            return
+        }
+        val mark = if (fromMark) marks.get(doc.uri) else null
+        val start = mark?.let { ReadMarks.restoreIndex(it, plan.size) } ?: 0
+        val tag = LanguageDetect.detect(source.text)?.tag ?: languageTag() ?: Locale.getDefault().toLanguageTag()
+        speechOut.installedVoices(listOf(tag)) { installed ->
+            if (installed[tag] == true) beginReading(doc, plan, tag, start)
+            else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, plan, tag, start) }
+        }
     }
 
-    /** Beendet das Vorlesen; die Rückfrage bleibt, damit noch etwas anderes gewählt werden kann. */
-    fun stopReading() = speechOut.stop()
+    fun confirmVoicePrompt() {
+        val prompt = voicePrompt ?: return
+        voicePrompt = null
+        prompt.proceed()
+    }
+
+    fun dismissVoicePrompt() {
+        voicePrompt = null
+    }
+
+    private fun beginReading(doc: PendingDoc, plan: ReadPlan, tag: String, start: Int) {
+        endReading()
+        readerDoc = doc
+        val describer = DescribedPictures(
+            viewModelScope, getApplication(), vision, doc.doc?.readable, { config.localThreads }, IMAGE_PROMPT,
+        ) { description -> triggerKeywords(description, "Bildbeschreibung") }
+        pictures = describer
+        val events = object : ReaderEvents {
+            override fun onState(state: ReaderState) {
+                readerState = state
+            }
+
+            override fun onPosition(index: Int, total: Int) {
+                readerIndex = index
+                readerTotal = total
+                reader?.let { readerPage = it.page; readerPages = it.pageCount }
+                rememberPosition(doc, index, total)
+            }
+
+            override fun onSpoken(text: String, fromImage: Boolean) = triggerKeywords(text, if (fromImage) "Bildbeschreibung" else "Vorlesen")
+
+            override fun onDescribing(active: Boolean) {
+                readerNote = if (active) "Beschreibe das Bild…" else ""
+            }
+
+            override fun onProblem(message: String) {
+                status = message
+            }
+
+            override fun onFinished() {
+                status = "Vorlesen beendet."
+                endReading()
+                pendingDoc = null
+            }
+        }
+        val r = Reader(plan, SpeechReaderOutput(speechOut) { status = it }, describer, events, tag, "en-US", start)
+        reader = r
+        speechOut.setItemSink(object : SpeechOutput.ItemSink {
+            override fun done(id: String) = r.utteranceDone(id)
+            override fun failed(id: String) = r.utteranceFailed(id)
+        })
+        startPlaying(r)
+    }
+
+    private fun startPlaying(r: Reader) {
+        when (focus.request()) {
+            ReaderFocus.Result.GRANTED -> r.play()
+            ReaderFocus.Result.DELAYED -> {
+                status = "Der Ton ist gerade belegt (Anruf?); das Vorlesen startet, sobald er frei ist."
+                r.waitForFocus()
+            }
+            ReaderFocus.Result.FAILED -> status = "Der Ton ist gerade belegt (Anruf?). Bitte später noch einmal Play drücken."
+        }
+    }
+
+    private fun rememberPosition(doc: PendingDoc, index: Int, total: Int) {
+        if (doc.uri.isEmpty()) return
+        marks.update(doc.uri, doc.name, index, total, System.currentTimeMillis())
+        runCatching { storage.saveMarks(marks) }
+        markList = marks.all()
+    }
+
+    private fun endReading() {
+        reader?.takeIf { it.state != ReaderState.STOPPED }?.stop() // merkt die Stelle
+        pictures?.cancel()
+        reader = null
+        pictures = null
+        readerDoc = null
+        focus.abandon()
+        speechOut.setItemSink(null)
+        readerState = ReaderState.STOPPED
+        readerNote = ""
+    }
+
+    fun readerPlay() {
+        val r = reader ?: return
+        if (r.state != ReaderState.PLAYING) startPlaying(r)
+    }
+
+    fun readerPause() {
+        val r = reader ?: return
+        if (r.state == ReaderState.PLAYING) {
+            r.pause()
+            focus.abandon() // andere Apps dürfen wieder Ton abspielen
+        }
+    }
+
+    /** Stop (Rechteck): beendet das Vorlesen, die Stelle bleibt als Marke; die Rückfrage erscheint wieder. */
+    fun readerStop() {
+        endReading()
+    }
+
+    fun readerPrevious() = reader?.previous()
+
+    fun readerNext() = reader?.next()
+
+    fun readerJumpBack() = reader?.jumpBack()
+
+    fun readerJumpForward() = reader?.jumpForward()
+
+    /** Die Marke zu einer Datei, die gerade zur Auswahl steht (für "Weiterlesen"). */
+    fun markFor(doc: PendingDoc): ReadMark? = if (doc.uri.isEmpty()) null else markList.firstOrNull { it.uri == doc.uri }
+
+    /** Öffnet einen Text anhand seiner Vorlese-Marke und liest ab der gemerkten Stelle weiter. Ist die Datei weg, wird die Marke gelöscht. */
+    fun resumeMark(mark: ReadMark) {
+        if (streaming || docBusy) return
+        docBusy = true
+        status = "Öffne ${mark.name}…"
+        viewModelScope.launch {
+            try {
+                val loaded = withContext(Dispatchers.IO) { readFile(Uri.parse(mark.uri), mark.name) }
+                val doc = (loaded as? LoadedDoc)?.doc ?: throw DocumentException("Das ist kein Text.")
+                endReading()
+                pendingImage = null
+                showDocument(doc, mark.uri)
+                docRead(fromMark = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                marks.remove(mark.uri)
+                runCatching { storage.saveMarks(marks) }
+                markList = marks.all()
+                runCatching { getApplication<Application>().contentResolver.releasePersistableUriPermission(Uri.parse(mark.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                status = "Die Datei „${mark.name}“ ist nicht mehr lesbar. Die Vorlese-Marke wurde gelöscht."
+                messages += UiMessage(UiKind.ERROR, "[Vorlesen] Die Datei „${mark.name}“ ist nicht mehr da oder nicht lesbar (${e.message ?: e::class.simpleName}). Die Vorlese-Marke wurde gelöscht.")
+            } finally {
+                docBusy = false
+            }
+        }
+    }
+
+    private fun showDocument(doc: DocText, uri: String) {
+        val tokens = (doc.text.length / session.context.charsPerToken).toInt()
+        pendingDoc = PendingDoc(doc.name, doc.kind, doc.text, tokens, session.documentBudgetTokens(), uri = uri, doc = doc)
+        status = "Datei gelesen: ${doc.name}"
+    }
 
     fun dismissDoc() {
-        speechOut.stop()
+        endReading()
         vision.cancel()
         pendingImage = null
         pendingDoc = null
-        docReading = false
-        docProgress = ""
+    }
+
+    // --- Schlüsselwörter: Werkzeuge ohne das Modell auslösen -------------------------------------------------------
+
+    private val keywordThrottle = KeywordThrottle()
+
+    private fun keywordRules() = KeywordRules(session.registry.tools.values, session.toolNames)
+
+    /**
+     * Prüft einen Text auf die Schlüsselwörter der Werkzeuge (nur wenn in den Einstellungen eingeschaltet) und führt Treffer aus.
+     * Dasselbe Werkzeug löst innerhalb von 30 Sekunden nur einmal aus ([throttled]), damit ein Stichwort in aufeinanderfolgenden
+     * Vorleseabschnitten nicht mehrfach schaltet; [skip] sind Werkzeuge, die schon anderweitig liefen.
+     */
+    private fun triggerKeywords(text: String, source: String, skip: Set<String> = emptySet(), throttled: Boolean = true) {
+        if (!config.keywordsEnabled || text.isBlank()) return
+        val now = System.currentTimeMillis()
+        val hits = keywordRules().match(text).filter { it.alias !in skip && (!throttled || keywordThrottle.allow(it.alias, now)) }
+        if (hits.isEmpty()) return
+        viewModelScope.launch { hits.forEach { runKeyword(it, source) } }
+    }
+
+    private suspend fun runKeyword(hit: KeywordHit, source: String) {
+        val call = ToolCall(hit.alias, hit.args, "", 0, 0)
+        val spec = session.registry.tools[hit.alias]
+        var ask = spec?.confirm ?: config.confirmTools
+        if (hit.alias in persona.approvedTools.map { normalizeName(it) }) ask = false // beim Companion vorab genehmigt
+        if (ask) {
+            if (pendingConfirm != null) {
+                status = "Schlüsselwort „${hit.keyword}“ ($source): übersprungen (eine Rückfrage ist noch offen)."
+                return
+            }
+            if (!askUser(call, spec)) {
+                status = "Schlüsselwort „${hit.keyword}“ ($source): abgelehnt."
+                return
+            }
+        }
+        status = "Schlüsselwort „${hit.keyword}“ ($source): führe ${hit.alias} aus…"
+        val outcome = withContext(Dispatchers.IO) {
+            try {
+                session.registry.run(call, session.toolNames, config.toolResultChars, config.toolTimeout.toDouble())
+            } catch (e: Exception) {
+                ToolOutcome(hit.alias, false, "Interner Fehler: ${e.message}")
+            }
+        }
+        if (!outcome.ok) {
+            status = "Schlüsselwort „${hit.keyword}“ ($source): ${hit.alias} fehlgeschlagen"
+            messages += UiMessage(UiKind.ERROR, "[Schlüsselwort ${hit.alias}] ${outcome.text}")
+            return
+        }
+        status = "Schlüsselwort „${hit.keyword}“ ($source): ${outcome.status}"
+        if (outcome.mode == RESULT_SHOW || outcome.mode == RESULT_BOTH) messages += UiMessage(UiKind.SHOWN, outcome.text)
     }
 
     // --- Stimmen der Sprachausgabe ------------------------------------------------------------------------
@@ -588,6 +866,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private var speechMode = "offline"
 
     private fun speak(reply: String) {
+        if (docReading) return // ein Text wird gerade vorgelesen: die Antwort nicht dazwischenreden lassen
         val text = Speech.spokenText(reply)
         if (text.isNotEmpty()) speechOut.speak(text, languageTag()) { status = it }
     }
@@ -603,6 +882,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (event.message.role == "assistant") {
                     live = null
                     if (config.speakReplies) speak(event.message.content)
+                    val segments = splitSegments(event.message.content)
+                    triggerKeywords(
+                        segments.filter { it.first == "text" }.joinToString(" ") { it.second }, "Antwort",
+                        skip = segments.filter { it.first == "call" }.map { normalizeName(it.second.substringBefore(':')) }.toSet(),
+                    )
                 }
                 messages += toUi(event.message)
             }

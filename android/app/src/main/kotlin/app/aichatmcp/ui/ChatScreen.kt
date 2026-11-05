@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,7 @@ import app.aichatmcp.PendingImage
 import app.aichatmcp.UiKind
 import app.aichatmcp.UiMessage
 import app.aichatmcp.core.ChatEvent
+import app.aichatmcp.core.ReaderState
 import app.aichatmcp.core.splitSegments
 
 private val ToolGreen = Color(0xFF0B6B3A)
@@ -113,6 +115,25 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
             else Button(onClick = vm::send, enabled = vm.input.isNotBlank()) { Text("Senden") }
         }
     }
+    vm.voicePrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = vm::dismissVoicePrompt,
+            title = { Text("Stimme fehlt") },
+            text = {
+                Text(
+                    "Der Text ist vermutlich ${prompt.name}, aber dafür ist keine Sprachstimme installiert. Du kannst die Stimmen laden " +
+                        "(danach noch einmal auf Vorlesen tippen) oder jetzt trotzdem mit der vorhandenen Stimme vorlesen lassen.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.dismissVoicePrompt(); vm.installVoices() }) { Text("Stimmen laden…") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = vm::confirmVoicePrompt) { Text("Trotzdem vorlesen") }
+                    TextButton(onClick = vm::dismissVoicePrompt) { Text("Abbrechen") }
+                }
+            },
+        )
+    }
     vm.pendingConfirm?.let { pending ->
         AlertDialog(
             onDismissRequest = { pending.answer(false) },
@@ -158,6 +179,13 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
                 DropdownMenuItem(text = { Text("Werkzeuge") }, onClick = { moreMenu = false; open(Screen.TOOLS) })
                 DropdownMenuItem(text = { Text("Einstellungen") }, onClick = { moreMenu = false; open(Screen.SETTINGS) })
                 HorizontalDivider()
+                vm.markList.take(5).forEach { mark ->
+                    DropdownMenuItem(
+                        text = { Text("Weiterlesen: ${mark.name} (${mark.chunk + 1}/${mark.total})", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        onClick = { moreMenu = false; vm.resumeMark(mark) },
+                    )
+                }
+                if (vm.markList.isNotEmpty()) HorizontalDivider()
                 DropdownMenuItem(text = { Text("Chat exportieren…") }, onClick = { moreMenu = false; onExport() })
                 DropdownMenuItem(text = { Text("Chat laden…") }, onClick = { moreMenu = false; onImport() })
             }
@@ -233,7 +261,7 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
             if (doc.image) {
                 Text("${doc.name}: So sieht das Bildmodell es (englisch):", style = MaterialTheme.typography.bodyMedium)
                 // Die Karte darf den Chat nicht verdrängen: lange Beschreibungen erscheinen gekürzt (die Eingabe bekommt den ganzen Text)
-                Text(doc.text, style = MaterialTheme.typography.bodyLarge, maxLines = 7, overflow = TextOverflow.Ellipsis)
+                Text(doc.text, style = MaterialTheme.typography.bodyLarge, maxLines = 10, overflow = TextOverflow.Ellipsis)
                 Text("Was soll ich damit machen?", style = MaterialTheme.typography.bodyLarge)
             } else {
                 Text("Die Datei „${doc.name}“ ist da (${doc.text.length} Zeichen, ca. ${doc.tokens} Tokens). Was soll ich damit machen?", style = MaterialTheme.typography.bodyLarge)
@@ -245,19 +273,64 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
                 )
             }
             if (vm.docReading) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(vm.docProgress.ifEmpty { "Lese vor…" }, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = vm::stopReading) { Text("Stopp") }
-                }
+                ReaderControls(vm)
             } else {
+                val mark = vm.markFor(doc)
+                if (mark != null) {
+                    Text(
+                        "Zuletzt gelesen bis Abschnitt ${mark.chunk + 1} von ${mark.total}. Dort kann das Vorlesen weitergehen.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Button(onClick = vm::docAsInput) { Text("1 · Als Eingabe einlesen") }
-                    Button(onClick = vm::docRead) { Text("2 · Vorlesen") }
+                    if (mark != null) Button(onClick = { vm.docRead(fromMark = true) }) { Text("2 · Weiterlesen") }
+                    if (mark != null) OutlinedButton(onClick = { vm.docRead() }) { Text("Von vorn vorlesen") }
+                    else Button(onClick = { vm.docRead() }) { Text("2 · Vorlesen") }
                     if (!doc.image) Button(onClick = vm::docSummarize, enabled = !vm.streaming) { Text("3 · Zusammenfassen") }
                     TextButton(onClick = vm::dismissDoc) { Text("Verwerfen") }
                 }
             }
         }
+    }
+}
+
+/**
+ * Tasten im Vorlese-Modus: << Seite zurück (ohne Seiten 10 Abschnitte), < ein Abschnitt zurück, ■ Stopp, ▶ Play, || Pause,
+ * > ein Abschnitt vor, >> Seite vor (ohne Seiten 10 Abschnitte). Ein Abschnitt dauert etwa 25 Sekunden zum Hören: Das ist als
+ * Schritt klein genug zum Wiederholen und kostet keine Wartezeit (nur bei Bildern, die erst beschrieben werden müssen).
+ */
+@Composable
+private fun ReaderControls(vm: ChatViewModel) {
+    val playing = vm.readerState == ReaderState.PLAYING
+    Text(
+        buildString {
+            append("Abschnitt ${(vm.readerIndex + 1).coerceAtMost(vm.readerTotal)} von ${vm.readerTotal}")
+            if (vm.readerPages > 1) append(" · Seite ${vm.readerPage} von ${vm.readerPages}")
+            if (vm.readerState == ReaderState.PAUSED) append(" · pausiert")
+            if (vm.readerNote.isNotEmpty()) append(" · ${vm.readerNote}")
+        },
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        ReaderKey("<<", Modifier.weight(1f), onClick = vm::readerJumpBack)
+        ReaderKey("<", Modifier.weight(1f), onClick = vm::readerPrevious)
+        ReaderKey("■", Modifier.weight(1f), onClick = vm::readerStop)
+        ReaderKey("▶", Modifier.weight(1f), enabled = !playing, onClick = vm::readerPlay)
+        ReaderKey("||", Modifier.weight(1f), enabled = playing, onClick = vm::readerPause)
+        ReaderKey(">", Modifier.weight(1f), onClick = vm::readerNext)
+        ReaderKey(">>", Modifier.weight(1f), onClick = vm::readerJumpForward)
+    }
+    Text(
+        if (vm.readerPages > 1) "<< und >> springen eine Seite, < und > einen Abschnitt." else "<< und >> springen 10 Abschnitte, < und > einen.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+@Composable
+private fun ReaderKey(label: String, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    FilledTonalButton(onClick = onClick, enabled = enabled, modifier = modifier, contentPadding = PaddingValues(horizontal = 0.dp)) {
+        Text(label, maxLines = 1)
     }
 }
 

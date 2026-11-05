@@ -7,26 +7,33 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import app.aichatmcp.core.DocumentException
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 /** Bereitet ein Foto für das Bildmodell vor: verkleinern (große Fotos sprengen Zeit und Speicher), drehen, als JPEG. */
 object ImagePrep {
     const val MAX_SIDE = 768
 
-    fun jpeg(context: Context, uri: Uri, maxSide: Int = MAX_SIDE): ByteArray {
-        val resolver = context.contentResolver
+    fun jpeg(context: Context, uri: Uri, maxSide: Int = MAX_SIDE): ByteArray =
+        jpeg({ context.contentResolver.openInputStream(uri) }, maxSide)
+
+    /** Wie [jpeg] für ein Bild, das schon als Bytes vorliegt (z. B. aus einer EPUB-Datei). */
+    fun jpegFromBytes(bytes: ByteArray, maxSide: Int = MAX_SIDE): ByteArray = jpeg({ ByteArrayInputStream(bytes) }, maxSide)
+
+    private fun jpeg(open: () -> InputStream?, maxSide: Int): ByteArray {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        open()?.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw DocumentException("Das Bild lässt sich nicht lesen.")
 
         var sample = 1 // grob verkleinern beim Laden, damit ein 12-Megapixel-Foto nicht ganz in den Speicher kommt
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
-        var bitmap = resolver.openInputStream(uri)?.use {
+        var bitmap = open()?.use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: throw DocumentException("Das Bild lässt sich nicht lesen.")
 
         val rotation = try {
-            resolver.openInputStream(uri)?.use {
+            open()?.use {
                 when (ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
                     ExifInterface.ORIENTATION_ROTATE_90 -> 90f
                     ExifInterface.ORIENTATION_ROTATE_180 -> 180f

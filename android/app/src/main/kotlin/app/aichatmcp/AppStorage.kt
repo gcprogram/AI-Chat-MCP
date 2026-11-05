@@ -6,6 +6,7 @@ import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.LoadedChat
 import app.aichatmcp.core.PersonaStore
+import app.aichatmcp.core.ReadMarks
 import app.aichatmcp.core.string
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -55,6 +56,18 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
         val clean = File(name).name.ifBlank { "avatar.png" }
         File(dir, clean).outputStream().use { input.copyTo(it) }
         return "avatars/$clean"
+    }
+
+    // --- Vorlese-Marken (wo das Vorlesen eines Textes stehen geblieben ist) -------------------------------
+
+    private val marksFile = File(root, "reading_marks.json")
+
+    fun loadMarks(): ReadMarks = ReadMarks.fromJson(marksFile.takeIf { it.exists() }?.readText())
+
+    fun saveMarks(marks: ReadMarks) {
+        val temp = File(marksFile.parentFile, marksFile.name + ".tmp")
+        temp.writeText(marks.toJson())
+        if (!temp.renameTo(marksFile)) marksFile.writeText(marks.toJson()) // Umbenennen kann auf manchen Geräten scheitern
     }
 
     // --- Einstellungen ------------------------------------------------------------------------------------

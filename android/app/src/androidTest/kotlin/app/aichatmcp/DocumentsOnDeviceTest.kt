@@ -2,7 +2,13 @@ package app.aichatmcp
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.aichatmcp.core.Block
 import app.aichatmcp.core.DocKind
+import app.aichatmcp.core.KeywordRules
+import app.aichatmcp.core.LanguageDetect
+import app.aichatmcp.core.ReadItem
+import app.aichatmcp.core.ReadPlan
+import app.aichatmcp.core.ToolSpec
 import app.aichatmcp.core.Documents
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -19,7 +25,7 @@ import java.util.zip.ZipOutputStream
 @RunWith(AndroidJUnit4::class)
 class DocumentsOnDeviceTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val pdf: (ByteArray) -> String = { PdfText.extract(context, it) }
+    private val pdf: (ByteArray) -> List<String> = { PdfText.extract(context, it) }
 
     /** Kleinste gültige PDF-Datei mit einer Seite und einer Textzeile (Helvetica, Latin-1). */
     private fun miniPdf(vararg lines: String): ByteArray {
@@ -62,6 +68,38 @@ class DocumentsOnDeviceTest {
     fun docxTextIsExtracted() {
         val xml = "<w:document><w:body><w:p><w:r><w:t>Titel &amp; Co</w:t></w:r></w:p><w:p><w:r><w:t>Zeile</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>zwei &#228;</w:t></w:r></w:p></w:body></w:document>"
         assertEquals("Titel & Co\nZeile\tzwei ä", Documents.read("probe.docx", DocKind.DOCX, docx(xml), pdf).text)
+    }
+
+    @Test
+    fun epubHtmlLanguageAndKeywordsWorkOnAndroidRegex() {
+        // EPUB: Kapitel in Spine-Reihenfolge, Bild mit aufgelöstem Pfad, Entitäten
+        val opf = """<package><manifest><item id="c1" href="ch1.xhtml"/><item id="i" href="img/a%20b.png"/></manifest><spine><itemref idref="c1"/></spine></package>"""
+        val ch1 = """<html><head><style>p { color: red }</style></head><body><p>Hallo &auml;&#x20AC; Welt <img src="img/a%20b.png" alt="Bild"/> Ende.</p></body></html>"""
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            fun put(name: String, data: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry() }
+            put("META-INF/container.xml", """<rootfile full-path="OEBPS/content.opf"/>""".toByteArray())
+            put("OEBPS/content.opf", opf.toByteArray())
+            put("OEBPS/ch1.xhtml", ch1.toByteArray())
+            put("OEBPS/img/a b.png", byteArrayOf(9, 8, 7))
+        }
+        val doc = Documents.read("b.epub", DocKind.EPUB, out.toByteArray(), pdf)
+        assertEquals("Hallo ä€ Welt Ende.", doc.text)
+        val plan = ReadPlan.of(doc)
+        assertEquals(2, plan.size) // Text, danach das Bild
+        assertEquals("OEBPS/img/a b.png", (plan.items[1] as ReadItem.Picture).ref)
+        assertTrue(doc.readable!!.images("OEBPS/img/a b.png")!!.contentEquals(byteArrayOf(9, 8, 7)))
+        // HTML mit eingebettetem Bild
+        val html = Documents.read("a.html", DocKind.HTML, "<p>Eins.</p><img src=\"data:image/png;base64,AQID\"><p>Zwei.</p>".toByteArray(), pdf)
+        assertTrue(html.readable!!.images((html.readable!!.pages.single()[1] as Block.Img).ref)!!.contentEquals(byteArrayOf(1, 2, 3)))
+        // Spracherkennung per Buchstabenhäufigkeit
+        val german = "Der Hafen von Rotterdam ist der größte Seehafen Europas. Jährlich werden dort mehr als vierhundert Millionen Tonnen Güter umgeschlagen."
+        val english = "The port of Rotterdam is the largest seaport in Europe. Every year more than four hundred million tons of goods are handled there."
+        assertEquals("de-DE", LanguageDetect.detect(german)?.tag)
+        assertEquals("en-US", LanguageDetect.detect(english)?.tag)
+        // Schlüsselwörter (ICU-Regex mit Gruppen und ohne Groß-/Kleinschreibung)
+        val rules = KeywordRules(listOf(ToolSpec("weather", "s", "t", keywords = listOf("wetter in (\\w+)(?: (morgen|heute))?"))), listOf("weather"))
+        assertEquals("Paris|morgen", rules.match("Wie ist das WETTER in Paris morgen?").single().args)
     }
 
     @Test

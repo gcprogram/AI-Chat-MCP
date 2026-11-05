@@ -52,6 +52,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
     var speakReplies by remember { mutableStateOf(c.speakReplies) }
     var voiceAutoSend by remember { mutableStateOf(c.voiceAutoSend) }
     var speechOnline by remember { mutableStateOf(c.speechOnline) }
+    var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
     var resultChars by remember { mutableStateOf(c.toolResultChars.toString()) }
     var timeout by remember { mutableStateOf(c.toolTimeout.toString()) }
@@ -209,6 +210,17 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
             Text("Vor jedem Werkzeugaufruf nachfragen", modifier = Modifier.weight(1f))
             Switch(checked = confirmTools, onCheckedChange = { confirmTools = it })
         }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Schlüsselwörter lösen Werkzeuge aus", modifier = Modifier.weight(1f))
+            Switch(checked = keywordsEnabled, onCheckedChange = { keywordsEnabled = it })
+        }
+        Text(
+            "In mcp_servers.json kann ein Alias \"keywords\": [\"regulärer Ausdruck\", …] haben. Kommt ein Ausdruck in deiner Eingabe, " +
+                "in der Antwort des Modells, im vorgelesenen Text oder in einer Bildbeschreibung vor, läuft das Werkzeug ohne das " +
+                "Modell. Eine Eingabe mit Treffer geht nicht an das Modell. Es gelten die Freigaben des Companions und die Rückfrage " +
+                "vor Werkzeugaufrufen. Vorsicht: Auch fremde Texte (Dateien, Bilder) können so Werkzeuge auslösen. Standard: aus.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         NumberSetting("Max. Werkzeugaufrufe pro Nachricht (0 = aus)", maxCalls) { maxCalls = it }
         NumberSetting("Ergebnis kürzen auf (Zeichen)", resultChars) { resultChars = it }
         NumberSetting("Werkzeug-Zeitlimit (Sekunden)", timeout) { timeout = it }
@@ -224,7 +236,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
                     frequencyPenalty = frequency.toDoubleOrNull() ?: c.frequencyPenalty,
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
-                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline,
+                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled,
                     maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
                     toolResultChars = resultChars.toIntOrNull() ?: c.toolResultChars,
                     toolTimeout = timeout.toIntOrNull() ?: c.toolTimeout,

@@ -11,7 +11,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DocumentsTest {
-    private val noPdf: (ByteArray) -> String = { error("kein PDF erwartet") }
+    private val noPdf: (ByteArray) -> List<String> = { error("kein PDF erwartet") }
 
     private fun docx(body: String, entry: String = "word/document.xml"): ByteArray {
         val out = ByteArrayOutputStream()
@@ -62,7 +62,7 @@ class DocumentsTest {
         assertTrue(assertFailsWith<DocumentException> { Documents.read("x.docx", DocKind.DOCX, "kein zip".toByteArray(), noPdf) }.message!!.contains("DOCX"))
         assertTrue(assertFailsWith<DocumentException> { Documents.read("x.docx", DocKind.DOCX, docx("<a/>", "word/other.xml"), noPdf) }.message!!.contains("document.xml"))
         assertTrue(assertFailsWith<DocumentException> { Documents.read("l.txt", DocKind.TEXT, "  \n ".toByteArray(), noPdf) }.message!!.contains("keinen Text"))
-        assertTrue(assertFailsWith<DocumentException> { Documents.read("s.pdf", DocKind.PDF, ByteArray(10)) { "" } }.message!!.contains("Scan"))
+        assertTrue(assertFailsWith<DocumentException> { Documents.read("s.pdf", DocKind.PDF, ByteArray(10)) { listOf("", "  ") } }.message!!.contains("Scan"))
         assertTrue(assertFailsWith<DocumentException> { Documents.read("k.pdf", DocKind.PDF, ByteArray(10)) { error("kaputt") } }.message!!.contains("PDF"))
         assertTrue(assertFailsWith<DocumentException> { Documents.read("g.txt", DocKind.TEXT, ByteArray(Documents.MAX_BYTES + 1), noPdf) }.message!!.contains("zu groß"))
     }
@@ -78,8 +78,10 @@ class DocumentsTest {
 
     @Test
     fun pdfTextComesFromTheProvidedFunction() {
-        val doc = Documents.read("a.pdf", DocKind.PDF, ByteArray(3)) { "Seite eins\n\n\n\nSeite zwei" }
-        assertEquals("Seite eins\n\nSeite zwei", doc.text)
+        val doc = Documents.read("a.pdf", DocKind.PDF, ByteArray(3)) { listOf("Seite eins", "Zeile a\nzweite Zeile\n\nAbsatz zwei") }
+        // harte Zeilenumbrüche mitten im Satz werden zu Leerzeichen, jede Seite bleibt eine Seite
+        assertEquals("Seite eins\n\nZeile a zweite Zeile\n\nAbsatz zwei", doc.text)
+        assertEquals(2, doc.readable!!.pages.size)
     }
 
     @Test

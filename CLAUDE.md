@@ -99,6 +99,12 @@ python main.py
   beschreibt das Bild, die Beschreibung läuft über dieselbe Rückfrage-Karte (`PendingDoc.image`). Modell + mmproj werden per Auswahldialog in `filesDir/vision/` kopiert (klein; `mtmd` lädt nur über Pfade),
   geladen wird nur pro Beschreibung. Prompt bewusst kurz (3 bis 5 Sätze), `Documents.completeSentences` schneidet abgebrochene Sätze ab. Gemessen: 12 bis 35 s je Bild, Qualität grob.
   Der Bild-Pfad ist nur von Hand auf dem Gerät geprüft (Modelldateien ~280 MB, nicht im Repo), kein automatischer Gerätetest.
+  **Vorleser** (`core/Reader.kt` = reine Zustandsmaschine mit Fakes testbar, `ReadPlan`/`Readable.kt` für Seiten/Bilder, `speech/ReaderSupport.kt` Tonfokus + Bildbeschreibung,
+  `ChatViewModel` verdrahtet): Abschnitte à 400 Zeichen, nächster Abschnitt wird schon angehängt (keine Lücke), Callback-IDs `r:<Generation>:<Index>` gegen späte Rückmeldungen;
+  Pause = Stopp + Position (Android-TTS kann nicht pausieren). Marken `ReadMarks` (`reading_marks.json`), Datei über `takePersistableUriPermission`. EPUB = Zip + OPF-Spine,
+  HTML-Parser mit Regex (kein XmlPullParser, JVM-testbar), Bilder nach dem Absatz. Sprache `LanguageDetect` (Kosinus über Buchstabenprofile). Tonfokus `ReaderFocus`
+  (`setWillPauseWhenDucked`). **Schlüsselwörter** `core/Keywords.kt` + `ToolSpec.keywords` (nur Android; Eingabe mit Treffer geht NICHT ans Modell). Gerätetest `DocumentsOnDeviceTest`
+  prüft die Regexe unter ICU. Noch nicht von Hand auf dem Gerät geprüft: Tasten, Marke nach Neustart, Anruf-Pause, EPUB mit Bildern, Schlüsselwörter.
   Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:

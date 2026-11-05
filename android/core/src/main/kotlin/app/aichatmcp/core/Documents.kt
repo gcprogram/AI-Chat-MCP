@@ -9,10 +9,13 @@ import java.util.zip.ZipInputStream
 /** Eine Datei konnte nicht gelesen werden (Text für die Anzeige). */
 class DocumentException(message: String) : Exception(message)
 
-enum class DocKind { TEXT, MARKDOWN, DOCX, PDF, IMAGE }
+enum class DocKind { TEXT, MARKDOWN, DOCX, PDF, EPUB, HTML, IMAGE }
 
-/** Ein eingelesener Text, bereit für die Rückfrage "Was soll ich damit machen?". */
-data class DocText(val name: String, val kind: DocKind, val text: String)
+/**
+ * Ein eingelesener Text, bereit für die Rückfrage "Was soll ich damit machen?". [readable] hält bei PDF, EPUB und HTML
+ * die Seiten und die Bilder an ihrer Stelle (fürs Vorlesen); sonst ist es null.
+ */
+data class DocText(val name: String, val kind: DocKind, val text: String, val readable: ReadableDoc? = null)
 
 /** Ein auf das Kontextfenster gekürzter Text. */
 data class Fitted(val text: String, val truncated: Boolean, val totalChars: Int)
@@ -32,6 +35,8 @@ object Documents {
         val ext = name.substringAfterLast('.', "").lowercase()
         return when {
             ext in IMAGE_EXTENSIONS || mime?.startsWith("image/") == true -> DocKind.IMAGE
+            ext == "epub" || mime == "application/epub+zip" -> DocKind.EPUB
+            ext in setOf("html", "htm", "xhtml") || mime == "text/html" || mime == "application/xhtml+xml" -> DocKind.HTML
             ext == "pdf" || mime == "application/pdf" -> DocKind.PDF
             ext == "docx" || mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> DocKind.DOCX
             ext == "md" || ext == "markdown" || mime == "text/markdown" || mime == "text/x-markdown" -> DocKind.MARKDOWN
@@ -40,19 +45,30 @@ object Documents {
         }
     }
 
-    /** Liest den Text einer Datei. [pdf] liefert den Text einer PDF-Datei (nur für DocKind.PDF aufgerufen). */
-    fun read(name: String, kind: DocKind, bytes: ByteArray, pdf: (ByteArray) -> String): DocText {
+    /** Liest den Text einer Datei. [pdf] liefert den Text einer PDF-Datei seitenweise (nur für DocKind.PDF aufgerufen). */
+    fun read(name: String, kind: DocKind, bytes: ByteArray, pdf: (ByteArray) -> List<String>): DocText {
         if (bytes.size > MAX_BYTES) throw DocumentException("Die Datei ist zu groß (mehr als ${MAX_BYTES / 1_000_000} MB).")
+        var readable: ReadableDoc? = null
         val raw = when (kind) {
             DocKind.IMAGE -> throw DocumentException("Bilder werden vom Bildmodell beschrieben, nicht als Text gelesen.")
             DocKind.TEXT, DocKind.MARKDOWN -> decodeText(bytes)
             DocKind.DOCX -> docxText(bytes)
-            DocKind.PDF -> try {
-                pdf(bytes)
-            } catch (e: DocumentException) {
-                throw e
-            } catch (e: Exception) {
-                throw DocumentException("Die PDF-Datei lässt sich nicht lesen (${e.message ?: e::class.simpleName}).")
+            DocKind.EPUB -> Epub.read(bytes).also { readable = it }.text
+            DocKind.HTML -> {
+                val blocks = Html.blocks(decodeText(bytes)) { src -> if (src.startsWith("data:")) src else null }
+                ReadableDoc(listOf(blocks)) { ref -> Epub.dataUri(ref) }.also { readable = it }.text
+            }
+            DocKind.PDF -> {
+                val pages = try {
+                    pdf(bytes)
+                } catch (e: DocumentException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw DocumentException("Die PDF-Datei lässt sich nicht lesen (${e.message ?: e::class.simpleName}).")
+                }
+                val blocks = pages.map { page -> unwrapLines(tidy(page)).split(Regex("\\n{2,}")).filter { it.isNotBlank() }.map { Block.Para(it.trim()) } }
+                    .filter { it.isNotEmpty() }
+                ReadableDoc(blocks).also { readable = it }.text
             }
         }
         val text = tidy(raw).take(MAX_CHARS)
@@ -62,8 +78,11 @@ object Documents {
                 else "Die Datei enthält keinen Text.",
             )
         }
-        return DocText(name, kind, text)
+        return DocText(name, kind, text, readable)
     }
+
+    /** Harte Zeilenumbrüche mitten im Satz (PDF) werden zu Leerzeichen; Leerzeilen und Umbrüche nach Satzzeichen bleiben. */
+    fun unwrapLines(text: String): String = text.replace(Regex("([^\\n.!?:;])\\n(?=[^\\n])"), "$1 ")
 
     /** UTF-8 (auch mit BOM); ist die Datei kein gültiges UTF-8, gilt Windows-1252 (ältere deutsche Textdateien). */
     fun decodeText(bytes: ByteArray): String {

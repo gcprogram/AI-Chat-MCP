@@ -148,6 +148,7 @@ data class ToolSpec(
     val status: String = "", // Statuszeile bei discard
     val confirm: Boolean? = null, // null = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
     val remember: Boolean = false, // Ergebnis bei show/discard dem Modell im Verlauf zeigen
+    val keywords: List<String> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
 ) {
     val usage: String get() = "[[mcp:" + (listOf(alias) + params.map { "<${it.name}>" }).joinToString("|") + "]]"
 
@@ -344,11 +345,24 @@ class ToolRegistry {
         val rememberEl = entry["remember"] as? JsonPrimitive
         val remember = rememberEl?.booleanOrNull ?: (mode == RESULT_SHOW) // angezeigte Daten braucht das Modell für Folgefragen
         val params = names.map { n -> byName.getValue(n).let { it.copy(required = it.required && n !in defaults) } }
+        val keywords = when (val el = entry["keywords"]) {
+            null, is kotlinx.serialization.json.JsonNull -> emptyList()
+            is JsonArray -> el.map { (it as? JsonPrimitive)?.content.orEmpty() }
+            is JsonPrimitive -> listOf(el.content)
+            else -> throw IllegalArgumentException("'keywords' muss eine Liste von regulären Ausdrücken sein")
+        }.filter { it.isNotBlank() }
+        for (pattern in keywords) {
+            try {
+                Regex(pattern)
+            } catch (e: Exception) {
+                throw IllegalArgumentException("ungültiger Ausdruck in 'keywords': $pattern")
+            }
+        }
         return ToolSpec(
             alias = alias, server = server, remoteName = tool, params = params, readOnly = base.readOnly,
             description = entry.string("hint")?.takeIf { it.isNotEmpty() } ?: base.description,
             example = entry.string("example").orEmpty(), fixed = fixed, defaults = defaults, result = mode,
-            status = entry.string("status").orEmpty(), confirm = confirm, remember = remember,
+            status = entry.string("status").orEmpty(), confirm = confirm, remember = remember, keywords = keywords,
         )
     }
 

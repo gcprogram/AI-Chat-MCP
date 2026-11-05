@@ -35,6 +35,7 @@ class VisionLlm(private val context: Context) {
     val available: Boolean get() = modelFile.length() > 0 && projFile.length() > 0
 
     private val guard = Any()
+    private val runLock = Any() // eine Beschreibung gleichzeitig (das Vorlesen bestellt Bilder schon vorab)
     private var running = 0L
 
     /** Kopiert eine Datei aus dem Auswahldialog in den privaten Speicher. Liefert die Größe in Bytes. */
@@ -53,7 +54,7 @@ class VisionLlm(private val context: Context) {
     }
 
     /** Beschreibt das Bild. Läuft lange (Laden, Bild verarbeiten): nicht auf dem Hauptthread aufrufen. */
-    fun describe(image: ByteArray, prompt: String, threads: Int, maxTokens: Int = 200): String {
+    fun describe(image: ByteArray, prompt: String, threads: Int, maxTokens: Int = 320): String = synchronized(runLock) {
         if (!available) throw LlmException("Kein Bildmodell eingerichtet (Einstellungen).")
         val handle = VisionNative.load(modelFile.path, projFile.path, threads)
         if (handle == 0L) throw LlmException(VisionNative.lastError())
@@ -65,7 +66,7 @@ class VisionLlm(private val context: Context) {
                 true
             }
             if (result == -1) throw LlmException(VisionNative.lastError())
-            return out.toString().trim()
+            out.toString().trim()
         } finally {
             synchronized(guard) {
                 running = 0L
