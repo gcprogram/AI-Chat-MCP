@@ -13,6 +13,10 @@ class SpeechTest {
         assertEquals("en-GB", Speech.languageTag("en_gb"))
         assertEquals("fr-FR", Speech.languageTag("Français"))
         assertNull(Speech.languageTag("Klingonisch")) // unbekannt: Gerätesprache
+        assertEquals("ja-JP", Speech.languageTag("Japanese"))
+        assertEquals("en-GB", Speech.languageTag("English (UK)"))
+        // jede Auswahl im Companion-Editor muss einen Sprach-Tag haben
+        Speech.RESPONSE_LANGUAGES.forEach { assertTrue(Speech.languageTag(it) != null, "kein Sprach-Tag für $it") }
         assertNull(Speech.languageTag(""))
     }
 

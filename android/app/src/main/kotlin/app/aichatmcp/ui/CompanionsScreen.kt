@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.core.Persona
+import app.aichatmcp.core.Speech
 import app.aichatmcp.core.normalizeName
 
 private const val NEW_ENTRY = "(Neu)"
@@ -90,7 +91,9 @@ private fun PersonaForm(
     }
     TextSetting("Name", name, { name = it })
     TextSetting("Beschreibung", description, { description = it }, minLines = 3, maxLines = 8)
-    TextSetting("Sprache der Antworten", language, { language = it })
+    // Bereits gespeicherte freie Werte (z. B. "Plattdeutsch") bleiben als Eintrag erhalten
+    val languages = Speech.RESPONSE_LANGUAGES + listOfNotNull(language.takeIf { it.isNotBlank() && it !in Speech.RESPONSE_LANGUAGES })
+    DropdownField("Sprache (Antworten, Erkennung, Vorlesen)", languages, language, { language = it })
     TextSetting("Begrüßung", greeting, { greeting = it }, minLines = 2, maxLines = 5)
     TextSetting("Regeln (eine pro Zeile)", rules, { rules = it }, minLines = 2, maxLines = 8)
 
