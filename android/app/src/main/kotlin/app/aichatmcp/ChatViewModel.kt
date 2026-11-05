@@ -20,6 +20,7 @@ import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
 import app.aichatmcp.core.NoticeKind
 import app.aichatmcp.core.Persona
+import app.aichatmcp.core.Speech
 import app.aichatmcp.core.TOOL_ERROR
 import app.aichatmcp.core.TOOL_RESULT
 import app.aichatmcp.core.TOOL_SHOWN
@@ -34,6 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.aichatmcp.local.LocalLlm
 import app.aichatmcp.local.effectiveConfig
+import app.aichatmcp.speech.SpeechInput
+import app.aichatmcp.speech.SpeechOutput
 import kotlinx.serialization.json.JsonObject
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
@@ -75,6 +78,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var tools by mutableStateOf(ToolsState())
         private set
+    var listening by mutableStateOf(false)
+        private set
     var mcpText by mutableStateOf("")
         private set
     var secretNames by mutableStateOf<List<String>>(emptyList())
@@ -83,6 +88,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     private val localLlm = LocalLlm(app)
+    private val speechIn = SpeechInput(app)
+    private val speechOut = SpeechOutput(app)
     private var registry = ToolRegistry()
     private val session: ChatSession
     private val engine: ChatEngine
@@ -159,6 +166,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             status = "Bitte zuerst in den Einstellungen ein Modell wählen."
             return
         }
+        speechOut.stop()
         input = ""
         session.config = effectiveConfig(config)
         streaming = true
@@ -180,7 +188,47 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop() {
+        speechOut.stop()
         engine.cancel()
+    }
+
+    // --- Sprache -----------------------------------------------------------------------------------------
+
+    private fun languageTag() = Speech.languageTag(persona.language)
+
+    /** Mikrofon-Knopf: Aufnahme starten bzw. beenden. Die Berechtigung holt die Oberfläche vorher ein. */
+    fun toggleListening() {
+        if (listening) {
+            speechIn.finish()
+            return
+        }
+        if (streaming) return
+        if (!speechIn.isAvailable()) {
+            status = "Keine Spracherkennung auf diesem Gerät."
+            return
+        }
+        speechOut.stop()
+        listening = true
+        status = "Höre zu…"
+        speechIn.start(
+            languageTag(),
+            onPartial = { input = it },
+            onResult = { text ->
+                listening = false
+                input = text
+                status = "Bereit"
+                if (config.voiceAutoSend) send()
+            },
+            onError = { message ->
+                listening = false
+                status = message
+            },
+        )
+    }
+
+    private fun speak(reply: String) {
+        val text = Speech.spokenText(reply)
+        if (text.isNotEmpty()) speechOut.speak(text, languageTag()) { status = it }
     }
 
     private fun handle(event: ChatEvent) {
@@ -191,7 +239,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             is ChatEvent.Live -> live = event
             is ChatEvent.Added -> {
-                if (event.message.role == "assistant") live = null
+                if (event.message.role == "assistant") {
+                    live = null
+                    if (config.speakReplies) speak(event.message.content)
+                }
                 messages += toUi(event.message)
             }
             is ChatEvent.Notice -> messages += UiMessage(
@@ -373,6 +424,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        speechIn.stop()
+        speechOut.shutdown()
         localLlm.unload()
         registry.shutdown()
     }

@@ -74,10 +74,14 @@ python main.py
   Tests stammen aus Python (`difflib`-Nachbau, Bereinigung, Wächter). Build mit **JDK 17** (JDK 25 bricht Kotlin 2.0).
   `ChatEngine` (core) führt ganze Runden (in Python steckt das in `gui.py`); pro Runde ein eigenes `CancelToken`
   (stilles Stoppen durch den Wächter darf nicht in die nächste Runde wirken). Eingebaute Server statt Unterprozesse;
-  Desktop-Konfiguration (`servers/weather_server.py`) wird erkannt. Tests: `cd android && gradlew :core:test` (46).
+  Desktop-Konfiguration (`servers/weather_server.py`) wird erkannt. Tests: `cd android && gradlew :core:test` (49).
   Auf dem Gerät geprüft (Galaxy S21, per `adb`). Nativer Modus und Avatare fehlen.
   **Android-Regex ist ICU**: kein `(?U)`, `\p{L}\p{N}` statt `\w` für Unicode; `androidTest/CoreOnDeviceTest` prüft die Logik auf dem
   echten Laufzeitsystem (`adb install -t` + `am instrument`, Gradle `connected…` würde die App deinstallieren).
+- **Sprache** (`speech/SpeechIo.kt`): `SpeechInput` = Android-`SpeechRecognizer` (On-Device wenn verfügbar), `SpeechOutput` = `TextToSpeech`;
+  Sprachwahl/Textaufbereitung testbar im Kern (`Speech`). Der Geräte-Test lässt die Synthese in eine Datei schreiben (kein Ton) und prüft
+  nur die Verfügbarkeit der Erkennung (Sprechen kann ein Test nicht). Echte Spracheingabe per Mikrofon noch nicht von Hand geprüft.
+  Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:
   Dateien aus dem Auswahldialog kann `llama.cpp` NICHT über `/proc/self/fd/N` öffnen (Permission denied), deshalb `loadFd` mit
   `llama_model_load_from_file_ptr(FILE*)`; `use_extra_bufts=false`, sonst wird das Modell zusätzlich in den RAM umgepackt.

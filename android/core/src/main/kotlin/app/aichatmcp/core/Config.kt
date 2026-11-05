@@ -34,6 +34,10 @@ data class Config(
     @SerialName("local_model") val localModel: String = "",
     @SerialName("local_model_name") val localModelName: String = "",
     @SerialName("local_threads") val localThreads: Int = 4,
+    /** Antworten des Companions vorlesen (Sprachausgabe des Geräts). */
+    @SerialName("speak_replies") val speakReplies: Boolean = false,
+    /** Nach der Spracheingabe die Nachricht sofort senden. */
+    @SerialName("voice_auto_send") val voiceAutoSend: Boolean = false,
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },

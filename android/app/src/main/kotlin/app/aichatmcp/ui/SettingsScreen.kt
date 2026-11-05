@@ -46,6 +46,8 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
     var presence by remember { mutableStateOf(c.presencePenalty.toString()) }
     var repeat by remember { mutableStateOf(c.repeatPenalty.toString()) }
     var confirmTools by remember { mutableStateOf(c.confirmTools) }
+    var speakReplies by remember { mutableStateOf(c.speakReplies) }
+    var voiceAutoSend by remember { mutableStateOf(c.voiceAutoSend) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
     var resultChars by remember { mutableStateOf(c.toolResultChars.toString()) }
     var timeout by remember { mutableStateOf(c.toolTimeout.toString()) }
@@ -108,6 +110,21 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
         NumberSetting("Presence-Penalty", presence) { presence = it }
         NumberSetting("Repeat-Penalty (0 = nicht senden, nur LM Studio)", repeat) { repeat = it }
 
+        SectionTitle("Sprache")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Antworten vorlesen", modifier = Modifier.weight(1f))
+            Switch(checked = speakReplies, onCheckedChange = { speakReplies = it })
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Nach Spracheingabe sofort senden", modifier = Modifier.weight(1f))
+            Switch(checked = voiceAutoSend, onCheckedChange = { voiceAutoSend = it })
+        }
+        Text(
+            "Spracherkennung und Stimme sind die des Geräts (Android), die Sprache folgt der Antwortsprache des Companions. " +
+                "Offline-Erkennung braucht das Sprachpaket in den Android-Einstellungen.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         SectionTitle("Werkzeuge")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Vor jedem Werkzeugaufruf nachfragen", modifier = Modifier.weight(1f))
@@ -128,7 +145,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
                     frequencyPenalty = frequency.toDoubleOrNull() ?: c.frequencyPenalty,
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
-                    confirmTools = confirmTools,
+                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend,
                     maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
                     toolResultChars = resultChars.toIntOrNull() ?: c.toolResultChars,
                     toolTimeout = timeout.toIntOrNull() ?: c.toolTimeout,

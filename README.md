@@ -185,7 +185,7 @@ gradlew :core:test :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-- `android/core`: reine Kotlin-Logik ohne Android (46 JVM-Tests und 5 Geräte-Tests; Erwartungswerte aus der Python-Version).
+- `android/core`: reine Kotlin-Logik ohne Android (49 JVM-Tests und 7 Geräte-Tests; Erwartungswerte aus der Python-Version).
 - `android/app`: Oberfläche (Chat, Einstellungen, Companions, Werkzeuge) und Speicher im privaten App-Ordner.
 - **Server erreichen**: im Heimnetz `http://<PC-IP>:1234/v1`; per USB `adb reverse tcp:1234 tcp:1234` und
   `http://127.0.0.1:1234/v1` (auch im Hotel-WLAN).
@@ -201,7 +201,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   4096 Tokens begrenzt. Der Anfang des Verlaufs bleibt im KV-Cache, nur Neues wird berechnet. Gemessen auf einem Galaxy S21
   (Exynos 2100, 4 Threads) mit einem 4B-Modell Q4_K_S: erste Antwort ca. 70 s (Modell wird eingelesen), danach ca. 1 s für
   neue Nachrichten im Cache, 4 bis 5 Tokens/s beim Schreiben, ca. 3 GB Arbeitsspeicher.
-- Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text, Spracheingabe und -ausgabe.
+- **Sprache** mit den Bordmitteln von Android (keine eigene Modelldatei): Mikrofon-Knopf neben „Senden“ (Spracherkennung, auf dem
+  Gerät wo verfügbar, sonst Offline bevorzugt; beim ersten Mal wird die Mikrofon-Berechtigung abgefragt) und „Antworten vorlesen“
+  (Sprachsynthese). Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
+  Companions (`Deutsch` → `de-DE`). Werkzeugaufrufe werden nicht vorgelesen.
+- Noch nicht in der App: nativer Werkzeug-Modus, Avatar-Bilder, Chat-Export als Text, eigene Sprachmodelle (Whisper/Piper).
 
 ## Roadmap
 

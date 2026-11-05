@@ -1,6 +1,8 @@
 package app.aichatmcp
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -25,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aichatmcp.ui.ChatScreen
 import app.aichatmcp.ui.CompanionsScreen
@@ -71,6 +74,13 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             else toast("Keine PEM-Zertifikatsdatei")
         }
     }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.toggleListening() else toast("Ohne Mikrofon-Berechtigung keine Spracheingabe.")
+    }
+    fun onMic() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) vm.toggleListening()
+        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
             // Zugriff dauerhaft behalten, sonst ist die Datei nach einem Neustart nicht mehr lesbar
@@ -93,6 +103,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             vm, open = { screen = it },
             onExport = { exportChat.launch("${vm.persona.id.ifEmpty { "chat" }}.json") },
             onImport = { importChat.launch("*/*") },
+            onMic = ::onMic,
         )
         Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) })
         Screen.COMPANIONS -> CompanionsScreen(vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") })
