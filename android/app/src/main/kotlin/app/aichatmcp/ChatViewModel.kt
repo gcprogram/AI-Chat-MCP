@@ -215,7 +215,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         speechOut.stop()
         listening = true
-        status = "Höre zu…"
+        speechMode = "offline"
+        status = "Höre zu… (offline)"
         speechIn.start(
             languageTag(),
             config.speechOnline,
@@ -223,16 +224,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             onResult = { text ->
                 listening = false
                 input = text
-                status = "Bereit"
+                status = "Erkannt ($speechMode)"
                 if (config.voiceAutoSend) send()
             },
             onError = { message ->
                 listening = false
-                status = message
+                status = "$message ($speechMode)"
             },
-            onNote = { status = it },
+            onMode = { offline ->
+                speechMode = if (offline) "offline" else "online, Google"
+                status = "Höre zu… ($speechMode)"
+            },
         )
     }
+
+    /** Womit die letzte Spracherkennung lief (für die Statuszeile). */
+    private var speechMode = "offline"
 
     private fun speak(reply: String) {
         val text = Speech.spokenText(reply)

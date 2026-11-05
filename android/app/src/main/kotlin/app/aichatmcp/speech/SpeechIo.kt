@@ -44,20 +44,21 @@ class SpeechInput(private val context: Context) {
     /**
      * Startet die Aufnahme. Erst wird die Erkennung auf dem Gerät versucht (Audio bleibt auf dem Handy). Fehlt dafür das
      * Sprachpaket (Fehler 11 bis 13) und ist [allowOnline] gesetzt, wird einmal mit der Online-Erkennung von Google
-     * wiederholt; [onNote] sagt das dann an.
+     * wiederholt. [onMode] meldet bei jedem Versuch, womit erkannt wird (true = auf dem Gerät).
      */
     fun start(
         languageTag: String?, allowOnline: Boolean, onPartial: (String) -> Unit, onResult: (String) -> Unit,
-        onError: (String) -> Unit, onNote: (String) -> Unit,
+        onError: (String) -> Unit, onMode: (offline: Boolean) -> Unit,
     ) {
         stop()
-        begin(languageTag, preferOffline = true, allowOnline, onPartial, onResult, onError, onNote)
+        begin(languageTag, preferOffline = true, allowOnline, onPartial, onResult, onError, onMode)
     }
 
     private fun begin(
         languageTag: String?, preferOffline: Boolean, allowOnline: Boolean, onPartial: (String) -> Unit,
-        onResult: (String) -> Unit, onError: (String) -> Unit, onNote: (String) -> Unit,
+        onResult: (String) -> Unit, onError: (String) -> Unit, onMode: (Boolean) -> Unit,
     ) {
+        onMode(preferOffline)
         val google = googleService()
         val r = if (google != null) SpeechRecognizer.createSpeechRecognizer(context, google) else SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = r
@@ -74,9 +75,8 @@ class SpeechInput(private val context: Context) {
             override fun onError(error: Int) {
                 release()
                 if (preferOffline && allowOnline && error in 11..13) { // Sprachpaket fehlt: einmal online wiederholen
-                    onNote("Kein Offline-Sprachpaket – Online-Erkennung von Google")
                     Handler(Looper.getMainLooper()).post {
-                        begin(languageTag, preferOffline = false, allowOnline, onPartial, onResult, onError, onNote)
+                        begin(languageTag, preferOffline = false, allowOnline, onPartial, onResult, onError, onMode)
                     }
                 } else {
                     onError(describe(error))

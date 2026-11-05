@@ -204,7 +204,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Sprache** mit den Google-Diensten des Geräts (keine eigene Modelldatei): Mikrofon-Knopf neben „Senden“ (beim ersten Mal wird die
   Mikrofon-Berechtigung abgefragt) und „Antworten vorlesen“ (Sprachsynthese). Die Erkennung nutzt gezielt den Google-Dienst
   (nicht den Hersteller-Erkenner) und versucht zuerst offline. Fehlt das Offline-Sprachpaket (Fehler 13), wird mit der
-  Online-Erkennung von Google wiederholt, sofern der Schalter *Online-Erkennung erlauben* an ist (Standard); die Statuszeile sagt es. Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
+  Online-Erkennung von Google wiederholt, sofern der Schalter *Online-Erkennung erlauben* an ist (Standard); die Statuszeile zeigt beim Zuhören und nach dem Ergebnis, womit erkannt wurde (`offline` oder `online, Google`). Beides ist in den Einstellungen unter *Sprache* einstellbar; die Sprache folgt der Antwortsprache des
   Companions (`Deutsch` → `de-DE`). Werkzeugaufrufe werden nicht vorgelesen.
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
