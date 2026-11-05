@@ -23,6 +23,19 @@ class VisionOnDeviceTest {
         "Sentence 3: face and expression. Sentence 4: pose and action. Sentence 5: the background and setting. " +
         "Sentence 6: colors and lighting. Sentence 7: the overall mood. Also mention any text you can read."
 
+    /** Die Größe aus dem Dateikopf (Erkennung von Zierbildern) stimmt mit dem Dekoder von Android überein. */
+    @Test
+    fun headerSizeMatchesTheAndroidDecoder() {
+        val images = File(context.cacheDir, "vlm/images").listFiles().orEmpty()
+        assumeTrue("Keine Testbilder unter cache/vlm/images", images.isNotEmpty())
+        for (file in images) {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(file.path, bounds)
+            org.junit.Assert.assertEquals(file.name, bounds.outWidth to bounds.outHeight, app.aichatmcp.core.Decorative.size(file.readBytes()))
+            Log.i("AiChatVision", "Größe ${file.name}: ${bounds.outWidth}x${bounds.outHeight}, Zierde: ${app.aichatmcp.core.Decorative.reason(file.readBytes())}")
+        }
+    }
+
     @Test
     fun compareModelsAndPrompts() {
         val root = File(context.cacheDir, "vlm")

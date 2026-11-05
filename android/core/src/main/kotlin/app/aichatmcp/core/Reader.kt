@@ -22,6 +22,11 @@ interface ReaderPictures {
 
     /** Laufende Beschreibung abbrechen. */
     fun cancel()
+
+    companion object {
+        /** Antwort von [describe]: das Bild ist Zierde (Rahmenteil, Symbol), weder beschreiben noch den Ersatztext vorlesen. */
+        const val SKIP = "\u0000skip"
+    }
 }
 
 /** Meldungen des Vorlesers an die Oberfläche. Alle auf dem Hauptthread. */
@@ -206,7 +211,7 @@ class Reader(
                 queueNext(i)
                 prefetchPictureAfter(i)
             }
-            is ReadItem.Picture -> describePicture(i, item)
+            is ReadItem.Picture -> if (item.decorative) advanceFrom(i) else describePicture(i, item)
         }
     }
 
@@ -239,17 +244,27 @@ class Reader(
                 queueNext(n)
                 prefetchPictureAfter(n)
             }
-            is ReadItem.Picture -> describePicture(n, item)
+            is ReadItem.Picture -> if (item.decorative) advanceFrom(n) else describePicture(n, item)
         }
     }
 
+    /** Bestellt höchstens [PREFETCH_PICTURES] Bilder aus den nächsten [PREFETCH_ITEMS] Elementen (Zierde zählt nicht, Rest später). */
     private fun prefetchPictureAfter(i: Int) {
-        for (k in 1..PREFETCH_ITEMS) (plan.items.getOrNull(i + k) as? ReadItem.Picture)?.let { pictures.prefetch(it) }
+        var ordered = 0
+        for (k in 1..PREFETCH_ITEMS) {
+            val picture = plan.items.getOrNull(i + k) as? ReadItem.Picture ?: continue
+            if (picture.decorative) continue
+            pictures.prefetch(picture)
+            if (++ordered >= PREFETCH_PICTURES) break
+        }
     }
 
     companion object {
-        /** So viele Abschnitte im Voraus werden Bildbeschreibungen bestellt (5 x ca. 25 s: auch ein größeres Bildmodell ist rechtzeitig fertig). */
+        /** So viele Elemente im Voraus werden Bildbeschreibungen bestellt (5 x ca. 25 s: auch ein größeres Bildmodell ist rechtzeitig fertig). */
         const val PREFETCH_ITEMS = 5
+
+        /** Nie mehr als so viele Bilder auf einmal vorbestellt: bei vielen Bildern am Stück würde das Bildmodell sonst minutenlang rechnen. */
+        const val PREFETCH_PICTURES = 2
     }
 
     private fun describePicture(i: Int, picture: ReadItem.Picture) {
@@ -260,6 +275,7 @@ class Reader(
             if (gen != generation || state != ReaderState.PLAYING) return@describe // zwischendurch angehalten oder gesprungen
             describing = false
             events.onDescribing(false)
+            if (description == ReaderPictures.SKIP) return@describe advanceFrom(i) // erst am Bild selbst als Zierde erkannt
             val text = description?.takeIf { it.isNotBlank() }
             val spoken = text ?: picture.alt.takeIf { it.isNotBlank() }
             if (spoken == null) {

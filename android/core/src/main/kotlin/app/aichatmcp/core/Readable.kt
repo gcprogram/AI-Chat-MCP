@@ -9,8 +9,11 @@ import java.util.zip.ZipInputStream
 sealed interface Block {
     data class Para(val text: String) : Block
 
-    /** [ref] ist der Schlüssel fürs Laden der Bytes (leer = nicht ladbar), [alt] der Ersatztext der Datei. */
-    data class Img(val ref: String, val alt: String) : Block
+    /**
+     * [ref] ist der Schlüssel fürs Laden der Bytes (leer = nicht ladbar), [alt] der Ersatztext der Datei,
+     * [decorative] vom Dokument selbst als Zierde markiert (`role="presentation"`, `aria-hidden`).
+     */
+    data class Img(val ref: String, val alt: String, val decorative: Boolean = false) : Block
 }
 
 /**
@@ -26,7 +29,8 @@ class ReadableDoc(val pages: List<List<Block>>, val images: (String) -> ByteArra
 /** Ein Element beim Vorlesen: ein Abschnitt Text oder ein Bild, das erst beschrieben werden muss. */
 sealed interface ReadItem {
     data class Speech(val text: String) : ReadItem
-    data class Picture(val ref: String, val alt: String) : ReadItem
+    /** [decorative]: Zierde, wird weder beschrieben noch vorgelesen (auch nicht der Ersatztext). */
+    data class Picture(val ref: String, val alt: String, val decorative: Boolean = false) : ReadItem
 }
 
 /**
@@ -58,6 +62,8 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
             val pages = doc.readable?.pages ?: listOf(listOf(Block.Para(doc.text)))
             val items = mutableListOf<ReadItem>()
             val starts = mutableListOf<Int>()
+            // dasselbe Bild mehrfach im Dokument (Rahmen, Ornament): Zierde
+            val uses = pages.flatten().filterIsInstance<Block.Img>().filter { it.ref.isNotEmpty() }.groupingBy { it.ref }.eachCount()
             for (page in pages) {
                 val before = items.size
                 val buffer = mutableListOf<String>()
@@ -72,7 +78,8 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
                         is Block.Para -> buffer += block.text
                         is Block.Img -> {
                             flush()
-                            items += ReadItem.Picture(block.ref, block.alt)
+                            val repeated = (uses[block.ref] ?: 0) >= Decorative.MIN_REPEATS
+                            items += ReadItem.Picture(block.ref, block.alt, block.decorative || repeated)
                         }
                     }
                 }
@@ -140,7 +147,8 @@ object Html {
             val name = TAG_NAME.find(tag)?.groupValues?.get(2)?.lowercase() ?: continue
             if (name == "img") {
                 val src = attr(tag, "src").orEmpty()
-                pending += Block.Img(if (src.isEmpty()) "" else resolve(decodeEntities(src)).orEmpty(), decodeEntities(attr(tag, "alt").orEmpty()).trim())
+                val marked = attr(tag, "role")?.trim()?.lowercase() in setOf("presentation", "none") || attr(tag, "aria-hidden")?.trim()?.lowercase() == "true"
+                pending += Block.Img(if (src.isEmpty()) "" else resolve(decodeEntities(src)).orEmpty(), decodeEntities(attr(tag, "alt").orEmpty()).trim(), marked)
             } else if (name in BLOCK_TAGS) {
                 flush()
             }

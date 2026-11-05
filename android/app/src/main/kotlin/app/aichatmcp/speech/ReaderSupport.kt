@@ -6,7 +6,9 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import app.aichatmcp.ImagePrep
+import app.aichatmcp.core.Decorative
 import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ReadItem
 import app.aichatmcp.core.ReadableDoc
@@ -117,13 +119,19 @@ class DescribedPictures(
             val text = withContext(Dispatchers.IO) {
                 runCatching {
                     val bytes = doc?.images?.invoke(ref) ?: error("Bild nicht ladbar")
-                    Documents.completeSentences(vision.describe(ImagePrep.jpegFromBytes(bytes), prompt, threads(), 320) { mine != epoch })
+                    val ornament = Decorative.reason(bytes)
+                    if (ornament != null) {
+                        Log.i("AiChat", "Bild $ref übersprungen: $ornament")
+                        ReaderPictures.SKIP
+                    } else {
+                        Documents.completeSentences(vision.describe(ImagePrep.jpegFromBytes(bytes), prompt, threads(), 320) { mine != epoch })
+                    }
                 }.getOrNull()?.takeIf { it.isNotBlank() }
             }
             running.remove(ref)
             if (mine != epoch) return@launch // abgebrochen (Pause oder Sprung): ein unvollständiges Ergebnis nicht merken
             cache[ref] = text
-            if (text != null) onDescribed(text)
+            if (text != null && text != ReaderPictures.SKIP) onDescribed(text)
             waiting.remove(ref)?.forEach { it(text) }
         }
     }

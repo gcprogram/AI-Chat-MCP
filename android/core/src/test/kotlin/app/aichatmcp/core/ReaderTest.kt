@@ -157,6 +157,50 @@ class ReaderTest {
     }
 
     @Test
+    fun decorativePictureIsSkippedWithoutDescribingOrReadingItsAltText() {
+        val items = listOf(ReadItem.Speech("vor"), ReadItem.Picture("rahmen", "Rahmen", decorative = true), ReadItem.Speech("nach"))
+        val (r, f) = reader(items)
+        r.play()
+        assertEquals(emptyList<String>(), f.prefetched)
+        r.utteranceDone(f.spoken[0].id)
+        assertEquals(emptyList<Pair<ReadItem.Picture, (String?) -> Unit>>(), f.pending)
+        assertEquals(2, r.index)
+        assertEquals("nach" to true, f.spoken.last().text to f.spoken.last().flush)
+        assertTrue(f.spoken.none { it.text == "Rahmen" })
+    }
+
+    @Test
+    fun aPictureRecognizedAsOrnamentLaterIsSkippedToo() {
+        val (r, f) = reader(listOf(ReadItem.Picture("a", "Rahmenteil"), ReadItem.Speech("Text")))
+        r.play()
+        f.pending[0].second(ReaderPictures.SKIP)
+        assertEquals(listOf(true, false), f.describing)
+        assertEquals(listOf("Text"), f.spoken.map { it.text }) // weder SKIP noch der Ersatztext
+        assertEquals(1, r.index)
+    }
+
+    @Test
+    fun aRowOfOrnamentsAtTheEndFinishesReading() {
+        val items = listOf(ReadItem.Speech("a"), ReadItem.Picture("x", "", true), ReadItem.Picture("y", "", true))
+        val (r, f) = reader(items)
+        r.play()
+        r.utteranceDone(f.spoken[0].id)
+        assertEquals(1, f.finished)
+        assertEquals(ReaderState.STOPPED, r.state)
+    }
+
+    @Test
+    fun atMostTwoPicturesAreOrderedAheadAndOrnamentsDoNotCount() {
+        val items = listOf(
+            ReadItem.Speech("s0"), ReadItem.Picture("o", "", true), ReadItem.Picture("p1", "A"), ReadItem.Picture("p2", "B"),
+            ReadItem.Picture("p3", "C"), ReadItem.Speech("s5"),
+        )
+        val (r, f) = reader(items)
+        r.play()
+        assertEquals(listOf("p1", "p2"), f.prefetched) // p3 folgt später, nicht alle auf einmal
+    }
+
+    @Test
     fun pictureIsOrderedFiveSectionsAheadSoALargerModelIsInTime() {
         val items = (0..6).map { ReadItem.Speech("s$it") } + ReadItem.Picture("img", "Hafen")
         val (r, f) = reader(items)

@@ -62,6 +62,30 @@ class ReadableTest {
     }
 
     @Test
+    fun imagesMarkedAsPresentationAreDecorative() {
+        val blocks = Html.blocks("<p>a</p><img src='x.png' role='presentation'><img src='y.png' aria-hidden=\"true\"><img src='z.png' alt='Foto'>") { it }
+        assertEquals(listOf(true, true, false), blocks.filterIsInstance<Block.Img>().map { it.decorative })
+    }
+
+    @Test
+    fun theSameImageThreeTimesInADocumentIsAnOrnament() {
+        fun page(vararg blocks: Block) = listOf<Block>(Block.Para("Text")) + blocks
+        val doc = ReadableDoc(
+            listOf(
+                page(Block.Img("rahmen", ""), Block.Img("foto", "Hafen")),
+                page(Block.Img("rahmen", "")),
+                page(Block.Img("rahmen", ""), Block.Img("ornament", "")),
+                page(Block.Img("ornament", "")),
+            ),
+        )
+        val pictures = ReadPlan.of(DocText("a.epub", DocKind.EPUB, doc.text, doc)).items.filterIsInstance<ReadItem.Picture>()
+        assertEquals(
+            listOf("rahmen" to true, "foto" to false, "rahmen" to true, "rahmen" to true, "ornament" to false, "ornament" to false),
+            pictures.map { it.ref to it.decorative },
+        ) // "ornament" kommt nur zweimal vor
+    }
+
+    @Test
     fun epubReadsChaptersInSpineOrderWithImages() {
         val doc = Epub.read(epub())
         assertEquals(2, doc.pages.size) // nav.xhtml hat linear="no"

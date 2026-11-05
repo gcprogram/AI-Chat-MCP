@@ -108,7 +108,8 @@ python main.py
   (Französisch trotz englischem Companion → Dialog), EPUB mit zwei Bildern (Seiten 1/2, Beschreibungen vorgelesen), Schlüsselwort "wetter in" (Werkzeug ohne Modell). NICHT geprüft: Anruf-/Audio-Pause
   (`ReaderFocus`, nur über die Zustandsmaschine getestet), Sprechgeschwindigkeit-Einstellung, HTML auf dem Gerät. **Kotlin-Falle:** `init {}` muss am ENDE von `ChatViewModel` stehen (sonst sind spätere
   Eigenschaften beim Aufruf aus init noch null: Absturz beim Start, kam erst beim Test auf dem Gerät heraus). Bildbeschreibung: "7 Sätze" erzwingen die kleinen Modelle nicht (Gliederung mit Gesicht/Kleidung erfindet Personen: entfernt; ohne Gliederung kommen 1 bis 3 Sätze,
-  mit "keine Listen" kein erfundener Text mehr). SmolVLM-500M ist bei gleicher Dauer treffender als 256M (`VisionOnDeviceTest`, nur Protokoll). Vorleser bestellt Bilder `Reader.PREFETCH_ITEMS` (5) Abschnitte vorab;
+  mit "keine Listen" kein erfundener Text mehr). SmolVLM-500M ist bei gleicher Dauer treffender als 256M (`VisionOnDeviceTest`, nur Protokoll). **Zierbilder** (`core/Decorative.kt`): `role="presentation"`/`aria-hidden`, dasselbe Bild ≥3x im Dokument (schon im `ReadPlan`), beim Laden Dateikopf (<2 KB, Kante <100 px, Seitenverhältnis >6:1) → `ReaderPictures.SKIP`,
+  weder Beschreibung noch Ersatztext. Nicht erkannt: Rahmen als CSS-Hintergrund (kein `<img>`, Inline-SVG wird ohnehin verworfen) und große Zierbilder. Der Vorleser bestellt Bilder `Reader.PREFETCH_ITEMS` (5) Elemente vorab, höchstens `PREFETCH_PICTURES` (2) auf einmal;
   wartende Bestellungen prüfen vor dem Laden `cancelled` (sonst rechnen sie nach einem Sprung unnötig weiter).
   Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
