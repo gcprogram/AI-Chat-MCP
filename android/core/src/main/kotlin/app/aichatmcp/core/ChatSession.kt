@@ -1,6 +1,7 @@
 package app.aichatmcp.core
 
 private const val OLD_RESULT_CHARS = 300 // Werkzeugergebnisse früherer Runden werden gekürzt gesendet (kleiner Kontext)
+private const val DOCUMENT_MARGIN_TOKENS = 150 // Platz für Anweisung, Rollenmarken und die Abweichung der Schätzung
 
 /**
  * Chat-Verlauf einer Unterhaltung (Port von session.py, Textmarker-Modus). Der Client ist zustandslos: jede Anfrage
@@ -113,4 +114,11 @@ class ChatSession(var config: Config, var persona: Persona, var registry: ToolRe
     fun recordUsage(sent: List<WireMessage>, promptTokens: Int) = context.calibrate(sent.sumOf { it.content.length }, promptTokens)
 
     fun estimatedTokens(): Int = requestMessages().sumOf { context.estimate(it.content) }
+
+    /**
+     * Wie viele Tokens ein eingefügtes Dokument höchstens haben darf: Fenster minus Antwort minus System-Prompt (Persona,
+     * Werkzeuge). Älterer Verlauf wird bei Bedarf ausgeblendet, das Dokument soll aber ganz hineinpassen.
+     */
+    fun documentBudgetTokens(): Int =
+        (config.contextTokens - config.maxReplyTokens - context.estimate(systemPrompt) - DOCUMENT_MARGIN_TOKENS).coerceAtLeast(150)
 }

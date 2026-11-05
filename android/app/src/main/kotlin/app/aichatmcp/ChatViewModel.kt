@@ -1,9 +1,10 @@
 package app.aichatmcp
 
 import android.app.Application
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.net.Uri
+import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import java.io.File
 import androidx.compose.runtime.getValue
@@ -20,6 +21,9 @@ import app.aichatmcp.core.ChatFileException
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.BACKEND_LOCAL
 import app.aichatmcp.core.CancelToken
+import app.aichatmcp.core.DocKind
+import app.aichatmcp.core.DocumentException
+import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.DefaultServerFactory
@@ -64,6 +68,9 @@ private val VOICE_SAMPLES = mapOf(
     "it-IT" to "Ciao, ecco come suona la mia voce.",
 )
 
+/** Ein hochgeladenes Dokument, zu dem die App fragt, was damit geschehen soll. [tokens] grob geschätzt, [budget] = Platz im Kontext. */
+data class PendingDoc(val name: String, val kind: DocKind, val text: String, val tokens: Int, val budget: Int)
+
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
 data class UiMessage(val kind: UiKind, val text: String)
@@ -77,6 +84,7 @@ class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: Strin
 data class ToolsState(val available: List<String> = emptyList(), val errors: List<String> = emptyList(), val loading: Boolean = true)
 
 private const val RESULT_PREVIEW_CHARS = 160
+private const val LONG_MESSAGE_CHARS = 900
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val storage = AppStorage(app.filesDir) { name ->
@@ -108,6 +116,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var packRows by mutableStateOf<List<PackRow>>(emptyList())
         private set
     var packNote by mutableStateOf("")
+        private set
+    var pendingDoc by mutableStateOf<PendingDoc?>(null)
+        private set
+    var docBusy by mutableStateOf(false)
+        private set
+    var docReading by mutableStateOf(false)
+        private set
+    var docProgress by mutableStateOf("")
         private set
     var voiceRows by mutableStateOf<List<PackRow>>(emptyList())
         private set
@@ -161,12 +177,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val label = if (m.kind == TOOL_RESULT) "Ergebnis" else "Fehler"
             UiMessage(if (m.kind == TOOL_RESULT) UiKind.RESULT else UiKind.RESULT_ERROR, "« $label von ${m.tool.ifEmpty { "Werkzeug" }}: $preview")
         }
-        m.role == "user" -> UiMessage(UiKind.USER, m.content)
+        m.role == "user" -> UiMessage(UiKind.USER, shortened(m.content))
         else -> UiMessage(UiKind.ASSISTANT, m.content)
     }
 
+    /** Lange Nutzernachrichten (z. B. ein eingefügtes Dokument) erscheinen gekürzt; das Modell bekommt den vollen Text. */
+    private fun shortened(text: String): String =
+        if (text.length <= LONG_MESSAGE_CHARS) text
+        else text.take(300).trimEnd() + "\n[… ${text.length - 500} Zeichen ausgeblendet …]\n" + text.takeLast(200).trimStart()
+
     /** Zeichnet Begrüßung und Verlauf neu (Companion-Wechsel, neuer Chat, geladener Chat). */
     private fun renderHistory() {
+        dismissDoc()
         messages.clear()
         live = null
         if (persona.greeting.isNotEmpty()) messages += UiMessage(UiKind.ASSISTANT, persona.greeting)
@@ -293,6 +315,101 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 packNote = ""
             }.onFailure { packNote = "Sprachpakete lassen sich nicht abfragen (${it.message})." }
         }
+    }
+
+    // --- Dokumente hochladen: Rückfrage "Was soll ich damit machen?" --------------------------------------
+
+    /** Liest die gewählte Datei (TXT, MD, DOCX, PDF) und stellt die Rückfrage mit den drei Möglichkeiten. */
+    fun loadDocument(uri: Uri) {
+        if (streaming || docBusy) return
+        docBusy = true
+        status = "Lese Datei…"
+        viewModelScope.launch {
+            try {
+                val doc = withContext(Dispatchers.IO) { readDocument(uri) }
+                speechOut.stop()
+                val tokens = (doc.text.length / session.context.charsPerToken).toInt()
+                pendingDoc = PendingDoc(doc.name, doc.kind, doc.text, tokens, session.documentBudgetTokens())
+                status = "Datei gelesen: ${doc.name}"
+            } catch (e: DocumentException) {
+                status = e.message.orEmpty()
+                messages += UiMessage(UiKind.ERROR, "[Datei] ${e.message}")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                status = "Datei nicht lesbar"
+                messages += UiMessage(UiKind.ERROR, "[Datei] ${e.message ?: e::class.simpleName}")
+            } finally {
+                docBusy = false
+            }
+        }
+    }
+
+    private fun readDocument(uri: Uri): app.aichatmcp.core.DocText {
+        val app = getApplication<Application>()
+        val resolver = app.contentResolver
+        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Datei"
+        val kind = Documents.kindOf(name, resolver.getType(uri))
+            ?: throw DocumentException("Dieses Dateiformat wird nicht unterstützt (möglich: PDF, TXT, MD, DOCX).")
+        val bytes = resolver.openInputStream(uri)?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            while (out.size() <= Documents.MAX_BYTES) { // eine Stelle über dem Limit genügt, um "zu groß" zu melden
+                val n = input.read(buffer)
+                if (n < 0) break
+                out.write(buffer, 0, n)
+            }
+            out.toByteArray()
+        } ?: throw DocumentException("Die Datei lässt sich nicht öffnen.")
+        return Documents.read(name, kind, bytes) { PdfText.extract(app, it) }
+    }
+
+    /** Alternative 1: Text ins Eingabefeld übernehmen (auf das Kontextfenster gekürzt); die Frage schreibt der Nutzer dahinter. */
+    fun docAsInput() {
+        val doc = pendingDoc ?: return
+        val fitted = Documents.fit(doc.text, session.documentBudgetTokens(), session.context.charsPerToken)
+        input = Documents.inputText(doc.name, fitted) + "\n\n"
+        pendingDoc = null
+        status = if (fitted.truncated) "Eingelesen, aber auf den Anfang gekürzt (Kontext reicht nicht für alles). Frage dahinter schreiben."
+        else "Eingelesen. Frage dahinter schreiben und senden."
+    }
+
+    /** Alternative 3: Zusammenfassung durch das Modell (bei langen Texten nur der Anfang, der in den Kontext passt). */
+    fun docSummarize() {
+        val doc = pendingDoc ?: return
+        if (streaming) return
+        val fitted = Documents.fit(doc.text, session.documentBudgetTokens(), session.context.charsPerToken)
+        input = Documents.summaryPrompt(doc.name, fitted, persona.language.ifBlank { "Deutsch" })
+        pendingDoc = null
+        send()
+    }
+
+    /** Alternative 2: Vorlesen, Abschnitt für Abschnitt (ohne Modell, daher ohne Kontextgrenze). */
+    fun docRead() {
+        val doc = pendingDoc ?: return
+        docReading = true
+        speechOut.readAloud(
+            Documents.speechChunks(doc.text), languageTag(),
+            onProgress = { index, total -> docProgress = "Lese Abschnitt ${index + 1} von $total" },
+            onFinished = { completed ->
+                docReading = false
+                docProgress = ""
+                status = if (completed) "Vorlesen beendet." else "Vorlesen abgebrochen."
+                if (completed) pendingDoc = null
+            },
+            onProblem = { status = it },
+        )
+    }
+
+    /** Beendet das Vorlesen; die Rückfrage bleibt, damit noch etwas anderes gewählt werden kann. */
+    fun stopReading() = speechOut.stop()
+
+    fun dismissDoc() {
+        speechOut.stop()
+        pendingDoc = null
+        docReading = false
+        docProgress = ""
     }
 
     // --- Stimmen der Sprachausgabe ------------------------------------------------------------------------

@@ -116,6 +116,8 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             vm.setLocalModel(u.toString(), nameOf(u))
         }
     }
+    // Kein MIME-Filter: manche Dateimanager melden .md/.txt mit unbekanntem Typ. Das Format prüft die App am Namen.
+    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::loadDocument) }
     val importChat = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { vm.importChat(it)?.let(::toast) } ?: toast("Datei nicht lesbar") }
     }
@@ -132,6 +134,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onExport = { exportChat.launch("${vm.persona.id.ifEmpty { "chat" }}.json") },
             onImport = { importChat.launch("*/*") },
             onMic = ::onMic,
+            onUpload = { pickDocument.launch(arrayOf("*/*")) },
         )
         Screen.SETTINGS -> SettingsScreen(vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) })
         Screen.COMPANIONS -> CompanionsScreen(

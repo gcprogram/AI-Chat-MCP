@@ -213,6 +213,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   Beispielsatz. *Stimmen laden…* öffnet die Stimmenverwaltung von Google. Automatisches Vorlesen der Antworten schaltet *Antworten vorlesen* ein (Standard: aus).
 - **Vorwärmen**: Mit dem lokalen Modell werden Modell und bisheriger Verlauf nach dem Start im Hintergrund vorberechnet (Status *Modell wird vorbereitet…*);
   sonst braucht die erste Antwort nach jedem App-Start mehrere Minuten (ca. 10 Prompt-Tokens/s).
+- **Dokumente hochladen** (📎 neben dem Nachrichtenfeld): TXT, MD, DOCX und PDF (PDF mit PdfBox für Android; ein Scan ohne Textebene
+  liefert keinen Text und wird so gemeldet). Danach fragt die App (nicht das Modell) „Was soll ich damit machen?“: **1 · Als Eingabe
+  einlesen** (Text und Dateiname landen im Eingabefeld, die Frage schreibt man dahinter), **2 · Vorlesen** (Abschnitt für Abschnitt mit
+  Fortschritt und Stopp, ohne Modell und daher ohne Kontextgrenze) oder **3 · Zusammenfassen** (das Modell fasst zusammen). Das
+  Kontextfenster ist klein: Einlesen und Zusammenfassen nehmen nur den Anfang, der hineinpasst (Fenster minus Antwort minus System-Prompt,
+  bei 4096 Tokens ca. 2300), und die Karte sagt das. Lange Nutzernachrichten erscheinen im Chat gekürzt, das Modell bekommt den vollen Text.
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
   PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein

@@ -91,6 +91,10 @@ python main.py
   **Stimmen** (`SpeechOutput.installedVoices`: `Voice.features` ohne `notInstalled`; `openVoiceInstall` = `ACTION_INSTALL_TTS_DATA`) und Test-Satz in den Einstellungen.
   `Antworten vorlesen` ist standardmäßig aus (Ursache für „Sprachausgabe fehlt“). **Vorwärmen** (`ChatViewModel.warmUp`, nach `reloadTools`/`saveConfig`): ein
   1-Token-Lauf über den bisherigen Verlauf füllt den Präfix-Cache; ohne ihn dauert die erste Antwort nach App-Start ~2-3 min (Prompt ~10 Tokens/s, 4 Threads).
+  **Dokumente hochladen** (`core/Documents.kt`, `app/PdfText.kt`, `ChatViewModel.loadDocument/docAsInput/docRead/docSummarize`, `DocCard` in `ChatScreen`): TXT/MD (UTF-8, sonst Windows-1252), DOCX
+  (Zip + `word/document.xml`, ohne Bibliothek), PDF per `pdfbox-android` (MIME-Filter bewusst `*/*`: Dateimanager melden .md mit unbekanntem Typ; Format am Namen). Die Rückfrage stellt die App, nicht das
+  Modell (4B-Modell unzuverlässig, Text soll nicht unnötig in den Kontext). Budget `ChatSession.documentBudgetTokens` = Fenster − Antwort − System-Prompt − 150; `Documents.fit` kürzt an Absatz/Satz.
+  Vorlesen in Abschnitten (`SpeechOutput.readAloud`, 600 Zeichen, zwei Abschnitte Vorlauf, Fortschritt je Abschnitt). **Android-Regex = ICU:** literale `}` müssen als `\}` stehen (Absturz beim HTTP-MCP-Start).
   Offen: Abbruch beim App-Wechsel gemeldet (nicht reproduzierbar, nur der Stopp-Knopf ruft `ChatEngine.cancel`); `stop()` und Activity-onStop/onDestroy loggen (Tag `AiChat`).
   Eigene Modelle (sherpa-onnx: Whisper tiny/base, Piper) wären der nächste Schritt; `small.pt` müsste für whisper.cpp erst ins ggml-Format.
 - **Modell auf dem Handy** (`LlmBackend` im Kern: `ChatClient` = Server, `LocalLlm` = `llama.cpp` per JNI, `Config.backend`). Wichtig:

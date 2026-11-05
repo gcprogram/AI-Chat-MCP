@@ -171,8 +171,85 @@ class SpeechOutput(private val context: Context) {
     }
 
     fun stop() {
+        val job = reading
+        reading = null
         tts?.stop()
         pending.clear()
+        job?.onFinished(false)
+    }
+
+    // --- Dokumente vorlesen: Abschnitt für Abschnitt ----------------------------------------------------------
+
+    private class Reading(val chunks: List<String>, val onProgress: (Int, Int) -> Unit, val onFinished: (Boolean) -> Unit) {
+        var queued = 0 // an die Sprachausgabe übergebene Abschnitte
+        var done = 0 // fertig gesprochene Abschnitte
+    }
+
+    private var reading: Reading? = null
+    private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * Liest lange Texte in kleinen Abschnitten vor: Es sind immer nur zwei Abschnitte in der Warteschlange der Sprachausgabe
+     * (kein Zeichenlimit, jederzeit stoppbar, Fortschritt je Abschnitt). [onProgress] bekommt (aktueller Abschnitt ab 0,
+     * Anzahl), [onFinished] true bei Ende und false bei Abbruch/Fehler.
+     */
+    fun readAloud(
+        chunks: List<String>, languageTag: String?, onProgress: (Int, Int) -> Unit, onFinished: (Boolean) -> Unit,
+        onProblem: (String) -> Unit,
+    ) {
+        stop()
+        if (chunks.isEmpty()) return onFinished(true)
+        val job = Reading(chunks, onProgress, onFinished)
+        reading = job
+        withEngine {
+            val engine = tts ?: return@withEngine
+            if (reading !== job) return@withEngine // zwischenzeitlich gestoppt
+            val locale = languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
+            val result = engine.setLanguage(locale)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                onProblem("Keine Stimme für ${locale.toLanguageTag()} installiert (Einstellungen → Stimmen).")
+            }
+            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    main.post { advance(job, utteranceId) }
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    if (utteranceId?.startsWith("doc-") == true) main.post { fail(job, onProblem) }
+                }
+            })
+            job.onProgress(0, chunks.size)
+            enqueue(job, engine)
+            enqueue(job, engine)
+        }
+    }
+
+    private fun enqueue(job: Reading, engine: TextToSpeech) {
+        if (job.queued >= job.chunks.size) return
+        val i = job.queued++
+        engine.speak(job.chunks[i], if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "doc-$i")
+    }
+
+    private fun advance(job: Reading, utteranceId: String?) {
+        if (reading !== job || utteranceId != "doc-${job.done}") return
+        job.done++
+        if (job.done >= job.chunks.size) {
+            reading = null
+            job.onFinished(true)
+            return
+        }
+        job.onProgress(job.done, job.chunks.size)
+        tts?.let { enqueue(job, it) }
+    }
+
+    private fun fail(job: Reading, onProblem: (String) -> Unit) {
+        if (reading !== job) return
+        reading = null
+        tts?.stop()
+        onProblem("Die Sprachausgabe ist beim Vorlesen ausgefallen.")
+        job.onFinished(false)
     }
 
     /**

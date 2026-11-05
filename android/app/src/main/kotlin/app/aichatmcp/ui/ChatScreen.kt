@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +52,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.PendingDoc
 import app.aichatmcp.UiKind
 import app.aichatmcp.UiMessage
 import app.aichatmcp.core.ChatEvent
@@ -61,7 +65,7 @@ private val InfoBlue = Color(0xFF1A56C4)
 enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS }
 
 @Composable
-fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit) {
+fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {
     val listState = rememberLazyListState()
     val liveLength = vm.live?.let { it.content.length + it.reasoning.length } ?: 0
     LaunchedEffect(vm.messages.size, liveLength) {
@@ -85,6 +89,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
             }
         }
         HorizontalDivider()
+        vm.pendingDoc?.let { DocCard(it, vm) }
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(vm.status, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text(vm.contextLabel, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))
@@ -96,7 +101,11 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             )
             Spacer(Modifier.padding(4.dp))
-            OutlinedButton(onClick = onMic, enabled = !vm.streaming) { Text(if (vm.listening) "■" else "🎤") }
+            OutlinedButton(onClick = onUpload, enabled = !vm.streaming && !vm.docBusy, contentPadding = PaddingValues(horizontal = 12.dp)) {
+                Text(if (vm.docBusy) "…" else "📎")
+            }
+            Spacer(Modifier.padding(2.dp))
+            OutlinedButton(onClick = onMic, enabled = !vm.streaming, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (vm.listening) "■" else "🎤") }
             Spacer(Modifier.padding(2.dp))
             if (vm.streaming) Button(onClick = vm::stop) { Text("Stopp") }
             else Button(onClick = vm::send, enabled = vm.input.isNotBlank()) { Text("Senden") }
@@ -202,6 +211,43 @@ private fun withToolCalls(text: String) = buildAnnotatedString {
             if (i < segments.lastIndex) append("\n")
         } else {
             append(part)
+        }
+    }
+}
+
+/**
+ * Rückfrage zu einem hochgeladenen Dokument: "Was soll ich damit machen?" mit den drei Möglichkeiten. Die Frage stellt die
+ * App, nicht das Modell (ein kleines Modell würde sie unzuverlässig stellen und den Text unnötig in den Kontext holen).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
+    Surface(
+        shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(vm.persona.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+            Text("Die Datei „${doc.name}“ ist da (${doc.text.length} Zeichen, ca. ${doc.tokens} Tokens). Was soll ich damit machen?", style = MaterialTheme.typography.bodyLarge)
+            if (doc.tokens > doc.budget) {
+                Text(
+                    "Der Text ist länger als mein Kontext (Platz für ca. ${doc.budget} Tokens): Beim Einlesen und Zusammenfassen berücksichtige ich nur den Anfang. Vorlesen geht vollständig.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (vm.docReading) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(vm.docProgress.ifEmpty { "Lese vor…" }, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = vm::stopReading) { Text("Stopp") }
+                }
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(onClick = vm::docAsInput) { Text("1 · Als Eingabe einlesen") }
+                    Button(onClick = vm::docRead) { Text("2 · Vorlesen") }
+                    Button(onClick = vm::docSummarize, enabled = !vm.streaming) { Text("3 · Zusammenfassen") }
+                    TextButton(onClick = vm::dismissDoc) { Text("Verwerfen") }
+                }
+            }
         }
     }
 }
