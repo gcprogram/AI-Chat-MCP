@@ -116,6 +116,8 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             vm.setLocalModel(u.toString(), nameOf(u))
         }
     }
+    // Kein MIME-Filter: CSV und Excel melden die Dateimanager uneinheitlich; das Format erkennt die App am Namen/Inhalt
+    val pickKeywords = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::previewKeywordImport) }
     val pickVision = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.importVisionModel(it, nameOf(it)) } }
     val pickVisionProj = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.importVisionProj(it, nameOf(it)) } }
     // Kein MIME-Filter: manche Dateimanager melden .md/.txt mit unbekanntem Typ. Das Format prüft die App am Namen.
@@ -147,6 +149,6 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onImportAvatars = { avatarFolder.launch(null) },
             onPickAvatar = { id -> avatarTarget = id; avatarPick.launch(arrayOf("image/*")) },
         )
-        Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onImportCert = { importCert.launch("*/*") })
+        Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onImportCert = { importCert.launch("*/*") }, onImportKeywords = { pickKeywords.launch(arrayOf("*/*")) })
     }
 }

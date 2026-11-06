@@ -47,7 +47,7 @@ class MarksAndKeywordsTest {
     }
 
     private fun spec(alias: String, vararg keywords: String) =
-        ToolSpec(alias = alias, server = "s", remoteName = "t", keywords = keywords.toList())
+        ToolSpec(alias = alias, server = "s", remoteName = "t", keywords = keywords.map { Keyword(it) })
 
     @Test
     fun keywordsTriggerTheirToolsAndOnlyAllowedOnes() {
@@ -90,12 +90,17 @@ class MarksAndKeywordsTest {
                 "single": {"server": "s", "tool": "t", "keywords": "nur einer"},
                 "none": {"server": "s", "tool": "t"},
                 "bad": {"server": "s", "tool": "t", "keywords": ["(offen"]},
-                "wrong": {"server": "s", "tool": "t", "keywords": {"a": 1}}}""",
+                "wrong": {"server": "s", "tool": "t", "keywords": {"a": 1}},
+                "fixed": {"server": "s", "tool": "t", "keywords": [{"pattern": "wetter", "args": ["Paderborn", "morgen"]}, "plain", {"pattern": "x", "args": "eins"}]}}""",
         ) as kotlinx.serialization.json.JsonObject
         registry.addAliases(config)
-        assertEquals(listOf("programm\\s*1", "channel 1"), registry.tools.getValue("ok").keywords)
-        assertEquals(listOf("nur einer"), registry.tools.getValue("single").keywords)
+        assertEquals(listOf(Keyword("programm\\s*1"), Keyword("channel 1")), registry.tools.getValue("ok").keywords)
+        assertEquals(listOf(Keyword("nur einer")), registry.tools.getValue("single").keywords)
         assertEquals(emptyList(), registry.tools.getValue("none").keywords)
+        assertEquals(
+            listOf(Keyword("wetter", listOf("Paderborn", "morgen")), Keyword("plain"), Keyword("x", listOf("eins"))),
+            registry.tools.getValue("fixed").keywords,
+        )
         assertFalse("bad" in registry.tools)
         assertFalse("wrong" in registry.tools)
         assertTrue(registry.errors.any { "ungültiger Ausdruck" in it && "bad" in it })

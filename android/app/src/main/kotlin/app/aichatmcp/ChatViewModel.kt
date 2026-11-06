@@ -26,6 +26,7 @@ import app.aichatmcp.core.CancelToken
 import app.aichatmcp.core.DocKind
 import app.aichatmcp.core.DocText
 import app.aichatmcp.core.KeywordHit
+import app.aichatmcp.core.KeywordImport
 import app.aichatmcp.core.KeywordRules
 import app.aichatmcp.core.KeywordThrottle
 import app.aichatmcp.core.LanguageDetect
@@ -169,6 +170,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var voiceNote by mutableStateOf("")
         private set
     var mcpText by mutableStateOf("")
+
+    /** Vorschau eines Schlüsselwort-Imports (CSV/Excel), wartet auf "Übernehmen". */
+    class KeywordImportPreview(val fileName: String, val result: KeywordImport.Result)
+
+    var keywordImport by mutableStateOf<KeywordImportPreview?>(null)
+    var keywordImportError by mutableStateOf("")
         private set
     var secretNames by mutableStateOf<List<String>>(emptyList())
         private set
@@ -1090,6 +1097,40 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         mcpText = text
         reloadTools()
         return null
+    }
+
+    /** Liest eine Liste `Wort;Werkzeug;Parameter…` (CSV oder Excel) und zeigt vor dem Übernehmen, was sich in mcp_servers.json ändert. */
+    fun previewKeywordImport(uri: Uri) {
+        keywordImportError = ""
+        viewModelScope.launch {
+            try {
+                keywordImport = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Liste"
+                    val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw DocumentException("Die Datei lässt sich nicht öffnen.")
+                    if (bytes.size > 20_000_000) throw DocumentException("Die Datei ist zu groß für eine Schlüsselwortliste.")
+                    KeywordImportPreview(name, KeywordImport.fromFile(name, bytes, storage.mcpJson()))
+                }
+            } catch (e: DocumentException) {
+                keywordImportError = e.message.orEmpty()
+            } catch (e: Exception) {
+                keywordImportError = "Die Liste lässt sich nicht lesen: ${e.message}"
+            }
+        }
+    }
+
+    fun applyKeywordImport() {
+        val preview = keywordImport ?: return
+        keywordImport = null
+        keywordImportError = saveMcpJson(preview.result.json).orEmpty()
+        if (keywordImportError.isEmpty()) {
+            status = "Schlüsselwörter übernommen: ${preview.result.parsed.wordCount} Wörter für ${preview.result.parsed.tools.joinToString(", ")}."
+        }
+    }
+
+    fun cancelKeywordImport() {
+        keywordImport = null
     }
 
     fun resetMcpJson() {

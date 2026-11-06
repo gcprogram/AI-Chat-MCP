@@ -103,7 +103,9 @@ python main.py
   `ChatViewModel` verdrahtet): Abschnitte à 400 Zeichen, nächster Abschnitt wird schon angehängt (keine Lücke), Callback-IDs `r:<Generation>:<Index>` gegen späte Rückmeldungen;
   Pause = Stopp + Position (Android-TTS kann nicht pausieren). Marken `ReadMarks` (`reading_marks.json`), Datei über `takePersistableUriPermission`. EPUB = Zip + OPF-Spine,
   HTML-Parser mit Regex (kein XmlPullParser, JVM-testbar), Bilder nach dem Absatz. Sprache `LanguageDetect` (Kosinus über Buchstabenprofile). Tonfokus `ReaderFocus`
-  (`setWillPauseWhenDucked`). **Schlüsselwörter** `core/Keywords.kt` + `ToolSpec.keywords` (nur Android; Eingabe mit Treffer geht NICHT ans Modell). Gerätetest `DocumentsOnDeviceTest`
+  (`setWillPauseWhenDucked`). **Schlüsselwörter** `core/Keywords.kt` + `ToolSpec.keywords` (nur Android; Eingabe mit Treffer geht NICHT ans Modell; Eintrag = Text oder `{"pattern","args"}` mit festen Argumenten, `Keyword`). **Import aus CSV/XLSX** (`core/KeywordImport.kt`, `Spreadsheet.kt`, Werkzeuge-Bildschirm):
+  `Wort;Werkzeug;Parameter…`, Wort klein, doppelte weg (erste Zeile gewinnt), ohne Werkzeug/unbekannter Alias ignoriert, gleiche Werkzeug+Parameter → ein Ausdruck mit Lookarounds statt `\b`;
+  ersetzt die Schlüsselwörter der genannten Werkzeuge in `mcp_servers.json` (Vorschau-Dialog), xlsx ohne Bibliothek (Zip + Regex, erstes Blatt laut workbook.xml), `.xls` wird abgelehnt. Gerätetest `DocumentsOnDeviceTest`
   prüft die Regexe unter ICU. Auf dem Gerät von Hand geprüft: Tasten (+1/+10/-10/-1), Pause/Play/Stopp, Marke nach Neustart (Menü), gelöschte Datei (Fehler + Marke weg, andere Marken bleiben), Sprache erkannt
   (Französisch trotz englischem Companion → Dialog), EPUB mit zwei Bildern (Seiten 1/2, Beschreibungen vorgelesen), Schlüsselwort "wetter in" (Werkzeug ohne Modell). NICHT geprüft: Anruf-/Audio-Pause
   (`ReaderFocus`, nur über die Zustandsmaschine getestet), Sprechgeschwindigkeit-Einstellung, HTML auf dem Gerät. **Kotlin-Falle:** `init {}` muss am ENDE von `ChatViewModel` stehen (sonst sind spätere

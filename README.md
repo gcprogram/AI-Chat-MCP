@@ -255,6 +255,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   Ausdruck in der Eingabe, in der Antwort des Modells, im vorgelesenen Text oder in einer Bildbeschreibung vor, läuft das Werkzeug ohne das Modell.
   Eine Eingabe mit Treffer geht nicht an das Modell. Es gelten Freigabe des Companions und Rückfrage; dasselbe Werkzeug löst höchstens alle 30 s
   aus. **Vorsicht:** Auch fremde Texte (Dateien, Bilder) können so Werkzeuge auslösen. Nur in der Android-App, die Python-App ignoriert `keywords`.
+  Ein Eintrag kann auch feste Argumente tragen: `{"pattern": "wetter", "args": ["Paderborn", "morgen"]}` (ohne `args` werden die Gruppen des Ausdrucks zu Argumenten).
+  **Liste importieren** (Werkzeuge → *Schlüsselwörter aus Liste*, CSV oder Excel `.xlsx`, erstes Blatt; Beispiel `examples/keywords.csv`): Eine Zeile je Wort,
+  `Wort;Werkzeug;Parameter1;Parameter2;…` (Trennzeichen `;`, auch `,` oder Tabulator werden erkannt; eine Kopfzeile `Wort;Werkzeug` wird übersprungen).
+  Das Wort wird klein geschrieben, ein doppeltes Wort fällt weg (bei verschiedenen Werkzeugen oder Parametern gilt die erste Zeile, die App meldet es),
+  Zeilen ohne Werkzeug und Werkzeuge ohne Alias in `mcp_servers.json` werden ignoriert. Wörter mit demselben Werkzeug und denselben Parametern ergeben einen
+  Ausdruck `(?<![\p{L}\p{N}])(?:wort1|wort2)(?![\p{L}\p{N}])` (nur ganze Wörter, Sonderzeichen entschärft, Leerraum beliebig lang); die Parameter sind feste Argumente,
+  eine leere Zelle dazwischen bleibt ein leerer Parameter. Vor dem Übernehmen zeigt die App eine Vorschau; die bisherigen Schlüsselwörter **der Werkzeuge in der Liste**
+  werden ersetzt (andere bleiben). Ein Werkzeug löst je Text höchstens einmal aus, bei mehreren passenden Zeilen gewinnt die erste.
 - **Avatare**: Der Avatar des Companions erscheint oben im Chat und im Companion-Editor. Die App kann `AIChat/avatars` nicht direkt
   lesen; unter *Companions* kopiert *Avatare aus Ordner holen…* alle Bilder eines gewählten Ordners in den App-Speicher (Dateinamen wie am
   PC, damit importierte Companion-Dateien ihr Bild finden; Android fragt dabei einmal nach dem Ordnerzugriff). *Bild wählen…* setzt ein

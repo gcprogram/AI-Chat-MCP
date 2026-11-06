@@ -4,19 +4,30 @@ package app.aichatmcp.core
 data class KeywordHit(val alias: String, val args: String, val keyword: String)
 
 /**
+ * Ein Schlüsselwort eines Werkzeugs: ein regulärer Ausdruck, dazu optional feste Argumente. Ohne [args] werden die Gruppen des
+ * Ausdrucks zu den Argumenten, mit [args] läuft das Werkzeug immer mit genau diesen (z. B. aus einer Excel-Liste importiert).
+ * In mcp_servers.json steht ein Eintrag als Text oder als `{"pattern": "...", "args": ["...", "..."]}`.
+ */
+data class Keyword(val pattern: String, val args: List<String> = emptyList())
+
+/**
  * Schlüsselwörter für Werkzeuge: Im Alias-Eintrag von mcp_servers.json steht `"keywords": ["regulärer Ausdruck", ...]`. Kommt ein
  * Ausdruck in einem Text vor (Eingabe des Nutzers, Antwort des Modells, vorgelesener Text, Bildbeschreibung), löst das Werkzeug
  * deterministisch aus, ohne dass das Modell es schreiben muss. Gruppen im Ausdruck werden zu den Argumenten des Werkzeugs.
  */
 class KeywordRules(tools: Collection<ToolSpec>, allowed: Collection<String>) {
-    private class Rule(val alias: String, val source: String, val regex: Regex)
+    private class Rule(val alias: String, val source: String, val regex: Regex, val fixedArgs: String?)
 
     private val rules: List<Rule>
 
     init {
         val ok = allowed.map { normalizeName(it) }.toSet()
         rules = tools.filter { it.alias in ok && it.keywords.isNotEmpty() }
-            .flatMap { spec -> spec.keywords.map { Rule(spec.alias, it, Regex(it, RegexOption.IGNORE_CASE)) } }
+            .flatMap { spec ->
+                spec.keywords.map {
+                    Rule(spec.alias, it.pattern, Regex(it.pattern, RegexOption.IGNORE_CASE), it.args.takeIf { a -> a.isNotEmpty() }?.joinToString("|"))
+                }
+            }
     }
 
     val isEmpty: Boolean get() = rules.isEmpty()
@@ -28,7 +39,7 @@ class KeywordRules(tools: Collection<ToolSpec>, allowed: Collection<String>) {
         for (rule in rules) {
             if (rule.alias in hits) continue
             val m = rule.regex.find(text) ?: continue
-            val args = m.groupValues.drop(1).filter { it.isNotEmpty() }.joinToString("|")
+            val args = rule.fixedArgs ?: m.groupValues.drop(1).filter { it.isNotEmpty() }.joinToString("|")
             hits[rule.alias] = KeywordHit(rule.alias, args, rule.source)
         }
         return hits.values.toList()

@@ -98,8 +98,43 @@ class DocumentsOnDeviceTest {
         assertEquals("de-DE", LanguageDetect.detect(german)?.tag)
         assertEquals("en-US", LanguageDetect.detect(english)?.tag)
         // Schlüsselwörter (ICU-Regex mit Gruppen und ohne Groß-/Kleinschreibung)
-        val rules = KeywordRules(listOf(ToolSpec("weather", "s", "t", keywords = listOf("wetter in (\\w+)(?: (morgen|heute))?"))), listOf("weather"))
+        val rules = KeywordRules(listOf(ToolSpec("weather", "s", "t", keywords = listOf(app.aichatmcp.core.Keyword("wetter in (\\w+)(?: (morgen|heute))?")))), listOf("weather"))
         assertEquals("Paris|morgen", rules.match("Wie ist das WETTER in Paris morgen?").single().args)
+    }
+
+    /** Schlüsselwort-Import (CSV und Excel) mit den Regexen der Android-Laufzeit (ICU: Lookbehind, \p{L}, Groß-/Kleinschreibung bei Umlauten). */
+    @Test
+    fun keywordImportWorksOnAndroidRegex() {
+        val mcp = """{"servers": {}, "aliases": {"tv-on": {"server": "s", "tool": "t"}, "weather": {"server": "s", "tool": "t", "params": ["place"]}}}"""
+        val sheet = """<worksheet><sheetData>
+            <row r="1"><c r="A1" t="inlineStr"><is><t>Wort</t></is></c><c r="B1" t="inlineStr"><is><t>Tool</t></is></c></row>
+            <row r="2"><c r="A2" t="inlineStr"><is><t>Glotze AN</t></is></c><c r="B2" t="inlineStr"><is><t>tv-on</t></is></c></row>
+            <row r="3"><c r="A3" t="inlineStr"><is><t>Schnee</t></is></c><c r="B3" t="inlineStr"><is><t>weather</t></is></c><c r="D3"><v>5</v></c></row>
+            </sheetData></worksheet>"""
+        val xlsx = ByteArrayOutputStream().also { out ->
+            ZipOutputStream(out).use { zip -> zip.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml")); zip.write(sheet.toByteArray()); zip.closeEntry() }
+        }.toByteArray()
+        val csv = "word;tool;p1\nÄrger;tv-on\nGlotze an;tv-on\nregen;weather;Paderborn\n".toByteArray()
+        for ((name, bytes) in listOf("l.xlsx" to xlsx, "l.csv" to csv)) {
+            val result = app.aichatmcp.core.KeywordImport.fromFile(name, bytes, mcp)
+            val registry = app.aichatmcp.core.ToolRegistry()
+            registry.remote["s" to "t"] = ToolSpec(alias = "t", server = "s", remoteName = "t", params = listOf(app.aichatmcp.core.Param("place")))
+            registry.addAliases((app.aichatmcp.core.AppJson.parseToJsonElement(result.json) as kotlinx.serialization.json.JsonObject)["aliases"] as kotlinx.serialization.json.JsonObject)
+            assertEquals(emptyList<String>(), registry.errors)
+            val rules = KeywordRules(registry.tools.values, listOf("tv-on", "weather"))
+            assertEquals(name, "tv-on", rules.match("mach die GLOTZE an").single().alias)
+            assertEquals(name, emptyList<String>(), rules.match("glotzen und anders").map { it.alias })
+        }
+        val rules = run {
+            val result = app.aichatmcp.core.KeywordImport.fromFile("l.csv", csv, mcp)
+            val registry = app.aichatmcp.core.ToolRegistry()
+            registry.remote["s" to "t"] = ToolSpec(alias = "t", server = "s", remoteName = "t", params = listOf(app.aichatmcp.core.Param("place")))
+            registry.addAliases((app.aichatmcp.core.AppJson.parseToJsonElement(result.json) as kotlinx.serialization.json.JsonObject)["aliases"] as kotlinx.serialization.json.JsonObject)
+            KeywordRules(registry.tools.values, listOf("tv-on", "weather"))
+        }
+        assertEquals("tv-on", rules.match("so ein ÄRGER").single().alias) // Umlaut, Großschreibung
+        assertEquals("Paderborn", rules.match("Regen?").single().args) // feste Argumente
+        assertEquals(emptyList<String>(), rules.match("ärgerlich").map { it.alias }) // nur ganze Wörter
     }
 
     @Test

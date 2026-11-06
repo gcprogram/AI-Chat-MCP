@@ -148,7 +148,7 @@ data class ToolSpec(
     val status: String = "", // Statuszeile bei discard
     val confirm: Boolean? = null, // null = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
     val remember: Boolean = false, // Ergebnis bei show/discard dem Modell im Verlauf zeigen
-    val keywords: List<String> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
+    val keywords: List<Keyword> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
 ) {
     val usage: String get() = "[[mcp:" + (listOf(alias) + params.map { "<${it.name}>" }).joinToString("|") + "]]"
 
@@ -345,17 +345,29 @@ class ToolRegistry {
         val rememberEl = entry["remember"] as? JsonPrimitive
         val remember = rememberEl?.booleanOrNull ?: (mode == RESULT_SHOW) // angezeigte Daten braucht das Modell für Folgefragen
         val params = names.map { n -> byName.getValue(n).let { it.copy(required = it.required && n !in defaults) } }
+        fun keyword(el: kotlinx.serialization.json.JsonElement): Keyword = when (el) {
+            is JsonObject -> Keyword(
+                (el["pattern"] as? JsonPrimitive)?.content ?: throw IllegalArgumentException("ein Schlüsselwort als Objekt braucht 'pattern'"),
+                when (val a = el["args"]) {
+                    null, is kotlinx.serialization.json.JsonNull -> emptyList()
+                    is JsonArray -> a.map { (it as? JsonPrimitive)?.content.orEmpty() }
+                    is JsonPrimitive -> listOf(a.content)
+                    else -> throw IllegalArgumentException("'args' eines Schlüsselworts muss eine Liste sein")
+                },
+            )
+            is JsonPrimitive -> Keyword(el.content)
+            else -> throw IllegalArgumentException("'keywords' muss eine Liste von regulären Ausdrücken sein")
+        }
         val keywords = when (val el = entry["keywords"]) {
             null, is kotlinx.serialization.json.JsonNull -> emptyList()
-            is JsonArray -> el.map { (it as? JsonPrimitive)?.content.orEmpty() }
-            is JsonPrimitive -> listOf(el.content)
-            else -> throw IllegalArgumentException("'keywords' muss eine Liste von regulären Ausdrücken sein")
-        }.filter { it.isNotBlank() }
-        for (pattern in keywords) {
+            is JsonArray -> el.map(::keyword)
+            is JsonObject, is JsonPrimitive -> listOf(keyword(el))
+        }.filter { it.pattern.isNotBlank() }
+        for (kw in keywords) {
             try {
-                Regex(pattern)
+                Regex(kw.pattern)
             } catch (e: Exception) {
-                throw IllegalArgumentException("ungültiger Ausdruck in 'keywords': $pattern")
+                throw IllegalArgumentException("ungültiger Ausdruck in 'keywords': ${kw.pattern}")
             }
         }
         return ToolSpec(
