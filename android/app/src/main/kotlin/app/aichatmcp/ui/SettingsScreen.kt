@@ -31,7 +31,10 @@ private const val SERVER_LABEL = "Server (LM Studio, OpenAI, …)"
 private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
 
 @Composable
-fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit) {
+fun SettingsScreen(
+    vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit,
+    onPickPiper: () -> Unit,
+) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
     var localPath by remember { mutableStateOf(c.localModel) }
@@ -206,6 +209,27 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Uni
             OutlinedButton(onClick = vm::installVoices) { Text("Stimmen laden…") }
             OutlinedButton(onClick = vm::refreshVoices) { Text("Status aktualisieren") }
         }
+
+        SectionTitle("Piper-Stimmen (eigene Stimmen, offline)")
+        Text(
+            "Piper-Stimmen sprechen komplett auf dem Gerät, auch ohne Google-Sprachausgabe. Ein Stimmenordner enthält die .onnx-Datei, " +
+                "tokens.txt und (nur beim ersten Mal) den Ordner espeak-ng-data, also das Format der sherpa-onnx-Pakete (vits-piper-…). " +
+                "Eine eigene Stimme entsteht durch Training am PC, Anleitung: docs/EIGENE_STIMME.md. Danach wird die Stimme im " +
+                "Companion-Editor unter „Stimme“ gewählt.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        vm.piperVoices.forEach { voice ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(voice.name)
+                    Text("Sprache: ${voice.language ?: "unbekannt"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                OutlinedButton(onClick = { vm.testPiper(voice) }) { Text("Anhören") }
+                TextButton(onClick = { vm.deletePiper(voice) }) { Text("Löschen") }
+            }
+        }
+        if (vm.piperNote.isNotEmpty()) Text(vm.piperNote, style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = onPickPiper, enabled = !vm.piperBusy) { Text(if (vm.piperBusy) "Kopiere…" else "Stimmenordner wählen…") }
 
         SectionTitle("Werkzeuge")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

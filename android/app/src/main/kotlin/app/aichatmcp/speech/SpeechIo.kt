@@ -17,6 +17,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import app.aichatmcp.core.PiperNames
+import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.Speech
 import java.util.Locale
 
@@ -180,9 +182,50 @@ class SpeechOutput(private val context: Context) {
         return result
     }
 
+    // --- Piper-Stimmen (eigene Modelle, ohne Android-Sprachausgabe) -----------------------------------------------
+
+    /** Ordner der Piper-Stimmen; ohne ihn gibt es nur die Systemstimmen. */
+    @Volatile var piperStore: PiperStore? = null
+    /** Rechenfäden für Piper (die App setzt hier die Einstellung für lokale Modelle). */
+    @Volatile var piperThreads: () -> Int = { 4 }
+    /** Lautstärke der Piper-Wiedergabe (1 = normal; Tests spielen mit 0 stumm). */
+    @Volatile var piperVolume: Float = 1f
+    private var piperSpeaker: PiperSpeaker? = null
+
+    private fun piper(): PiperSpeaker? {
+        val store = piperStore ?: return null
+        return piperSpeaker ?: PiperSpeaker(
+            store, { piperThreads() },
+            { id -> if (id.startsWith("r:")) main.post { itemSink?.done(id) } },
+            { id -> if (id.startsWith("r:")) main.post { itemSink?.failed(id) } },
+            { piperVolume },
+        ).also { piperSpeaker = it }
+    }
+
+    /**
+     * Name der Piper-Stimme, mit der gesprochen wird: nur wenn die gewählte Stimme eine Piper-Stimme ist, installiert ist und zur Sprache
+     * passt (ein französischer Text wird nicht mit der deutschen Piper-Stimme gelesen), sonst null = Systemstimme.
+     */
+    fun piperFor(voiceName: String, languageTag: String?): String? {
+        if (!PiperNames.isPiper(voiceName)) return null
+        val name = PiperNames.nameOf(voiceName)
+        val installed = piperStore?.list()?.firstOrNull { it.name == name } ?: return null
+        val wanted = languageTag ?: Locale.getDefault().toLanguageTag()
+        return name.takeIf { installed.language == null || Speech.voiceFitsLanguage(installed.language!!, wanted) }
+    }
+
+    /** Für Tests und Vorschau: erzeugt Audio einer Piper-Stimme ohne es abzuspielen. */
+    fun renderPiper(name: String, text: String, speed: Float = 1f): Pair<FloatArray, Int>? = piper()?.render(name, text, speed)
+
     fun speak(text: String, languageTag: String?, voiceName: String = voice, onProblem: (String) -> Unit) {
         val chunks = Speech.chunks(text)
         if (chunks.isEmpty()) return
+        piperFor(voiceName, languageTag)?.let { piperVoice ->
+            tts?.stop()
+            piper()?.speak(piperVoice, text, "reply", true, rate, onProblem)
+            return
+        }
+        piperSpeaker?.stop()
         withEngine {
             val engine = tts ?: return@withEngine
             val locale = languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
@@ -200,6 +243,7 @@ class SpeechOutput(private val context: Context) {
 
     fun stop() {
         tts?.stop()
+        piperSpeaker?.stop()
         pending.clear()
     }
 
@@ -238,6 +282,12 @@ class SpeechOutput(private val context: Context) {
 
     /** Spricht einen Abschnitt in [languageTag]; [flush] ersetzt alles Laufende, sonst wird angehängt. */
     fun speakItem(text: String, id: String, languageTag: String?, flush: Boolean, onProblem: (String) -> Unit) {
+        piperFor(voice, languageTag)?.let { piperVoice ->
+            if (flush) tts?.stop()
+            piper()?.speak(piperVoice, text, id, flush, rate, onProblem)
+            return
+        }
+        if (flush) piperSpeaker?.stop()
         withEngine {
             val engine = tts ?: return@withEngine
             ensureItemListener(engine)
@@ -257,6 +307,7 @@ class SpeechOutput(private val context: Context) {
     /** Bricht das Sprechen ab (auch Angehängtes). */
     fun stopItems() {
         tts?.stop()
+        piperSpeaker?.stop()
     }
 
     /**
@@ -264,7 +315,7 @@ class SpeechOutput(private val context: Context) {
      * "notInstalled"; sie würden beim Sprechen erst nachgeladen (online) oder fehlen.
      */
     fun installedVoices(tags: List<String>, onResult: (Map<String, Boolean>) -> Unit) {
-        withEngine {
+        withEngine(onFail = { onResult(tags.associateWith { false }) }) {
             val voices = tts?.voices.orEmpty()
             onResult(
                 tags.associateWith { tag ->
@@ -301,6 +352,8 @@ class SpeechOutput(private val context: Context) {
     }
 
     fun shutdown() {
+        piperSpeaker?.release()
+        piperSpeaker = null
         tts?.shutdown()
         tts = null
         ready = false

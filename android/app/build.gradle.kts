@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -59,6 +61,34 @@ val fetchLlama by tasks.registering(Exec::class) {
 }
 tasks.matching { it.name == "preBuild" || it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
     .configureEach { dependsOn(fetchLlama) }
+
+// sherpa-onnx (Piper-Stimmen, Sprachausgabe ohne Internet): Version und SHA-256 stehen in sherpa-onnx.version. Die nativen Bibliotheken
+// (arm64) werden beim ersten Build aus dem offiziellen GitHub-Release geholt und geprüft; die Kotlin-Schnittstelle (Tts.kt, Apache-2.0)
+// liegt im Quelltext. Es ist bewusst die letzte 1.x-Version: ab 2.0 ist die Phonemisierung (espeak-ng) nicht mehr enthalten.
+val sherpaInfo = file("../sherpa-onnx.version").readLines().map { it.trim() }.filter { it.isNotEmpty() }
+val sherpaDir = file("../third_party/sherpa-onnx") // enthält arm64-v8a/*.so
+val fetchSherpa by tasks.registering {
+    val target = sherpaDir
+    val version = sherpaInfo[0]
+    val expectedSha = sherpaInfo[1]
+    onlyIf { !target.resolve("arm64-v8a/libsherpa-onnx-jni.so").exists() }
+    doLast {
+        val archive = File(temporaryDir, "sherpa-onnx-android.tar.bz2")
+        val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$version/sherpa-onnx-v$version-android.tar.bz2"
+        uri(url).toURL().openStream().use { input -> archive.outputStream().use { input.copyTo(it) } }
+        val sha = MessageDigest.getInstance("SHA-256").digest(archive.readBytes()).joinToString("") { "%02x".format(it) }
+        check(sha == expectedSha) { "sherpa-onnx: Prüfsumme stimmt nicht ($sha statt $expectedSha)" }
+        project.copy {
+            from(tarTree(resources.bzip2(archive)))
+            include("**/arm64-v8a/libonnxruntime.so", "**/arm64-v8a/libsherpa-onnx-jni.so")
+            eachFile { relativePath = RelativePath(true, "arm64-v8a", name) }
+            includeEmptyDirs = false
+            into(target)
+        }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(fetchSherpa) }
+android.sourceSets["main"].jniLibs.srcDir(sherpaDir)
 
 dependencies {
     implementation(project(":core"))

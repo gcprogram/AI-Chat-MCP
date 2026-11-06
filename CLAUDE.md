@@ -93,6 +93,15 @@ python main.py
   `applyLanguageAndVoice` = `setLanguage` (setzt wieder die Standardstimme) und danach `setVoice`, nur wenn installiert und Sprache passt. Stimmen heißen nur *Stimme N* (Android liefert kein Geschlecht);
   der Platzhalter `xx-XX-language` fällt weg, `-network`-Stimmen brauchen Internet. Gerätetest `SpeechOnDeviceTest.chosenVoiceDiffersFromDefaultAndDefaultComesBack` (Audiodatei-Vergleich). BlueStacks hat keine
   Sprachausgabe (App läuft dort per arm64-Übersetzung, ADB `127.0.0.1:5555`); Stimmen dort erst nach Installation der Google-Sprachausgabe.
+  **Piper-Stimmen** (`core/Piper.kt` = `PiperStore`/`PiperNames`, `speech/PiperSpeaker.kt`, `Persona.voice = "piper:<Ordner>"`): sherpa-onnx **1.13.8** (nicht 2.x: dort fehlt die
+  espeak-ng-Phonemisierung, Piper bräuchte einen eigenen Phonemisierer), native Bibliotheken per Gradle-Task `fetchSherpa` mit SHA-256 aus `android/sherpa-onnx.version` nach
+  `android/third_party/sherpa-onnx` (gitignored), Kotlin-API `com.k2fsa.sherpa.onnx.Tts.kt` (Apache-2.0) liegt im Quelltext. **JNI-Falle:** der native Code ruft den Rückruf als
+  `invoke([F)Ljava/lang/Integer;` auf; eine Kotlin-Lambda hat das nach D8 nicht (Absturz `NoSuchMethodError` mit SIGABRT), deshalb ein `object : (FloatArray) -> Int`.
+  Satzweise Erzeugung (`maxNumSentences = 1`) in einen fortlaufenden `AudioTrack` (Float, Mono); „gehört“ meldet ein Beobachter über `playbackHeadPosition`, nicht das Schreiben;
+  Stopp verwirft alles (neue Generation, Track wird neu angelegt). `espeak-ng-data` einmal gemeinsam in `files/piper/`. Piper wird nur gewählt, wenn Sprache passt (`SpeechOutput.piperFor`),
+  sonst Systemstimme; ohne Systemengine (BlueStacks) funktioniert Piper trotzdem. Gerätetest `PiperOnDeviceTest` (Lautstärke 0, Stimmen per `run-as … tar -xf -` in `files/piper`;
+  **Git-Bash:** bei adb mit Geräte-Pfaden `MSYS_NO_PATHCONV=1`, sonst wird `/data/…` zu `C:/Program Files/Git/data/…`; viele Einzeldateien per `adb push` hängen, besser ein tar).
+  Auf dem Galaxy S9 (Android 10) geprüft: alle 10 deutschen int8-Stimmen von sherpa-onnx laufen, Faktor 0,5 bis 0,9, `thorsten-high` 3,8 (zu langsam). Anleitung für eigene Stimmen: `docs/EIGENE_STIMME.md`.
   `Antworten vorlesen` ist standardmäßig aus (Ursache für „Sprachausgabe fehlt“). **Vorwärmen** (`ChatViewModel.warmUp`, nach `reloadTools`/`saveConfig`): ein
   1-Token-Lauf über den bisherigen Verlauf füllt den Präfix-Cache; ohne ihn dauert die erste Antwort nach App-Start ~2-3 min (Prompt ~10 Tokens/s, 4 Threads).
   **Dokumente hochladen** (`core/Documents.kt`, `app/PdfText.kt`, `ChatViewModel.loadDocument/docAsInput/docRead/docSummarize`, `DocCard` in `ChatScreen`): TXT/MD (UTF-8, sonst Windows-1252), DOCX

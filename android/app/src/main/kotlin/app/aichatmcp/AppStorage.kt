@@ -6,6 +6,7 @@ import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.LoadedChat
 import app.aichatmcp.core.PersonaStore
+import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.ReadMarks
 import app.aichatmcp.core.string
 import kotlinx.serialization.json.JsonObject
@@ -28,6 +29,9 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
     private val secretsFile = File(root, "secrets.json")
 
     val personas get() = PersonaStore(personasDir)
+
+    /** Piper-Stimmen (Modelle für die Sprachausgabe auf dem Gerät). */
+    val piper = PiperStore(File(root, "piper"))
 
     /** Beim ersten Start: Standard-Companion und Werkzeugkonfiguration aus den mitgelieferten Dateien anlegen. */
     fun ensureDefaults() {

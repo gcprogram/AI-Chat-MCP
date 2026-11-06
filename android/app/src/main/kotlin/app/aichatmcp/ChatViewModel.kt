@@ -49,6 +49,9 @@ import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
 import app.aichatmcp.core.NoticeKind
 import app.aichatmcp.core.Persona
+import app.aichatmcp.core.PiperNames
+import app.aichatmcp.core.PiperStore
+import app.aichatmcp.core.PiperVoice
 import app.aichatmcp.core.Speech
 import app.aichatmcp.core.TOOL_ERROR
 import app.aichatmcp.core.TOOL_RESULT
@@ -168,6 +171,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var voiceRows by mutableStateOf<List<PackRow>>(emptyList())
         private set
     var voiceNote by mutableStateOf("")
+        private set
+    var piperVoices by mutableStateOf<List<PiperVoice>>(emptyList())
+        private set
+    var piperNote by mutableStateOf("")
+        private set
+    var piperBusy by mutableStateOf(false)
         private set
     var mcpText by mutableStateOf("")
 
@@ -579,7 +588,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val start = mark?.let { ReadMarks.restoreIndex(it, plan.size) } ?: 0
         val tag = LanguageDetect.detect(source.text)?.tag ?: languageTag() ?: Locale.getDefault().toLanguageTag()
         speechOut.installedVoices(listOf(tag)) { installed ->
-            if (installed[tag] == true) beginReading(doc, plan, tag, start)
+            if (installed[tag] == true || speechOut.piperFor(persona.voice, tag) != null) beginReading(doc, plan, tag, start)
             else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, plan, tag, start) }
         }
     }
@@ -805,8 +814,79 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Wählbare Stimmen für die Antwortsprache eines Companions (Name wie im Editor, z. B. "Deutsch"). */
-    fun loadVoiceOptions(languageName: String, onResult: (List<SpeechOutput.VoiceOption>) -> Unit) =
-        speechOut.voicesFor(Speech.languageTag(languageName), onResult)
+    fun loadVoiceOptions(languageName: String, onResult: (List<SpeechOutput.VoiceOption>) -> Unit) {
+        val tag = Speech.languageTag(languageName)
+        val piper = storage.piper.list()
+            .filter { it.language == null || (tag != null && Speech.voiceFitsLanguage(it.language!!, tag)) }
+            .map { SpeechOutput.VoiceOption(it.id, "Piper: ${it.name} (offline)") }
+        speechOut.voicesFor(tag) { onResult(it + piper) }
+    }
+
+    // --- Piper-Stimmen (eigene Modelle) ----------------------------------------------------------------------
+
+    /**
+     * Übernimmt einen Stimmenordner aus dem Auswahldialog (Modell `*.onnx`, `tokens.txt`, optional `*.onnx.json`, dazu einmalig
+     * `espeak-ng-data`) in den App-Speicher. Der Ordnername wird zum Namen der Stimme.
+     */
+    fun importPiperFolder(tree: Uri) {
+        if (piperBusy) return
+        piperBusy = true
+        piperNote = "Kopiere die Stimme…"
+        viewModelScope.launch {
+            val folder = PiperNames.safeName(DocumentsContract.getTreeDocumentId(tree).substringAfterLast(':').substringAfterLast('/'))
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = getApplication<Application>().contentResolver
+                    val skipShared = storage.piper.espeakReady()
+                    var files = 0
+                    fun walk(documentId: String, relative: String) {
+                        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+                        val columns = arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE,
+                        )
+                        // Zuerst alle Einträge lesen, dann kopieren (der Cursor soll nicht während langer Kopien offen bleiben)
+                        val entries = resolver.query(children, columns, null, null, null)?.use { c ->
+                            generateSequence { if (c.moveToNext()) Triple(c.getString(0), c.getString(1), c.getString(2)) else null }.toList()
+                        }.orEmpty()
+                        for ((id, name, mime) in entries) {
+                            val path = if (relative.isEmpty()) name else "$relative/$name"
+                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                                if (!(skipShared && name == PiperStore.ESPEAK && relative.isEmpty())) walk(id, path)
+                            } else {
+                                val input = resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, id)) ?: continue
+                                if (input.use { storage.piper.importFile(folder, path, it, skipShared) }) files++
+                            }
+                        }
+                    }
+                    walk(DocumentsContract.getTreeDocumentId(tree), "")
+                    storage.piper.problem(folder)?.let { problem ->
+                        storage.piper.discardIncomplete(folder)
+                        throw IllegalStateException(problem)
+                    }
+                    files
+                }
+            }
+            outcome.onSuccess { piperNote = "Stimme „$folder“ übernommen. Im Companion-Editor unter „Stimme“ auswählbar." }
+            outcome.onFailure { piperNote = "Import fehlgeschlagen: ${it.message}" }
+            piperVoices = storage.piper.list()
+            piperBusy = false
+        }
+    }
+
+    fun deletePiper(voice: PiperVoice) {
+        storage.piper.delete(voice.name)
+        piperVoices = storage.piper.list()
+        piperNote = "Stimme „${voice.name}“ gelöscht."
+    }
+
+    /** Beispielsatz mit einer Piper-Stimme (Einstellungen). */
+    fun testPiper(voice: PiperVoice) {
+        piperNote = ""
+        val language = voice.language
+        val tag = PACK_LANGUAGES.map { it.first }.firstOrNull { language != null && it.startsWith(language) } ?: language
+        speechOut.speak(VOICE_SAMPLES[tag] ?: "Hello, this is how my voice sounds.", tag, voice.id) { piperNote = it }
+    }
 
     /** Beispielsatz mit einer bestimmten Stimme (Companion-Editor, noch nicht gespeichert). */
     fun testCompanionVoice(languageName: String, voiceName: String) {
@@ -1196,6 +1276,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         storage.ensureDefaults()
         config = storage.loadConfig()
         speechOut.rate = config.speechRate.toFloat()
+        speechOut.piperStore = storage.piper
+        speechOut.piperThreads = { config.localThreads }
+        piperVoices = storage.piper.list()
         personaIds = storage.personas.list()
         val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
         persona = storage.personas.load(id)
