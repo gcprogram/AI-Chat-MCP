@@ -67,6 +67,45 @@ class SpeechOnDeviceTest {
         }
     }
 
+    /**
+     * Stimmenwahl pro Companion: Es gibt mehrere Stimmen, eine gewählte klingt anders als die Standardstimme, und danach
+     * (leere Wahl) kommt wieder genau die Standardstimme. Verglichen wird die erzeugte Audiodatei, ohne Ton.
+     */
+    @Test
+    fun chosenVoiceDiffersFromDefaultAndDefaultComesBack() {
+        val output = SpeechOutput(context)
+        try {
+            val latch = CountDownLatch(1)
+            var options = emptyList<SpeechOutput.VoiceOption>()
+            output.voicesFor("de-DE") { options = it; latch.countDown() }
+            assertTrue(latch.await(15, TimeUnit.SECONDS))
+            Log.i("AiChatSpeech", "Stimmen de-DE: ${options.joinToString { "${it.label} = ${it.name}" }}")
+            val english = CountDownLatch(1)
+            output.voicesFor("en-US") { Log.i("AiChatSpeech", "Stimmen en-US: ${it.joinToString { o -> "${o.label} = ${o.name}" }}"); english.countDown() }
+            english.await(15, TimeUnit.SECONDS)
+            if (options.size < 2) {
+                Log.i("AiChatSpeech", "Nur ${options.size} Stimme(n) für de-DE: Wechsel nicht prüfbar")
+                return
+            }
+            val text = "Der Hafen von Rotterdam ist der größte Seehafen Europas."
+            fun render(voice: String): ByteArray {
+                val file = File(context.cacheDir, "voice-test.wav")
+                file.delete()
+                assertTrue("Keine Audiodatei für '$voice'", output.synthesizeToFile(text, "de-DE", file, voiceName = voice))
+                return file.readBytes().also { file.delete() }
+            }
+            val default1 = render("")
+            val others = options.map { it.name to render(it.name) }
+            others.forEach { (name, bytes) -> Log.i("AiChatSpeech", "$name: ${bytes.size} Bytes, gleich wie Standard: ${bytes.contentEquals(default1)}") }
+            val default2 = render("")
+            assertTrue("Standardstimme nach der Wahl einer anderen nicht wieder die gleiche", default1.contentEquals(default2))
+            assertTrue("Keine der gewählten Stimmen klingt anders als die Standardstimme", others.any { !it.second.contentEquals(default1) })
+            assertTrue("Die Stimmen unterscheiden sich untereinander nicht", others.map { it.second.size }.distinct().size > 1 || others.map { it.second.toList() }.distinct().size > 1)
+        } finally {
+            output.shutdown()
+        }
+    }
+
     @Test
     fun reportsVoicesAndRecognition() {
         val ready = CountDownLatch(1)

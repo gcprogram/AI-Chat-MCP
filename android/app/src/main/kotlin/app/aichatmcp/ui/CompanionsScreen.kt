@@ -12,6 +12,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +25,7 @@ import app.aichatmcp.ChatViewModel
 import app.aichatmcp.core.Persona
 import app.aichatmcp.core.Speech
 import app.aichatmcp.core.normalizeName
+import app.aichatmcp.speech.SpeechOutput
 
 private const val NEW_ENTRY = "(Neu)"
 
@@ -53,6 +55,8 @@ fun CompanionsScreen(
                 canDelete = selected.isNotEmpty() && vm.personaIds.size > 1,
                 onSave = { selected = vm.savePersona(it) },
                 onDelete = { vm.deletePersona(selected); selected = vm.persona.id },
+                loadVoices = vm::loadVoiceOptions,
+                onTestVoice = vm::testCompanionVoice,
             )
         }
     }
@@ -62,6 +66,7 @@ fun CompanionsScreen(
 private fun PersonaForm(
     initial: Persona, available: List<String>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
     onRemoveAvatar: () -> Unit, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit,
+    loadVoices: (String, (List<SpeechOutput.VoiceOption>) -> Unit) -> Unit, onTestVoice: (String, String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial.name) }
     var description by remember { mutableStateOf(initial.description) }
@@ -71,6 +76,12 @@ private fun PersonaForm(
     var tools by remember { mutableStateOf(initial.tools.map { normalizeName(it) }.toSet()) }
     var approved by remember { mutableStateOf(initial.approvedTools.map { normalizeName(it) }.toSet()) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var voice by remember { mutableStateOf(initial.voice) }
+    var voiceOptions by remember { mutableStateOf<List<SpeechOutput.VoiceOption>?>(null) } // null = wird noch geladen
+    LaunchedEffect(language) {
+        voiceOptions = null
+        loadVoices(language) { voiceOptions = it }
+    }
     // Freigeschaltete, aber gerade nicht verfügbare Werkzeuge nicht verlieren (z. B. Server vorübergehend aus)
     val hidden = initial.tools.filter { normalizeName(it) !in available }
     val hiddenApproved = initial.approvedTools.filter { normalizeName(it) !in available }
@@ -94,6 +105,25 @@ private fun PersonaForm(
     // Bereits gespeicherte freie Werte (z. B. "Plattdeutsch") bleiben als Eintrag erhalten
     val languages = Speech.RESPONSE_LANGUAGES + listOfNotNull(language.takeIf { it.isNotBlank() && it !in Speech.RESPONSE_LANGUAGES })
     DropdownField("Sprache (Antworten, Erkennung, Vorlesen)", languages, language, { language = it })
+    val options = voiceOptions.orEmpty()
+    val defaultLabel = "(Standardstimme)"
+    val voiceLabel = options.firstOrNull { it.name == voice }?.label
+        ?: if (voice.isEmpty() || voiceOptions == null) defaultLabel else "(nicht verfügbar: Standardstimme)"
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        DropdownField(
+            "Stimme", listOf(defaultLabel) + options.map { it.label }, voiceLabel,
+            { picked -> voice = options.firstOrNull { it.label == picked }?.name.orEmpty() }, Modifier.weight(1f),
+        )
+        OutlinedButton(onClick = { onTestVoice(language, voice) }) { Text("Anhören") }
+    }
+    if (voiceOptions?.isEmpty() == true) {
+        Text(
+            "Für diese Sprache ist keine Stimme installiert (Einstellungen → Stimmen laden).",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+        )
+    } else if (options.size == 1) {
+        Text("Nur eine Stimme für diese Sprache installiert (Einstellungen → Stimmen laden).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+    }
     TextSetting("Begrüßung", greeting, { greeting = it }, minLines = 2, maxLines = 5)
     TextSetting("Regeln (eine pro Zeile)", rules, { rules = it }, minLines = 2, maxLines = 8)
 
@@ -117,7 +147,7 @@ private fun PersonaForm(
             onSave(
                 initial.copy(
                     name = name.trim(), description = description.trim(), language = language.trim().ifEmpty { "Deutsch" },
-                    greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                    voice = voice, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
                     tools = available.filter { it in tools } + hidden,
                     approvedTools = available.filter { it in approved && it in tools } + hiddenApproved,
                 ),

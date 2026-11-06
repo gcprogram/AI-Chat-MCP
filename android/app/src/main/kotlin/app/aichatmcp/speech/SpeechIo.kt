@@ -143,27 +143,51 @@ class SpeechOutput(private val context: Context) {
     private var ready = false
     private val pending = mutableListOf<() -> Unit>()
 
-    private fun withEngine(action: () -> Unit) {
+    private val failures = mutableListOf<() -> Unit>()
+
+    /** Führt [action] aus, sobald die Sprachausgabe bereit ist; [onFail] läuft, wenn sie sich nicht starten lässt (z. B. keine Engine installiert). */
+    private fun withEngine(onFail: () -> Unit = {}, action: () -> Unit) {
         if (ready) return action()
         pending += action
+        failures += onFail
         if (tts == null) {
             tts = TextToSpeech(context) { status ->
                 ready = status == TextToSpeech.SUCCESS
                 val queued = pending.toList()
+                val failed = failures.toList()
                 pending.clear()
-                if (ready) queued.forEach { it() }
+                failures.clear()
+                if (ready) queued.forEach { it() } else failed.forEach { it() }
             }
         }
     }
 
-    fun speak(text: String, languageTag: String?, onProblem: (String) -> Unit) {
+    /** Stimme des aktuellen Companions (Name aus [voicesFor]); leer = Standardstimme der Sprache. */
+    @Volatile var voice: String = ""
+    private var appliedVoice = ""
+
+    /**
+     * Setzt Sprache und Stimme. Nach [TextToSpeech.setLanguage] gilt die Standardstimme der Sprache; die gewählte Stimme wird
+     * nur genommen, wenn sie installiert ist und zur Sprache passt (sonst bleibt es bei der Standardstimme).
+     */
+    private fun applyLanguageAndVoice(engine: TextToSpeech, locale: Locale, name: String): Int {
+        val result = engine.setLanguage(locale)
+        appliedVoice = name
+        if (name.isNotEmpty() && result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+            val chosen = engine.voices.orEmpty().firstOrNull { it.name == name && "notInstalled" !in it.features }
+            if (chosen != null && Speech.voiceFitsLanguage(chosen.locale.language, locale.toLanguageTag())) engine.setVoice(chosen)
+        }
+        return result
+    }
+
+    fun speak(text: String, languageTag: String?, voiceName: String = voice, onProblem: (String) -> Unit) {
         val chunks = Speech.chunks(text)
         if (chunks.isEmpty()) return
         withEngine {
             val engine = tts ?: return@withEngine
             val locale = languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
             currentLanguage = UNKNOWN_LANGUAGE // der Vorleser setzt seine Sprache beim nächsten Abschnitt neu
-            val result = engine.setLanguage(locale)
+            val result = applyLanguageAndVoice(engine, locale, voiceName)
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 onProblem("Keine Stimme für ${locale.toLanguageTag()} installiert (Einstellungen → Sprachausgabe).")
             }
@@ -217,10 +241,10 @@ class SpeechOutput(private val context: Context) {
         withEngine {
             val engine = tts ?: return@withEngine
             ensureItemListener(engine)
-            if (languageTag != currentLanguage) {
+            if (languageTag != currentLanguage || voice != appliedVoice) {
                 currentLanguage = languageTag
                 val locale = languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
-                val result = engine.setLanguage(locale)
+                val result = applyLanguageAndVoice(engine, locale, voice)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                     onProblem("Keine Stimme für ${locale.toLanguageTag()} installiert (Einstellungen → Stimmen).")
                 }
@@ -251,6 +275,21 @@ class SpeechOutput(private val context: Context) {
         }
     }
 
+    /** Eine wählbare Stimme: [name] speichert der Companion, [label] zeigt die Oberfläche. */
+    data class VoiceOption(val name: String, val label: String)
+
+    /** Die installierten Stimmen für [languageTag], nach Name sortiert und nummeriert (die Reihenfolge ist je Gerät stabil). */
+    fun voicesFor(languageTag: String?, onResult: (List<VoiceOption>) -> Unit) {
+        withEngine(onFail = { onResult(emptyList()) }) {
+            val wanted = languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
+            val voices = tts?.voices.orEmpty()
+                // "de-DE-language" ist nur der Platzhalter für die Standardstimme der Sprache, keine eigene Stimme
+                .filter { it.locale.language == wanted.language && it.locale.country == wanted.country && "notInstalled" !in it.features && !it.name.endsWith("-language") }
+                .sortedBy { it.name }
+            onResult(voices.mapIndexed { i, v -> VoiceOption(v.name, Speech.voiceLabel(i + 1, v.locale.toLanguageTag(), v.isNetworkConnectionRequired)) })
+        }
+    }
+
     /** Öffnet die Stimmenverwaltung von Google (dort lassen sich Stimmen je Sprache laden). */
     fun openVoiceInstall(): Boolean = try {
         context.startActivity(
@@ -268,12 +307,12 @@ class SpeechOutput(private val context: Context) {
     }
 
     /** Für Tests: Text in eine Datei sprechen statt abzuspielen (kein Ton). Liefert true, wenn etwas erzeugt wurde. */
-    fun synthesizeToFile(text: String, languageTag: String?, file: java.io.File, timeoutMs: Long = 20_000): Boolean {
+    fun synthesizeToFile(text: String, languageTag: String?, file: java.io.File, timeoutMs: Long = 20_000, voiceName: String = ""): Boolean {
         val latch = java.util.concurrent.CountDownLatch(1)
         var done = false
         withEngine {
             val engine = tts ?: return@withEngine
-            engine.setLanguage(languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault())
+            applyLanguageAndVoice(engine, languageTag?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault(), voiceName)
             engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {

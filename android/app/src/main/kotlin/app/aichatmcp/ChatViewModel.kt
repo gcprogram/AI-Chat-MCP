@@ -801,7 +801,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Spricht einen Beispielsatz, damit sich Stimme und Lautstärke prüfen lassen. */
     fun testVoice(tag: String) {
         voiceNote = ""
-        speechOut.speak(VOICE_SAMPLES[tag] ?: "Test", tag) { voiceNote = it }
+        speechOut.speak(VOICE_SAMPLES[tag] ?: "Test", tag, "") { voiceNote = it } // Standardstimme der Sprache
+    }
+
+    /** Wählbare Stimmen für die Antwortsprache eines Companions (Name wie im Editor, z. B. "Deutsch"). */
+    fun loadVoiceOptions(languageName: String, onResult: (List<SpeechOutput.VoiceOption>) -> Unit) =
+        speechOut.voicesFor(Speech.languageTag(languageName), onResult)
+
+    /** Beispielsatz mit einer bestimmten Stimme (Companion-Editor, noch nicht gespeichert). */
+    fun testCompanionVoice(languageName: String, voiceName: String) {
+        val tag = Speech.languageTag(languageName)
+        speechOut.speak(VOICE_SAMPLES[tag] ?: "Test", tag, voiceName) { status = it }
+    }
+
+    /** Die Stimme des gewählten Companions gilt für Antworten und Vorlesen. */
+    private fun syncVoice() {
+        speechOut.voice = persona.voice
     }
 
     fun installVoices() {
@@ -957,6 +972,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (streaming || id == persona.id || id !in personaIds) return
         saveChat() // der laufende Chat bleibt beim bisherigen Companion erhalten
         persona = storage.personas.load(id)
+        syncVoice()
         session.persona = persona
         session.reset()
         saveConfig(config.copy(persona = id))
@@ -969,6 +985,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         personaIds = storage.personas.list()
         if (id == persona.id) {
             persona = edited.copy(id = id)
+            syncVoice()
             session.persona = persona
             renderHistory()
         }
@@ -1182,6 +1199,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         personaIds = storage.personas.list()
         val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
         persona = storage.personas.load(id)
+        syncVoice()
         session = ChatSession(effectiveConfig(config), persona, registry)
         engine = ChatEngine(
             session,

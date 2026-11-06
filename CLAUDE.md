@@ -89,6 +89,10 @@ python main.py
   nie eine Rückmeldung, der Fortschritt bleibt bei 0 %. Deshalb startet die App den Dialog selbst (`openDownloadDialog`, Extra `EXTRA_LANGUAGE`) und fragt
   den Status alle 4 s ab (`pollPack`, 5 min). Auf dem Gerät geprüft (de, en-US, ja-JP).
   **Stimmen** (`SpeechOutput.installedVoices`: `Voice.features` ohne `notInstalled`; `openVoiceInstall` = `ACTION_INSTALL_TTS_DATA`) und Test-Satz in den Einstellungen.
+  **Stimme pro Companion** (`Persona.voice`, Python reicht das Feld nur durch): `SpeechOutput.voice` (gesetzt per `ChatViewModel.syncVoice` bei Start/Wechsel/Speichern), `voicesFor(tag)`,
+  `applyLanguageAndVoice` = `setLanguage` (setzt wieder die Standardstimme) und danach `setVoice`, nur wenn installiert und Sprache passt. Stimmen heißen nur *Stimme N* (Android liefert kein Geschlecht);
+  der Platzhalter `xx-XX-language` fällt weg, `-network`-Stimmen brauchen Internet. Gerätetest `SpeechOnDeviceTest.chosenVoiceDiffersFromDefaultAndDefaultComesBack` (Audiodatei-Vergleich). BlueStacks hat keine
+  Sprachausgabe (App läuft dort per arm64-Übersetzung, ADB `127.0.0.1:5555`); Stimmen dort erst nach Installation der Google-Sprachausgabe.
   `Antworten vorlesen` ist standardmäßig aus (Ursache für „Sprachausgabe fehlt“). **Vorwärmen** (`ChatViewModel.warmUp`, nach `reloadTools`/`saveConfig`): ein
   1-Token-Lauf über den bisherigen Verlauf füllt den Präfix-Cache; ohne ihn dauert die erste Antwort nach App-Start ~2-3 min (Prompt ~10 Tokens/s, 4 Threads).
   **Dokumente hochladen** (`core/Documents.kt`, `app/PdfText.kt`, `ChatViewModel.loadDocument/docAsInput/docRead/docSummarize`, `DocCard` in `ChatScreen`): TXT/MD (UTF-8, sonst Windows-1252), DOCX

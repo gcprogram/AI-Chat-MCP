@@ -7,6 +7,23 @@ import kotlin.test.assertTrue
 
 class SpeechTest {
     @Test
+    fun voiceLabelsAndLanguageMatch() {
+        assertEquals("Stimme 2 (de-DE, offline)", Speech.voiceLabel(2, "de-DE", false))
+        assertEquals("Stimme 1 (en-GB, online)", Speech.voiceLabel(1, "en-GB", true))
+        assertTrue(Speech.voiceFitsLanguage("de", "de-DE"))
+        assertTrue(!Speech.voiceFitsLanguage("fr", "de-DE")) // deutsche Stimme nicht für französischen Text
+        assertTrue(!Speech.voiceFitsLanguage("de", null))
+    }
+
+    @Test
+    fun personaKeepsItsVoice() {
+        val persona = Persona.fromJson("""{"name": "Fern", "voice": "de-de-x-abc-local"}""", "fern")
+        assertEquals("de-de-x-abc-local", persona.voice)
+        assertEquals("de-de-x-abc-local", Persona.fromJson(persona.toJson()).voice)
+        assertEquals("", Persona.fromJson("""{"name": "Alt"}""").voice) // ältere Dateien ohne Stimme
+    }
+
+    @Test
     fun languageNamesBecomeTags() {
         assertEquals("de-DE", Speech.languageTag("Deutsch"))
         assertEquals("en-US", Speech.languageTag(" English "))

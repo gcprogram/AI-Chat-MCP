@@ -211,6 +211,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   meldet der Dienst nicht zuverlässig, die App prüft deshalb regelmäßig, bis das Paket da ist.
 - **Stimmen (Sprachausgabe)**: Die Einstellungen zeigen je Sprache, ob eine Google-Stimme installiert ist, und sprechen mit *Anhören* einen
   Beispielsatz. *Stimmen laden…* öffnet die Stimmenverwaltung von Google. Automatisches Vorlesen der Antworten schaltet *Antworten vorlesen* ein (Standard: aus).
+  **Stimme pro Companion**: Im Companion-Editor wählt *Stimme* eine der installierten Stimmen der Companion-Sprache (*Anhören* spielt sie vorab),
+  gespeichert als `voice` in der Companion-Datei (leer = Standardstimme). Android nennt weder Geschlecht noch Vornamen, die Stimmen heißen
+  daher *Stimme 1, 2, …* mit Sprache und offline/online; ausprobieren per *Anhören*. Die Stimme gilt für Antworten und Vorlesen, aber nur,
+  wenn die Sprache passt (ein französischer Text wird nicht mit der deutschen Stimme gelesen).
 - **Vorwärmen**: Mit dem lokalen Modell werden Modell und bisheriger Verlauf nach dem Start im Hintergrund vorberechnet (Status *Modell wird vorbereitet…*);
   sonst braucht die erste Antwort nach jedem App-Start mehrere Minuten (ca. 10 Prompt-Tokens/s).
 - **Dokumente hochladen** (📎 neben dem Nachrichtenfeld): TXT, MD, DOCX, EPUB, HTML und PDF (PDF mit PdfBox für Android; ein Scan ohne Textebene

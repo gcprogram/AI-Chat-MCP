@@ -30,6 +30,7 @@ class Persona:
     tools: list[str] = field(default_factory=list)  # freigeschaltete Werkzeuge (Aliase aus mcp_servers.json)
     approved_tools: list[str] = field(default_factory=list)  # davon vorab genehmigt: laufen ohne Rückfrage
     tool_mode: str = "marker"  # "marker": Textmarker im Prompt | "native": Parameter 'tools' der Chat-API
+    voice: str = ""  # Stimme der Sprachausgabe (nur Android-App); hier nur durchgereicht, damit Speichern sie nicht verliert
     id: str = ""  # Dateiname ohne .json; wird beim Laden/Speichern gesetzt, nicht in der Datei gespeichert
 
     def system_prompt(self, user_name: str, tools_section: str = "") -> str:

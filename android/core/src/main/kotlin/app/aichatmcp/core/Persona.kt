@@ -27,6 +27,8 @@ data class Persona(
     /** Davon vorab genehmigt: laufen ohne Rückfrage. */
     @SerialName("approved_tools") val approvedTools: List<String> = emptyList(),
     @SerialName("tool_mode") val toolMode: String = TOOL_MODE_MARKER,
+    /** Name der Stimme der Sprachausgabe (Android-Voice, z. B. "de-de-x-nfh-local"); leer = Standardstimme der Sprache. */
+    val voice: String = "",
     /** Dateiname ohne .json; wird beim Laden gesetzt, nicht in der Datei gespeichert. */
     @Transient val id: String = "",
 ) {

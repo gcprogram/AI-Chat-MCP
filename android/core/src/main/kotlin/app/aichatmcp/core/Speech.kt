@@ -30,6 +30,17 @@ object Speech {
         return null
     }
 
+    /**
+     * Anzeigename einer Stimme. Android nennt weder Geschlecht noch Vornamen (nur Kürzel wie "de-de-x-nfh-local"),
+     * deshalb wird nummeriert; angehört wird nach Gehör. "online" = die Stimme braucht eine Internetverbindung.
+     */
+    fun voiceLabel(number: Int, tag: String, network: Boolean): String =
+        "Stimme $number ($tag, ${if (network) "online" else "offline"})"
+
+    /** Eine gespeicherte Stimme gilt nur für ihre Sprache (Französisch mit deutscher Stimme zu lesen klänge falsch). */
+    fun voiceFitsLanguage(voiceLanguage: String, wantedTag: String?): Boolean =
+        wantedTag != null && voiceLanguage.equals(wantedTag.substringBefore('-'), ignoreCase = true)
+
     /** Der Text, der vorgelesen wird: ohne Werkzeugaufrufe, Zeilenumbrüche als Pausen. */
     fun spokenText(reply: String): String =
         splitSegments(reply).filter { it.first == "text" }.joinToString(" ") { it.second }
