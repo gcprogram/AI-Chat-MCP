@@ -56,6 +56,7 @@ fun CompanionsScreen(
                 onSave = { selected = vm.savePersona(it) },
                 onDelete = { vm.deletePersona(selected); selected = vm.persona.id },
                 loadVoices = vm::loadVoiceOptions,
+                piperVoices = vm.piperVoices,
                 onTestVoice = vm::testCompanionVoice,
             )
         }
@@ -67,6 +68,7 @@ private fun PersonaForm(
     initial: Persona, available: List<String>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
     onRemoveAvatar: () -> Unit, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit,
     loadVoices: (String, (List<SpeechOutput.VoiceOption>) -> Unit) -> Unit, onTestVoice: (String, String) -> Unit,
+    piperVoices: List<app.aichatmcp.core.PiperVoice>,
 ) {
     var name by remember { mutableStateOf(initial.name) }
     var description by remember { mutableStateOf(initial.description) }
@@ -117,12 +119,14 @@ private fun PersonaForm(
         OutlinedButton(onClick = { onTestVoice(language, voice) }) { Text("Anhören") }
     }
     if (voiceOptions?.isEmpty() == true) {
+        // Piper-Stimmen anderer Sprachen auflisten, damit klar ist, warum die Liste leer ist
+        val others = piperVoices.groupBy { it.language }.entries.sortedBy { languageLabel(it.key) }.joinToString(", ") { "${languageLabel(it.key)} (${it.value.size})" }
         Text(
-            "Für diese Sprache ist keine Stimme installiert (Einstellungen → Stimmen laden).",
+            "Für die Sprache „$language“ ist weder eine Systemstimme noch eine Piper-Stimme installiert." +
+                (if (others.isNotEmpty()) " Piper-Stimmen gibt es nur für: $others." else "") +
+                " Stimmen installierst du unter Einstellungen → Stimmen bzw. Piper-Stimmen.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
         )
-    } else if (options.size == 1) {
-        Text("Nur eine Stimme für diese Sprache installiert (Einstellungen → Stimmen laden).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
     }
     TextSetting("Begrüßung", greeting, { greeting = it }, minLines = 2, maxLines = 5)
     TextSetting("Regeln (eine pro Zeile)", rules, { rules = it }, minLines = 2, maxLines = 8)

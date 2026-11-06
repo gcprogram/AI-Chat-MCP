@@ -132,3 +132,10 @@ private fun decodeAvatar(file: File, target: Int = 256): ImageBitmap? {
     while (bounds.outWidth / (sample * 2) >= target && bounds.outHeight / (sample * 2) >= target) sample *= 2
     return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
 }
+
+/** Deutscher Sprachname zu einem Kürzel ("de" -> "Deutsch"); null oder unbekannt -> "Unbekannt". */
+fun languageLabel(code: String?): String {
+    if (code.isNullOrBlank()) return "Unbekannt"
+    val name = java.util.Locale.forLanguageTag(code).getDisplayLanguage(java.util.Locale.GERMAN)
+    return name.ifBlank { code }.replaceFirstChar { it.titlecase() }
+}

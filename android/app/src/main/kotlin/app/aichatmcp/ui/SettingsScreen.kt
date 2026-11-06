@@ -165,7 +165,7 @@ fun SettingsScreen(
                 }
             }
             if (vm.packNote.isNotEmpty()) Text(vm.packNote, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = vm::refreshPacks) { Text("Status aktualisieren") }
+            OutlinedButton(onClick = vm::refreshPacks) { Text("Aktualisieren") }
         }
 
         SectionTitle("Bildmodell (Bilder beschreiben)")
@@ -187,47 +187,65 @@ fun SettingsScreen(
         SectionTitle("Stimmen (Sprachausgabe)")
         LaunchedEffect(Unit) { vm.refreshVoices() }
         Text(
-            "Vorgelesen wird mit der Google-Sprachausgabe, wenn oben „Antworten vorlesen“ an ist. Je Sprache wird die " +
-                "installierte Stimme verwendet; „Anhören“ spricht einen Beispielsatz.",
+            "Vorgelesen wird, wenn oben „Antworten vorlesen“ an ist. Die Stimme wählst du je Companion im Companion-Editor: entweder eine " +
+                "Systemstimme (Google-Sprachausgabe, braucht installierte Stimmen) oder eine Piper-Stimme (läuft ohne Google auf dem Gerät, " +
+                "siehe unten). Ohne Auswahl gilt die Systemstimme der Sprache.",
             style = MaterialTheme.typography.bodySmall,
         )
         vm.voiceRows.forEach { row ->
+            val system = row.state == "installed"
+            val piperCount = vm.piperVoices.count { it.language == row.tag.substringBefore('-') }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(row.name)
                     Text(
-                        if (row.state == "installed") "Stimme installiert" else "keine Stimme installiert",
+                        "Systemstimme: " + (if (system) "installiert" else "keine") + "  ·  Piper: " + (if (piperCount > 0) "$piperCount" else "keine"),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (row.state == "installed") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        color = if (system || piperCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                     )
                 }
-                OutlinedButton(onClick = { vm.testVoice(row.tag) }) { Text("Anhören") }
+                OutlinedButton(onClick = { vm.testVoice(row.tag) }, enabled = system) { Text("Anhören") }
             }
         }
         if (vm.voiceNote.isNotEmpty()) Text(vm.voiceNote, style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = vm::installVoices) { Text("Stimmen laden…") }
-            OutlinedButton(onClick = vm::refreshVoices) { Text("Status aktualisieren") }
+            OutlinedButton(onClick = vm::installVoices) { Text("Systemstimmen laden…") }
+            OutlinedButton(onClick = vm::refreshVoices) { Text("Aktualisieren") }
         }
 
-        SectionTitle("Piper-Stimmen (eigene Stimmen, offline)")
+        SectionTitle("Piper-Stimmen (offline, auch eigene)")
         Text(
-            "Piper-Stimmen sprechen komplett auf dem Gerät, auch ohne Google-Sprachausgabe. Ein Stimmenordner enthält die .onnx-Datei, " +
-                "tokens.txt und (nur beim ersten Mal) den Ordner espeak-ng-data, also das Format der sherpa-onnx-Pakete (vits-piper-…). " +
-                "Eine eigene Stimme entsteht durch Training am PC, Anleitung: docs/EIGENE_STIMME.md. Danach wird die Stimme im " +
-                "Companion-Editor unter „Stimme“ gewählt.",
+            "Piper-Stimmen sprechen komplett auf dem Gerät, auch ohne Google-Sprachausgabe. „Stimmenordner wählen…“ übernimmt einen Ordner " +
+                "im Format der sherpa-onnx-Pakete (vits-piper-…: .onnx, tokens.txt, einmalig espeak-ng-data). Eine eigene Stimme entsteht durch " +
+                "Training am PC, Anleitung: docs/EIGENE_STIMME.md. Gewählt wird die Stimme im Companion-Editor unter „Stimme“; dort erscheinen " +
+                "nur Stimmen der Sprache des Companions. Qualität low/medium läuft flüssig, high ist auf älteren Handys zu langsam.",
             style = MaterialTheme.typography.bodySmall,
         )
-        vm.piperVoices.forEach { voice ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(voice.name)
-                    Text("Sprache: ${voice.language ?: "unbekannt"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        var openLanguages by remember { mutableStateOf(setOf<String>()) }
+        vm.piperVoices.groupBy { it.language.orEmpty() }.entries.sortedBy { if (it.key.isEmpty()) "~" else languageLabel(it.key) }.forEach { (code, voices) ->
+            val open = code in openLanguages
+            TextButton(
+                onClick = { openLanguages = if (open) openLanguages - code else openLanguages + code },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    (if (open) "▾  " else "▸  ") + languageLabel(code.ifEmpty { null }) + " (${voices.size})",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            if (open) voices.forEach { voice ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(voice.title)
+                        Text(voice.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                    OutlinedButton(onClick = { vm.testPiper(voice) }) { Text("Anhören") }
+                    TextButton(onClick = { vm.deletePiper(voice) }) { Text("Löschen") }
                 }
-                OutlinedButton(onClick = { vm.testPiper(voice) }) { Text("Anhören") }
-                TextButton(onClick = { vm.deletePiper(voice) }) { Text("Löschen") }
             }
         }
+        if (vm.piperVoices.isEmpty()) Text("Noch keine Piper-Stimme installiert.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
         if (vm.piperNote.isNotEmpty()) Text(vm.piperNote, style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = onPickPiper, enabled = !vm.piperBusy) { Text(if (vm.piperBusy) "Kopiere…" else "Stimmenordner wählen…") }
 

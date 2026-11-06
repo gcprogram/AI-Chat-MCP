@@ -21,6 +21,17 @@ class PiperTest {
     }
 
     @Test
+    fun titlesAreReadable() {
+        assertEquals("Thorsten · medium", PiperNames.title("vits-piper-de_DE-thorsten-medium-int8"))
+        assertEquals("Thorsten Emotional · medium", PiperNames.title("vits-piper-de_DE-thorsten_emotional-medium-int8"))
+        assertEquals("Eva K · x low", PiperNames.title("vits-piper-de_DE-eva_k-x_low-int8"))
+        assertEquals("Southern English Female · medium", PiperNames.title("vits-piper-en_GB-southern_english_female-medium-int8"))
+        assertEquals("Meine Stimme", PiperNames.title("de_DE-meine-stimme"))
+        assertEquals("Ich", PiperNames.title("ich"))
+        assertEquals("Thorsten · medium", PiperVoice("vits-piper-de_DE-thorsten-medium-int8", "de").title)
+    }
+
+    @Test
     fun namesAreSafeAndPrefixed() {
         assertEquals("a_b", PiperNames.safeName("a/b"))
         assertEquals("stimme", PiperNames.safeName("..\\.."))

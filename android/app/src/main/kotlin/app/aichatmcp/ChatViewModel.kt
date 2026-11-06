@@ -818,7 +818,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val tag = Speech.languageTag(languageName)
         val piper = storage.piper.list()
             .filter { it.language == null || (tag != null && Speech.voiceFitsLanguage(it.language!!, tag)) }
-            .map { SpeechOutput.VoiceOption(it.id, "Piper: ${it.name} (offline)") }
+            .map { SpeechOutput.VoiceOption(it.id, "Piper: ${it.title} (offline)") }
         speechOut.voicesFor(tag) { onResult(it + piper) }
     }
 

@@ -9,6 +9,9 @@ const val PIPER_PREFIX = "piper:"
 /** Eine installierte Piper-Stimme: Ordnername und Sprache ("de"), falls erkennbar. */
 data class PiperVoice(val name: String, val language: String?) {
     val id: String get() = PIPER_PREFIX + name
+
+    /** Kurzer Anzeigename ("Thorsten · medium") statt des Ordnernamens. */
+    val title: String get() = PiperNames.title(name)
 }
 
 /** Dateien einer vollständigen Piper-Stimme für sherpa-onnx. */
@@ -18,6 +21,20 @@ object PiperNames {
     fun isPiper(voice: String): Boolean = voice.startsWith(PIPER_PREFIX)
 
     fun nameOf(voice: String): String = voice.removePrefix(PIPER_PREFIX)
+
+    /**
+     * Lesbarer Name aus dem Ordnernamen eines sherpa-Pakets: "vits-piper-de_DE-thorsten_emotional-medium-int8" ->
+     * "Thorsten Emotional · medium". Eigene Ordnernamen ohne Qualitätsstufe bleiben als Name stehen ("de_DE-meine-stimme" -> "Meine Stimme").
+     */
+    fun title(folder: String): String {
+        var s = folder.removePrefix("vits-piper-").replace(Regex("-(int8|fp16)$"), "")
+        Regex("^[a-z]{2,3}_[A-Z]{2}-(.+)$").find(s)?.let { s = it.groupValues[1] }
+        val quality = Regex("-(x_low|low|medium|high)$").find(s)
+        val speaker = if (quality != null) s.removeSuffix(quality.value) else s
+        val name = speaker.replace('_', ' ').replace('-', ' ').split(' ').filter { it.isNotEmpty() }
+            .joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }.ifEmpty { folder }
+        return if (quality != null) "$name · ${quality.groupValues[1].replace('_', ' ')}" else name
+    }
 
     /** Ordnername ohne Sonderzeichen (Pfadtrenner, Punkte am Anfang). */
     fun safeName(name: String): String =
