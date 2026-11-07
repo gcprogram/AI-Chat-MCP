@@ -22,6 +22,9 @@ Eine Stimme wird nur für Texte in ihrer Sprache benutzt, sonst spricht die Syst
 
 ## 2. Die eigene Stimme erzeugen
 
+**Die Werkzeuge dafür liegen in `tools/voice/`** (Aufnehmen mit Satzlisten, Datensatz prüfen, Stimmenordner verpacken); Schritt für Schritt mit allen Befehlen in
+[`tools/voice/README.md`](../tools/voice/README.md). Der Überblick:
+
 Was du brauchst und was es kostet, ehrlich:
 
 | | |
@@ -35,14 +38,13 @@ Ablauf:
 
 1. **Aufnehmen und beschriften.** Aufnahmen als 22.050 Hz, mono, 16 Bit; dazu eine Liste `metadata.csv` im LJSpeech-Format
    (`dateiname|Text`). Lies abwechslungsreiche Sätze in deinem normalen Sprechtempo vor.
-2. **Trainieren** mit Piper (Repository `OHF-Voice/piper1-gpl`, dort die Datei `docs/TRAINING.md`). Für wenig Daten von einem vorhandenen
-   deutschen Checkpoint aus feinabstimmen (z. B. dem der Thorsten-Stimme), statt bei Null anzufangen. Die genauen Befehle ändern sich
-   mit der Version, deshalb stehen sie hier nicht.
+2. **Trainieren** mit Piper (Repository `OHF-Voice/piper1-gpl`, `docs/TRAINING.md`; Linux oder WSL2). Für wenig Daten von einem vorhandenen Checkpoint
+   aus feinabstimmen (Checkpoints: `huggingface.co/datasets/rhasspy/piper-checkpoints`), statt bei Null anzufangen. Der Befehl `python3 -m piper.train fit …`
+   steht mit allen Parametern in `tools/voice/README.md`.
 3. **Nach ONNX exportieren**: `python3 -m piper.train.export_onnx --checkpoint <ckpt> --output-file meine-stimme.onnx`.
    Die dazugehörige `meine-stimme.onnx.json` (Piper-Konfiguration) wird beim Training mit angelegt und gehört zum Modell.
-4. **Für sherpa-onnx umwandeln** (Metadaten ins Modell schreiben und `tokens.txt` aus der Konfiguration erzeugen). Das Skript steht auf
-   <https://k2-fsa.github.io/sherpa/onnx/tts/piper.html> unter „Download a pre-trained model … add metadata“ (`pip install onnx==1.17.0 onnxruntime==1.17.1`).
-   Es ändert die `.onnx`-Datei an Ort und Stelle und legt `tokens.txt` daneben.
+4. **Für sherpa-onnx umwandeln** (Metadaten ins Modell schreiben, `tokens.txt` aus der Konfiguration erzeugen, auf Wunsch int8): `tools/voice/package_voice.py`
+   erledigt das und legt den fertigen Ordner an (gleiches Ergebnis wie das offizielle Skript von sherpa-onnx, geprüft an einer Stimme der sherpa-Pakete).
 5. **Ordner zusammenstellen**, Name z. B. `de_DE-meine-stimme`:
 
    ```

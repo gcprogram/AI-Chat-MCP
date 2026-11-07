@@ -1,0 +1,129 @@
+# Sätze zum Einsprechen (Deutsch). Eine Zeile = ein Satz, Zeilen mit # werden ignoriert.
+# Zahlen sind ausgeschrieben, keine Abkürzungen: so lernt das Modell die Aussprache am saubersten.
+# Lies natürlich und in deinem normalen Tempo, mit der Betonung, die du im Gespräch hättest.
+Guten Morgen, ich hoffe, du hast gut geschlafen.
+Heute scheint die Sonne, und es ist angenehm warm.
+Wie spät ist es eigentlich, und wann kommt der nächste Zug?
+Ich habe den Schlüssel auf dem Tisch in der Küche liegen lassen.
+Das war ein langer Tag, aber er hat sich gelohnt.
+Könntest du mir bitte kurz erklären, wie das funktioniert?
+Im Garten blühen die ersten Tulpen und Narzissen.
+Wir treffen uns um halb acht vor dem alten Bahnhof.
+Er sagte nichts, sondern schaute nur aus dem Fenster.
+Meine Schwester wohnt seit drei Jahren in einer kleinen Stadt am Meer.
+Es ist wirklich erstaunlich, wie schnell die Zeit vergeht.
+Bitte schließe die Tür, es zieht ganz fürchterlich.
+Hast du schon gehört, was gestern Abend passiert ist?
+Der Zug nach Hamburg fährt von Gleis vier ab.
+Ich möchte gern einen Tee mit Zitrone und etwas Honig.
+Nach dem Frühstück gehen wir zusammen eine Runde spazieren.
+Das Buch, das du mir geliehen hast, gefällt mir sehr gut.
+Warum ist der Himmel abends manchmal rot?
+Zwischen den Bergen liegt ein kleiner, klarer See.
+Entschuldigung, ist dieser Platz noch frei?
+Ich glaube, wir sollten das noch einmal in Ruhe besprechen.
+Die Kinder spielen draußen im Hof und lachen laut.
+Sie öffnete vorsichtig den Brief und las ihn langsam.
+Morgen früh muss ich leider sehr zeitig aufstehen.
+Wie schön, dich wiederzusehen!
+Ein Glas Wasser, bitte, und dazu ein Stück Kuchen.
+Das Wetter soll am Wochenende deutlich besser werden.
+Ich verstehe nicht, warum das so lange dauert.
+Der Bäcker an der Ecke macht die besten Brötchen der ganzen Stadt.
+Im Winter bleiben wir oft zu Hause und lesen am Kamin.
+Hast du Lust, heute Abend mit mir ins Kino zu gehen?
+Der Hund lief über die Wiese und sprang in den Fluss.
+Leider habe ich mein Passwort schon wieder vergessen.
+Pünktlichkeit ist eine Tugend, aber nicht jeder besitzt sie.
+Das Schiff verließ langsam den Hafen und verschwand im Nebel.
+Er arbeitet als Ingenieur bei einer großen Firma in München.
+Im Sommer fahren wir mit dem Fahrrad an die Ostsee.
+Kannst du mir bitte den Zucker reichen?
+Ich habe zwölf Äpfel, sieben Birnen und drei Orangen gekauft.
+Vor hundert Jahren sah diese Straße ganz anders aus.
+Die Sonne geht im Westen unter, und es wird langsam kühl.
+Frisch gepresster Orangensaft schmeckt am besten am Morgen.
+Wir haben uns lange über die Zukunft unterhalten.
+Manchmal denke ich darüber nach, ob ich alles richtig gemacht habe.
+Der Zahnarzt hat mir geraten, öfter die Zahnseide zu benutzen.
+Aus dem Radio klang leise eine bekannte Melodie.
+Ich freue mich schon sehr auf unseren Urlaub in den Bergen.
+Das ist eine ausgezeichnete Idee, lass es uns gleich versuchen.
+Wer hat denn schon wieder das Licht im Keller angelassen?
+Zuerst schneidest du die Zwiebeln, dann gibst du sie in die Pfanne.
+Es klopfte dreimal an der Tür, und dann war alles still.
+Die Nachbarn haben gestern einen Kuchen vorbeigebracht.
+Ich brauche dringend eine Pause und eine Tasse starken Kaffee.
+Hör mal, da draußen singt ein Vogel ganz wunderbar.
+Die Aufgabe war schwieriger, als wir zuerst gedacht hatten.
+Man sollte nie vergessen, sich bei seinen Freunden zu bedanken.
+Pferde, Kühe und Schafe grasten friedlich auf der großen Weide.
+Das Konzert beginnt um zwanzig Uhr dreißig im Stadttheater.
+Hoffentlich regnet es morgen nicht, denn wir wollen grillen.
+Sie lächelte, als sie das kleine Geschenk auspackte.
+Welche Farbe gefällt dir besser, das Blau oder das Grün?
+Mein Computer ist heute Morgen plötzlich nicht mehr angegangen.
+Es gibt Dinge im Leben, die man nur schwer erklären kann.
+Auf dem Markt kauften wir Gemüse, Käse und frisches Brot.
+Das Telefon klingelte, aber niemand hob ab.
+Wenn du willst, begleite ich dich bis zur Haltestelle.
+Die Straße war nass, und die Lichter spiegelten sich im Asphalt.
+Ich bin mir ziemlich sicher, dass er die Wahrheit gesagt hat.
+Mit etwas Geduld lässt sich fast jedes Problem lösen.
+Drei Wochen später kam endlich die ersehnte Antwort.
+Das Essen ist fertig, kommt bitte alle an den Tisch!
+Beim Wandern durch den Wald hörten wir das Rauschen eines Baches.
+Die Chefin hat das Treffen auf nächsten Donnerstag verschoben.
+Zum Geburtstag wünsche ich dir Glück, Gesundheit und viel Freude.
+Ich habe das Gefühl, dass uns jemand beobachtet.
+Der Lehrer erklärte die Aufgabe noch einmal ganz langsam.
+Fünf Minuten später war der ganze Spuk vorbei.
+Im Herbst fallen die bunten Blätter von den Bäumen.
+Ach, das ist ja schade, ich hatte mich so darauf gefreut.
+Würdest du mir bitte morgen Früh einen Wecker stellen?
+Es ist zehn Grad kalt, und es nieselt schon den ganzen Vormittag.
+Der Handwerker kommt gegen vierzehn Uhr, um die Heizung zu reparieren.
+Kein Wunder, dass du müde bist, du hast kaum geschlafen.
+Gestern habe ich im Fernsehen einen spannenden Film gesehen.
+Pfefferminztee hilft oft gegen Bauchschmerzen und Übelkeit.
+Das Flugzeug landete pünktlich auf der Landebahn.
+Nein danke, ich möchte heute nichts mehr essen.
+Die Ergebnisse der Untersuchung werden nächste Woche veröffentlicht.
+Du siehst heute besonders gut gelaunt aus, was ist passiert?
+Zwei Kaffee, eine Cola und ein stilles Wasser, bitte.
+An der Wand hing ein altes Bild von einem Segelschiff.
+Frag lieber vorher nach, bevor du etwas Falsches machst.
+Der Schnee knirschte unter unseren Schuhen.
+Als Kind wollte ich unbedingt Astronaut werden.
+Die Brücke über den Fluss wurde vor einem Jahr neu gebaut.
+Ich schicke dir die Nachricht gleich, sobald ich zu Hause bin.
+Unglaublich, wie viele Sterne man heute Nacht sehen kann!
+Das Restaurant am Marktplatz ist leider montags geschlossen.
+Jeder macht Fehler, wichtig ist nur, dass man daraus lernt.
+Auf dem Dachboden fanden wir eine Kiste voller alter Fotos.
+Wie viel kostet das, und kann ich mit Karte bezahlen?
+Gleich nach dem Regen kam ein wunderschöner Regenbogen zum Vorschein.
+Sie schreibt jeden Abend ein paar Zeilen in ihr Tagebuch.
+Der Berg war steiler, als er von unten ausgesehen hatte.
+Vielen Dank für deine Hilfe, ohne dich hätte ich es nicht geschafft.
+Ich habe mir vorgenommen, jeden Tag eine halbe Stunde zu lesen.
+Das Wasser im Pool war erstaunlich kalt.
+Im Zimmer roch es nach frischem Kaffee und warmem Brot.
+Irgendwo in der Ferne bellte ein Hund.
+Wir fahren über Köln und Frankfurt nach Stuttgart.
+Das Ergebnis war besser, als irgendjemand erwartet hatte.
+Ich zeige dir gleich, wo du die Einstellungen findest.
+Plötzlich wurde es dunkel, und ein kräftiger Wind kam auf.
+Bist du sicher, dass du das wirklich willst?
+Die Kirchenglocken läuteten zum Mittag.
+Zum Abendessen gibt es heute Kartoffeln mit Quark und Leinöl.
+Täglich üben, das ist das ganze Geheimnis.
+Sie hat ihr Studium mit Auszeichnung abgeschlossen.
+Das Paket ist heute leider noch nicht angekommen.
+Ein warmer Wind wehte durch die offenen Fenster.
+Ich war schon lange nicht mehr so zufrieden wie heute.
+Zuletzt haben wir uns kurz vor Weihnachten gesehen.
+Gib mir bitte Bescheid, wenn du etwas brauchst.
+Fröhlich pfeifend ging er die Straße entlang.
+Der Zeitplan ist eng, aber wir schaffen das gemeinsam.
+Und dann, ganz am Ende des Tages, wurde alles gut.

@@ -1,0 +1,129 @@
+# Sentences to read aloud (English). One line = one sentence, lines starting with # are ignored.
+# Numbers are written out and there are no abbreviations: the model learns pronunciation most cleanly that way.
+# Read naturally, at your normal speed, with the emphasis you would use in conversation.
+Good morning, I hope you slept well.
+The sun is shining today, and it is pleasantly warm.
+What time is it, and when does the next train leave?
+I left the keys on the kitchen table again.
+It was a long day, but it was worth it.
+Could you please explain quickly how this works?
+The first tulips and daffodils are blooming in the garden.
+We are meeting at half past seven in front of the old station.
+He said nothing, he only looked out of the window.
+My sister has lived in a small town by the sea for three years.
+It is really amazing how quickly time passes.
+Please close the door, there is a terrible draught.
+Have you heard what happened last night?
+The train to Edinburgh leaves from platform four.
+I would like a cup of tea with lemon and a little honey.
+After breakfast we are going for a walk together.
+The book you lent me is really good.
+Why is the sky sometimes red in the evening?
+There is a small, clear lake between the mountains.
+Excuse me, is this seat still free?
+I think we should talk it over once more, calmly.
+The children are playing outside in the yard and laughing loudly.
+She carefully opened the letter and read it slowly.
+Unfortunately I have to get up very early tomorrow.
+How nice to see you again!
+A glass of water, please, and a piece of cake.
+The weather is supposed to get much better over the weekend.
+I do not understand why it takes so long.
+The baker on the corner makes the best rolls in the whole town.
+In winter we often stay at home and read by the fire.
+Do you feel like going to the cinema with me tonight?
+The dog ran across the meadow and jumped into the river.
+Unfortunately I have forgotten my password again.
+Punctuality is a virtue, but not everyone has it.
+The ship slowly left the harbour and disappeared into the fog.
+He works as an engineer for a large company in Manchester.
+In summer we cycle to the coast.
+Can you pass me the sugar, please?
+I bought twelve apples, seven pears and three oranges.
+A hundred years ago this street looked completely different.
+The sun sets in the west, and it is slowly getting cool.
+Freshly squeezed orange juice tastes best in the morning.
+We talked for a long time about the future.
+Sometimes I wonder whether I have done everything right.
+The dentist advised me to use dental floss more often.
+A familiar melody was playing softly on the radio.
+I am really looking forward to our holiday in the mountains.
+That is an excellent idea, let us try it right away.
+Who has left the light on in the cellar again?
+First you chop the onions, then you put them in the pan.
+There were three knocks at the door, and then everything was quiet.
+The neighbours brought round a cake yesterday.
+I badly need a break and a cup of strong coffee.
+Listen, there is a bird singing wonderfully out there.
+The task was harder than we had first thought.
+You should never forget to thank your friends.
+Horses, cows and sheep were grazing peacefully in the big pasture.
+The concert begins at half past eight at the town theatre.
+I hope it does not rain tomorrow, because we want to have a barbecue.
+She smiled as she unwrapped the little present.
+Which colour do you like better, the blue or the green?
+My computer suddenly would not start this morning.
+There are things in life that are hard to explain.
+At the market we bought vegetables, cheese and fresh bread.
+The phone rang, but nobody picked up.
+If you like, I will walk you to the bus stop.
+The road was wet, and the lights were reflected in the tarmac.
+I am fairly sure that he told the truth.
+With a little patience, almost any problem can be solved.
+Three weeks later the long awaited answer finally arrived.
+Dinner is ready, everyone please come to the table!
+Hiking through the forest we heard the rushing of a stream.
+The manager has postponed the meeting until next Thursday.
+For your birthday I wish you luck, health and a lot of joy.
+I have the feeling that someone is watching us.
+The teacher explained the task once more, very slowly.
+Five minutes later the whole thing was over.
+In autumn the colourful leaves fall from the trees.
+Oh, that is a pity, I was so looking forward to it.
+Would you please set an alarm for me tomorrow morning?
+It is ten degrees and it has been drizzling all morning.
+The workman is coming around two o'clock to repair the heating.
+No wonder you are tired, you hardly slept.
+Yesterday I watched an exciting film on television.
+Peppermint tea often helps against stomach ache and nausea.
+The aeroplane landed on time on the runway.
+No thank you, I do not want to eat anything more today.
+The results of the investigation will be published next week.
+You look particularly cheerful today, what happened?
+Two coffees, a cola and a still water, please.
+On the wall hung an old picture of a sailing ship.
+Ask beforehand, rather than doing something wrong.
+The snow crunched under our shoes.
+As a child I desperately wanted to become an astronaut.
+The bridge over the river was rebuilt a year ago.
+I will send you the message as soon as I am home.
+Unbelievable how many stars you can see tonight!
+The restaurant on the market square is unfortunately closed on Mondays.
+Everyone makes mistakes, what matters is that you learn from them.
+In the attic we found a box full of old photographs.
+How much is that, and can I pay by card?
+Right after the rain a beautiful rainbow appeared.
+She writes a few lines in her diary every evening.
+The mountain was steeper than it had looked from below.
+Thank you very much for your help, I could not have done it without you.
+I have decided to read for half an hour every day.
+The water in the pool was surprisingly cold.
+The room smelled of fresh coffee and warm bread.
+Somewhere in the distance a dog was barking.
+We are travelling via Leeds and Birmingham to London.
+The result was better than anyone had expected.
+I will show you in a moment where to find the settings.
+Suddenly it got dark, and a strong wind came up.
+Are you sure that you really want that?
+The church bells rang at noon.
+For supper tonight there are potatoes with cream cheese.
+Practise every day, that is the whole secret.
+She finished her degree with distinction.
+The parcel has unfortunately not arrived yet.
+A warm wind blew through the open windows.
+I have not been this content for a long time.
+We last saw each other shortly before Christmas.
+Let me know if you need anything.
+Whistling cheerfully, he walked down the street.
+The schedule is tight, but we will manage together.
+And then, at the very end of the day, everything turned out well.

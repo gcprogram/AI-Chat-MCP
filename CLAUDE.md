@@ -28,7 +28,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 88 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 100 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -101,7 +101,7 @@ python main.py
   Stopp verwirft alles (neue Generation, Track wird neu angelegt). `espeak-ng-data` einmal gemeinsam in `files/piper/`. Piper wird nur gewählt, wenn Sprache passt (`SpeechOutput.piperFor`),
   sonst Systemstimme; ohne Systemengine (BlueStacks) funktioniert Piper trotzdem. Gerätetest `PiperOnDeviceTest` (Lautstärke 0, Stimmen per `run-as … tar -xf -` in `files/piper`;
   **Git-Bash:** bei adb mit Geräte-Pfaden `MSYS_NO_PATHCONV=1`, sonst wird `/data/…` zu `C:/Program Files/Git/data/…`; viele Einzeldateien per `adb push` hängen, besser ein tar).
-  Auf dem Galaxy S9 (Android 10) geprüft: alle 10 deutschen int8-Stimmen von sherpa-onnx laufen, Faktor 0,5 bis 0,9, `thorsten-high` 3,8 (zu langsam). Anleitung für eigene Stimmen: `docs/EIGENE_STIMME.md`.
+  Auf dem Galaxy S9 (Android 10) geprüft: alle 10 deutschen int8-Stimmen von sherpa-onnx laufen, Faktor 0,5 bis 0,9, `thorsten-high` 3,8 (zu langsam). Anleitung für eigene Stimmen: `docs/EIGENE_STIMME.md`; Werkzeuge `tools/voice/` (`record.py` Aufnahme mit Satzlisten, `check_dataset.py`, `package_voice.py` = tokens.txt + Metadaten wie das offizielle `add_meta_data.py`, int8 optional; `voicelib.py` gemeinsam, Tests `tests/test_voice_tools.py` mit Schein-Mikrofon; Training selbst nicht automatisiert/ungetestet: Piper piper1-gpl, Linux/WSL2).
   `Antworten vorlesen` ist standardmäßig aus (Ursache für „Sprachausgabe fehlt“). **Vorwärmen** (`ChatViewModel.warmUp`, nach `reloadTools`/`saveConfig`): ein
   1-Token-Lauf über den bisherigen Verlauf füllt den Präfix-Cache; ohne ihn dauert die erste Antwort nach App-Start ~2-3 min (Prompt ~10 Tokens/s, 4 Threads).
   **Dokumente hochladen** (`core/Documents.kt`, `app/PdfText.kt`, `ChatViewModel.loadDocument/docAsInput/docRead/docSummarize`, `DocCard` in `ChatScreen`): TXT/MD (UTF-8, sonst Windows-1252), DOCX

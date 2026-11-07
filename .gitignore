@@ -19,3 +19,5 @@ android/local.properties
 
 android/third_party/
 .cxx/
+
+!tools/voice/sentences_*.txt

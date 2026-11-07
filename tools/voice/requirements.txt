@@ -1,0 +1,6 @@
+numpy
+sounddevice
+onnx
+onnxruntime
+# nur für den Testsatz in package_voice.py (--test); 1.13.8 = Version in der Android-App, ab 2.0 fehlt die Aussprache (espeak-ng)
+sherpa-onnx==1.13.8
