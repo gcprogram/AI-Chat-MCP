@@ -218,6 +218,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   **Piper-Stimmen (offline, auch eigene)**: *Einstellungen → Piper-Stimmen → Stimmenordner wählen…* übernimmt einen Ordner im Format der
   sherpa-onnx-Pakete (`vits-piper-…`: `*.onnx`, `tokens.txt`, `*.onnx.json`, einmalig `espeak-ng-data`). Sie laufen mit sherpa-onnx komplett auf dem
   Gerät, ohne Google-Sprachausgabe, und stehen im Companion-Editor in der Liste *Stimme*. Wie man eine eigene Stimme trainiert: `docs/EIGENE_STIMME.md`; die Werkzeuge dafür (Aufnehmen, Prüfen, Verpacken) liegen in `tools/voice/`.
+  **Stimmen-Studio** (eigene App `android/voicestudio`, Paket `app.aichatmcp.voicestudio`): nimmt die Sätze direkt am Handy auf (Satzlisten Deutsch/Englisch, Buch oder Text wird in Sätze zerlegt, Pegelanzeige, Anhören/Wiederholen, Minuten-Fortschritt, Prüfung wie `check_dataset.py`) und exportiert eine ZIP (`wavs/` + `metadata.csv`) für das Training am PC. Bauen: `cd android && gradlew :voicestudio:assembleDebug`.
   Gemessen auf dem Galaxy S9 (Exynos 9810, 4 Fäden): Stimmen der Klassen low/medium/high-int8 brauchen etwa 0,5 bis 0,9 der Sprechzeit (inkl. Laden),
   `thorsten-high` mit 3,8 ist dort zu langsam, besser medium oder low. Die Bibliothek (sherpa-onnx 1.13.8, arm64) holt der erste Gradle-Build von GitHub
   und prüft die Prüfsumme (`android/sherpa-onnx.version`); espeak-ng (GPL-3.0) steckt darin.

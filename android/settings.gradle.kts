@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "AI-Chat-MCP-Android"
-include(":core", ":app")
+include(":core", ":app", ":voicestudio")

@@ -21,3 +21,7 @@ android/third_party/
 .cxx/
 
 !tools/voice/sentences_*.txt
+
+# Eigene Aufnahmen und virtuelle Umgebung der Sprach-Werkzeuge (persoenliche Stimmdaten gehoeren nicht ins Repo)
+.venv-voice/
+meine-stimme/

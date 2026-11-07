@@ -22,6 +22,8 @@ Eine Stimme wird nur für Texte in ihrer Sprache benutzt, sonst spricht die Syst
 
 ## 2. Die eigene Stimme erzeugen
 
+**Aufnehmen geht am bequemsten mit der App Stimmen-Studio** (`android/voicestudio`): Sätze am Handy einsprechen, Buch oder Text importieren, anhören, prüfen und als ZIP exportieren. Die ZIP kommt auf den PC, dort geht es mit dem Training weiter.
+
 **Die Werkzeuge dafür liegen in `tools/voice/`** (Aufnehmen mit Satzlisten, Datensatz prüfen, Stimmenordner verpacken); Schritt für Schritt mit allen Befehlen in
 [`tools/voice/README.md`](../tools/voice/README.md). Der Überblick:
 

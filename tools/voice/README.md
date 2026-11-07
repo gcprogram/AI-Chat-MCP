@@ -1,5 +1,7 @@
 # Eigene Stimme: Werkzeuge
 
+> **Am Handy statt am PC aufnehmen:** Die App **Stimmen-Studio** (`android/voicestudio`, Bauen: `cd android && gradlew :voicestudio:assembleDebug`) macht Schritt 1 und 2 bequem auf dem Telefon (Sätze, Buch/Text importieren, Pegelanzeige, Anhören, Prüfung) und exportiert eine ZIP mit `wavs/` und `metadata.csv`. Die entpackst du auf dem PC und machst ab „3. Trainieren“ weiter. Die Skripte hier bleiben für den PC-Teil und als Alternative.
+
 Vom Einsprechen bis zum Stimmenordner für die Android-App. Das Training selbst läuft mit Piper am PC (NVIDIA-Grafikkarte);
 diese Skripte erledigen die Handarbeit davor und danach.
 
@@ -30,12 +32,12 @@ python tools/voice/record.py --sentences tools/voice/sentences_de.txt --out mein
 - Sätze: `sentences_de.txt` und `sentences_en.txt` (je 126). Eigene Listen gehen auch (eine Zeile je Satz, Zahlen und Abkürzungen ausschreiben).
 - **So wird es gut:** ruhiger Raum ohne Hall (Kleiderschrank oder Decke hilft), immer gleicher Abstand (eine Handbreit), gleicher Eingangspegel,
   normales Sprechtempo und natürliche Betonung, nicht vorlesen im „Nachrichtenton“. Lieber an mehreren Tagen je 20 Minuten als alles auf einmal.
-- Menge: **mindestens 30 Minuten**, besser 1 bis 2 Stunden (das sind etwa 400 bis 1.200 Sätze). 126 Sätze sind der Anfang, nicht das Ziel:
+- Menge: **mindestens 30 Minuten**, besser 1 bis 2 Stunden (das sind etwa 500 bis 2.000 Sätze). 126 Sätze sind nur der Anfang (etwa 7 Minuten), nicht das Ziel:
   mit weiteren Listen oder eigenen Texten (Buchseiten, Nachrichten, Dialoge in der Art, wie der Companion sprechen soll) auffüllen.
 
 ### Mehr Aufnahmen: neue Sätze, nicht dieselben noch einmal
 
-Die mitgelieferten 126 Sätze reichen für etwa 15 bis 25 Minuten. Für mehr brauchst du **neuen Text**: Dieselben Sätze noch einmal zu sprechen bringt dem Modell
+Die mitgelieferten 126 Sätze ergeben nur etwa **7 Minuten** (im Schnitt 3,4 s je Satz). Für 30 Minuten brauchst du rund 500 Sätze, für 60 Minuten rund 1000. Für mehr brauchst du **neuen Text**: Dieselben Sätze noch einmal zu sprechen bringt dem Modell
 kaum Neues (gleiche Lautfolgen, gleiche Betonung) und verleitet es zum Auswendiglernen. Ein **Buch vorlesen** ist ein guter Weg, wenn du den Text vorher in
 Sätze zerlegst:
 
