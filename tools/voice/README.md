@@ -33,6 +33,26 @@ python tools/voice/record.py --sentences tools/voice/sentences_de.txt --out mein
 - Menge: **mindestens 30 Minuten**, besser 1 bis 2 Stunden (das sind etwa 400 bis 1.200 Sätze). 126 Sätze sind der Anfang, nicht das Ziel:
   mit weiteren Listen oder eigenen Texten (Buchseiten, Nachrichten, Dialoge in der Art, wie der Companion sprechen soll) auffüllen.
 
+### Mehr Aufnahmen: neue Sätze, nicht dieselben noch einmal
+
+Die mitgelieferten 126 Sätze reichen für etwa 15 bis 25 Minuten. Für mehr brauchst du **neuen Text**: Dieselben Sätze noch einmal zu sprechen bringt dem Modell
+kaum Neues (gleiche Lautfolgen, gleiche Betonung) und verleitet es zum Auswendiglernen. Ein **Buch vorlesen** ist ein guter Weg, wenn du den Text vorher in
+Sätze zerlegst:
+
+```bash
+python tools/voice/split_text.py buch.txt --out sentences_buch.txt --max 400
+python tools/voice/record.py --sentences sentences_buch.txt --out meine-stimme       # gleiche Ausgabe: es geht einfach weiter
+```
+
+- `--out meine-stimme` bleibt gleich: neue Aufnahmen werden angehängt (`0127.wav, …`), schon aufgenommene Sätze werden übersprungen.
+- `split_text.py` behält Sätze mit 4 bis 28 Wörtern ohne Ziffern, setzt Silbentrennung zusammen und lässt Abkürzungen heil. Mit `--shuffle` bunt gemischt,
+  sonst in Textreihenfolge (das ist angenehmer zu lesen, weil man im Zusammenhang bleibt).
+- Nimm Texte, die so klingen, wie dein Companion sprechen soll: Dialoge, lockere Erzählung, Briefe, Chat-Sätze; keine Fachtexte oder Gedichte.
+  Gemeinfreie Bücher: Projekt Gutenberg (gutenberg.org, „Reiner Text“).
+- Spreche **einheitlich**: Das Modell lernt eine Stimme mit einem durchschnittlichen Ausdruck. Wechselnde Stimmungen (flüstern, schreien, sehr traurig) verwischen
+  das eher, als dass sie später abrufbar wären. Zum Üben nimm den Ton, den der Companion im Chat meist haben soll.
+- Ziel: **45 bis 60 Minuten**. Besser an mehreren Tagen je 20 Minuten, immer mit gleichem Abstand und Pegel.
+
 ## 2. Prüfen: `check_dataset.py`
 
 ```bash

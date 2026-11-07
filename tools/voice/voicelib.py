@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sys
 import wave
 from pathlib import Path
@@ -35,6 +36,56 @@ def load_sentences(path: str | Path) -> list[str]:
     """Sätze aus einer Textdatei: eine Zeile je Satz, leere Zeilen und Zeilen mit # werden ignoriert."""
     lines = Path(path).read_text(encoding="utf-8").splitlines()
     return [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
+
+
+_ABBREVIATIONS = (
+    "z. B.", "z.B.", "d. h.", "d.h.", "u. a.", "u.a.", "usw.", "bzw.", "ca.", "Dr.", "Prof.", "Nr.", "Hr.", "Fr.", "Mr.", "Mrs.", "Ms.",
+    "St.", "etc.", "vgl.", "evtl.", "ggf.", "inkl.", "zzgl.", "Str.", "Abb.", "Kap.", "s. o.", "s. u.", "i. d. R.", "e. g.", "i. e.",
+)
+
+
+def split_sentences(text: str, min_words: int = 4, max_words: int = 28) -> list[str]:
+    """Zerlegt einen Fließtext (z. B. ein Buch) in Sätze, die sich gut einsprechen lassen.
+
+    Behalten werden Sätze mit min_words bis max_words Wörtern ohne Ziffern; Anführungszeichen und Gedankenstriche am Rand fallen weg,
+    Silbentrennung am Zeilenende wird zusammengesetzt, Abkürzungen (z. B., Dr., usw.) beenden keinen Satz, Dubletten fallen weg.
+    Zu lange Sätze werden an Semikolon oder Doppelpunkt geteilt, sonst verworfen (sie lassen sich kaum in einem Atemzug sprechen)."""
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    t = re.sub(r"(\w)-\n(\w)", r"\1\2", t)  # Silbentrennung am Zeilenende
+    paragraphs = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", t)]
+    protected: dict[str, str] = {}
+    sentences: list[str] = []
+    for paragraph in paragraphs:
+        if not paragraph:
+            continue
+        for i, abbr in enumerate(_ABBREVIATIONS):
+            key = f"\u0001{i}\u0001"
+            protected[key] = abbr
+            paragraph = paragraph.replace(abbr, key)
+        paragraph = re.sub(r"(\d)\.(\s)", "\\1\u0002\\2", paragraph)  # "am 12. Mai": Ordnungszahl, kein Satzende
+        for part in re.split(r"(?<=[.!?…])[\"'“”„»«)\]]*\s+(?=[\"'“”„»«(\[]*[A-ZÄÖÜ0-9])", paragraph):
+            for key, abbr in protected.items():
+                part = part.replace(key, abbr)
+            sentences.append(part.replace("\u0002", ".").strip())
+    out: list[str] = []
+    seen: set[str] = set()
+    for sentence in sentences:
+        sentence = re.sub(r"[„“”\"»«]", "", sentence)  # Anführungszeichen stören die Aussprache-Erzeugung nicht, aber das Vorlesen
+        sentence = re.sub(r"([?!])\s*,", r"\1", sentence)  # aus „…?“, sagte sie wird: …? sagte sie
+        sentence = re.sub(r"\s+", " ", sentence).strip(" \t'‚‘’–—-_*#")
+        pieces = [sentence]
+        if len(sentence.split()) > max_words:
+            pieces = [p.strip() for p in re.split(r"(?<=[;:])\s+", sentence)]
+        for piece in pieces:
+            words = piece.split()
+            if not (min_words <= len(words) <= max_words) or re.search(r"\d", piece) or piece in seen:
+                continue
+            piece = re.sub(r"[;:,]$", "", piece)
+            if not re.search(r"[.!?…]$", piece):
+                piece += "."
+            seen.add(piece)
+            out.append(piece)
+    return out
 
 
 def read_metadata(path: str | Path) -> list[tuple[str, str]]:

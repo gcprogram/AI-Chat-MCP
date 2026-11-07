@@ -79,6 +79,24 @@ class SentencesTest(unittest.TestCase):
             self.assertEqual(v.load_sentences(p), ["Eins zwei drei.", "Vier fünf sechs."])
 
 
+class SplitSentencesTest(unittest.TestCase):
+    def test_book_text_becomes_recordable_sentences(self):
+        text = ("Das war Dr. Meier, wie er leibt und lebt. „Kommst du heute Abend?“, fragte sie leise. Er antwortete nicht! "
+                "Warum auch,\ndachte er; es war ohnehin alles gesagt. Am 12. Mai war es so weit. Ein Hund, z. B. ein Dackel, "
+                "bellte laut im Hof.\n\nNach der Rück-\nkehr aß man zu Abend. Ja. Nach der Rückkehr aß man zu Abend.")
+        self.assertEqual(
+            v.split_sentences(text),
+            ["Das war Dr. Meier, wie er leibt und lebt.", "Kommst du heute Abend? fragte sie leise.",
+             "Warum auch, dachte er; es war ohnehin alles gesagt.", "Ein Hund, z. B. ein Dackel, bellte laut im Hof.",
+             "Nach der Rückkehr aß man zu Abend."],  # ohne: Ziffern, Zu-Kurzes, Dubletten
+        )
+
+    def test_long_sentences_are_split_at_semicolons_or_dropped(self):
+        long = "Eins zwei drei vier; fünf sechs sieben acht " + " ".join(["wort"] * 40) + "."
+        self.assertEqual(v.split_sentences(long), ["Eins zwei drei vier."])  # der zweite Teil ist zu lang und fällt weg
+        self.assertEqual(v.split_sentences("Wort " * 40 + "Ende."), [])
+
+
 class CheckDatasetTest(unittest.TestCase):
     def test_good_dataset_passes(self):
         with tempfile.TemporaryDirectory() as d:

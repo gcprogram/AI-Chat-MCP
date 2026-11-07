@@ -79,7 +79,11 @@ def check(dataset: Path, expected_rate: int = v.TARGET_RATE) -> tuple[dict, list
     if minutes < 15:
         errors.append(f"Nur {minutes:.1f} Minuten Sprache: zu wenig, auch für eine Feinabstimmung")
     elif minutes < 30:
-        notes.append(f"{minutes:.1f} Minuten: knapp, reicht nur für eine Feinabstimmung einer vorhandenen Stimme")
+        notes.append(
+            f"{minutes:.1f} Minuten: knapp, reicht nur für eine Feinabstimmung einer vorhandenen Stimme. "
+            f"Noch etwa {30 - minutes:.0f} Minuten Aufnahmen bis zur Mindestempfehlung (30), besser {60 - minutes:.0f} bis 60 Minuten. "
+            "Nimm NEUE Sätze auf (z. B. ein Buch mit split_text.py), nicht dieselben noch einmal."
+        )
     elif minutes < 60:
         notes.append(f"{minutes:.1f} Minuten: reicht für eine Feinabstimmung; mehr Aufnahmen verbessern das Ergebnis")
     summary = {
