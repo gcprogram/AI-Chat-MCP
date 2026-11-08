@@ -70,16 +70,18 @@ data class Persona(
     fun toJson(): String = AppJson.encodeToString(serializer(), this)
 
     companion object {
-        fun fromJson(text: String, id: String = ""): Persona = try {
-            AppJson.decodeFromString(serializer(), text).let {
+        /** Liest einen Companion aus JSON (ein BOM am Anfang, wie ihn Windows-Editoren schreiben, wird ignoriert); Fehler kommen als Ergebnis zurück. */
+        fun parse(text: String, id: String = ""): Result<Persona> = runCatching {
+            AppJson.decodeFromString(serializer(), text.trimStart { it == '\uFEFF' || it.isWhitespace() }).let {
                 it.copy(
                     id = id,
                     toolMode = if (it.toolMode in listOf(TOOL_MODE_MARKER, TOOL_MODE_NATIVE)) it.toolMode else TOOL_MODE_MARKER,
                 )
             }
-        } catch (_: Exception) {
-            Persona(id = id)
         }
+
+        /** Wie [parse], aber tolerant: bei einer kaputten Datei kommt der Standard-Companion (zum Laden eigener Dateien). */
+        fun fromJson(text: String, id: String = ""): Persona = parse(text, id).getOrElse { Persona(id = id) }
 
         fun slugify(name: String): String =
             name.trim().lowercase().replace(Regex("[^\\p{L}\\p{N}_\\-]+"), "_").trim('_').ifEmpty { "companion" }

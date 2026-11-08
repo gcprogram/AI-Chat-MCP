@@ -74,7 +74,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
         ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "import"
 
     val importPersona = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { u -> read(u)?.let { vm.importPersona(it, nameOf(u)); toast("Companion importiert") } ?: toast("Datei nicht lesbar") }
+        uri?.let { u -> read(u)?.let { text -> toast(vm.importPersona(text, nameOf(u)) ?: "Companion importiert") } ?: toast("Datei nicht lesbar") }
     }
     val importMcp = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { text -> vm.saveMcpJson(text)?.let(::toast) ?: toast("Werkzeuge werden neu geladen") } ?: toast("Datei nicht lesbar") }
