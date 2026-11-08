@@ -22,6 +22,7 @@ import app.aichatmcp.core.ChatEvent
 import app.aichatmcp.core.ChatFileException
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.BACKEND_LOCAL
+import app.aichatmcp.core.BACKEND_SERVER
 import app.aichatmcp.core.CancelToken
 import app.aichatmcp.core.DocKind
 import app.aichatmcp.core.DocText
@@ -32,6 +33,7 @@ import app.aichatmcp.core.KeywordThrottle
 import app.aichatmcp.core.LanguageDetect
 import app.aichatmcp.core.RESULT_BOTH
 import app.aichatmcp.core.RESULT_SHOW
+import app.aichatmcp.core.ReadItem
 import app.aichatmcp.core.ReadMark
 import app.aichatmcp.core.ReadMarks
 import app.aichatmcp.core.ReadPlan
@@ -49,6 +51,7 @@ import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
 import app.aichatmcp.core.NoticeKind
 import app.aichatmcp.core.Persona
+import app.aichatmcp.core.SpeakerJudge
 import app.aichatmcp.core.PiperNames
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.PiperVoice
@@ -65,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import app.aichatmcp.local.LocalLlm
 import app.aichatmcp.local.VisionLlm
 import app.aichatmcp.local.effectiveConfig
@@ -123,6 +127,9 @@ class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: Strin
 data class ToolsState(val available: List<String> = emptyList(), val errors: List<String> = emptyList(), val loading: Boolean = true)
 
 private const val RESULT_PREVIEW_CHARS = 160
+
+/** So viele unklare Reden fragt der KI-Rückfall höchstens je Dokument ab (jede Frage kostet Zeit am Server). */
+private const val MAX_JUDGED_SPEECHES = 400
 private const val LONG_MESSAGE_CHARS = 900
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
@@ -579,14 +586,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun docRead(fromMark: Boolean = false) {
         val doc = pendingDoc ?: return
         val source = doc.doc ?: DocText(doc.name, doc.kind, doc.text)
-        val plan = ReadPlan.of(source)
+        val tag = LanguageDetect.detect(source.text)?.tag ?: languageTag() ?: Locale.getDefault().toLanguageTag()
+        // Wörtliche Rede mit eigenen Stimmen: nur mit Piper-Erzählerstimme und mindestens einer Stimme für männliche oder weibliche Rede
+        val dialogue = (persona.voiceMale.isNotEmpty() || persona.voiceFemale.isNotEmpty()) && speechOut.piperFor(persona.voice, tag) != null
+        val plan = ReadPlan.of(source, dialogue = dialogue)
         if (plan.size == 0) {
             status = "Es gibt nichts zum Vorlesen."
             return
         }
         val mark = if (fromMark) marks.get(doc.uri) else null
         val start = mark?.let { ReadMarks.restoreIndex(it, plan.size) } ?: 0
-        val tag = LanguageDetect.detect(source.text)?.tag ?: languageTag() ?: Locale.getDefault().toLanguageTag()
         speechOut.installedVoices(listOf(tag)) { installed ->
             if (installed[tag] == true || speechOut.piperFor(persona.voice, tag) != null) beginReading(doc, plan, tag, start)
             else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, plan, tag, start) }
@@ -640,6 +649,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         val r = Reader(plan, SpeechReaderOutput(speechOut) { status = it }, describer, events, tag, "en-US", start)
         reader = r
+        startJudge(plan, start)
         speechOut.setItemSink(object : SpeechOutput.ItemSink {
             override fun done(id: String) = r.utteranceDone(id)
             override fun failed(id: String) = r.utteranceFailed(id)
@@ -665,7 +675,45 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         markList = marks.all()
     }
 
+    private var judgeJob: Job? = null
+
+    /**
+     * KI-Rückfall: ordnet Reden, die die Regeln offen ließen, im Hintergrund über den Server zu (zuerst die ab der aktuellen Lesestelle).
+     * Jede Antwort setzt die Rolle der Rede nachträglich; was schon gesprochen wurde, bleibt, wie es war.
+     */
+    private fun startJudge(plan: ReadPlan, startItem: Int) {
+        judgeJob?.cancel()
+        val dialogue = plan.dialogue ?: return
+        if (!config.dialogueJudge || config.backend != BACKEND_SERVER) return
+        val pending = dialogue.unresolvedFrom(plan.items.getOrNull(startItem) as? ReadItem.Speech).take(MAX_JUDGED_SPEECHES)
+        if (pending.isEmpty()) return
+        val judge = SpeakerJudge(ChatClient(config.baseUrl, config.apiKey), config.model)
+        judgeJob = viewModelScope.launch {
+            var failures = 0
+            var done = 0
+            for (i in pending) {
+                val (before, quote, after) = dialogue.context(i)
+                val gender = try {
+                    withTimeout(60_000) { judge.ask(before, quote, after) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (++failures >= 3) {
+                        status = "Zuordnung der Reden über den Server nicht möglich: ${e.message ?: "keine Antwort"}"
+                        return@launch
+                    }
+                    null
+                }
+                if (gender != null) dialogue.assign(i, gender)
+                done++
+                if (done % 10 == 0) status = "Reden zugeordnet: $done von ${pending.size}"
+            }
+            status = "Reden zugeordnet: ${pending.size} von ${pending.size}"
+        }
+    }
+
     private fun endReading() {
+        judgeJob?.cancel()
         reader?.takeIf { it.state != ReaderState.STOPPED }?.stop() // merkt die Stelle
         pictures?.cancel()
         reader = null
@@ -897,6 +945,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Die Stimme des gewählten Companions gilt für Antworten und Vorlesen. */
     private fun syncVoice() {
         speechOut.voice = persona.voice
+        speechOut.voiceMale = persona.voiceMale
+        speechOut.voiceFemale = persona.voiceFemale
     }
 
     fun installVoices() {

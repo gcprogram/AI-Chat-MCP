@@ -28,7 +28,16 @@ class ReadableDoc(val pages: List<List<Block>>, val images: (String) -> ByteArra
 
 /** Ein Element beim Vorlesen: ein Abschnitt Text oder ein Bild, das erst beschrieben werden muss. */
 sealed interface ReadItem {
-    data class Speech(val text: String) : ReadItem
+    /**
+     * [parts]: der Abschnitt in Erzähler- und Rede-Stücke zerlegt (siehe [Dialogue]); leer = alles mit der Standardstimme. Gehört nicht zur
+     * Gleichheit, damit Pläne vergleichbar bleiben, und wird von der Zuordnung (auch nachträglich, durch den KI-Rückfall) gesetzt.
+     */
+    data class Speech(val text: String) : ReadItem {
+        @Volatile var parts: List<Utterance> = emptyList()
+
+        /** Beginnt der Abschnitt mit einem neuen Absatz? (nur im Dialogmodus gesetzt; dort steht zwischen Absätzen eines Abschnitts ein Zeilenumbruch) */
+        var paragraphStart: Boolean = true
+    }
     /** [decorative]: Zierde, wird weder beschrieben noch vorgelesen (auch nicht der Ersatztext). */
     data class Picture(val ref: String, val alt: String, val decorative: Boolean = false) : ReadItem
 }
@@ -38,6 +47,9 @@ sealed interface ReadItem {
  * Ohne echte Seiten (TXT, MD, DOCX, HTML) gibt es nur eine; dann springen die Tasten um [JUMP_ITEMS] Abschnitte.
  */
 class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
+    /** Im Dialogmodus: die Zuordnung der wörtlichen Reden (für den KI-Rückfall); sonst null. */
+    var dialogue: Dialogue? = null
+
     val size: Int get() = items.size
     val hasPages: Boolean get() = pageStarts.size > 1
 
@@ -57,8 +69,11 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
         const val JUMP_ITEMS = 10
         const val CHUNK_CHARS = 400 // ca. 25 Sekunden Sprechzeit: fein genug zum Springen, grob genug für flüssiges Sprechen
 
-        /** Baut den Ablauf aus einem eingelesenen Dokument. */
-        fun of(doc: DocText, chunkMax: Int = CHUNK_CHARS): ReadPlan {
+        /**
+         * Baut den Ablauf aus einem eingelesenen Dokument. Mit [dialogue] werden die Abschnitte aus den echten Absätzen gebildet und wörtliche
+         * Rede wird erkannt und Figuren zugeordnet ([Dialogue]); ohne bleibt alles wie bisher.
+         */
+        fun of(doc: DocText, chunkMax: Int = CHUNK_CHARS, dialogue: Boolean = false): ReadPlan {
             val pages = doc.readable?.pages ?: listOf(listOf(Block.Para(doc.text)))
             val items = mutableListOf<ReadItem>()
             val starts = mutableListOf<Int>()
@@ -69,7 +84,8 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
                 val buffer = mutableListOf<String>()
                 fun flush() {
                     if (buffer.isNotEmpty()) {
-                        Documents.speechChunks(buffer.joinToString("\n\n"), chunkMax).forEach { items += ReadItem.Speech(it) }
+                        if (dialogue) DialogueText.chunks(buffer, chunkMax).forEach { (text, start) -> items += ReadItem.Speech(text).also { it.paragraphStart = start } }
+                        else Documents.speechChunks(buffer.joinToString("\n\n"), chunkMax).forEach { items += ReadItem.Speech(it) }
                         buffer.clear()
                     }
                 }
@@ -86,7 +102,7 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
                 flush()
                 if (items.size > before) starts += before
             }
-            return ReadPlan(items, starts)
+            return ReadPlan(items, starts).also { if (dialogue) it.dialogue = Dialogue.analyze(it) }
         }
     }
 }

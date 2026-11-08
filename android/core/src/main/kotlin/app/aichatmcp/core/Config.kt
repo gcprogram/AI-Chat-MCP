@@ -45,6 +45,8 @@ data class Config(
     @SerialName("speech_online") val speechOnline: Boolean = true,
     /** Schlüsselwörter aus mcp_servers.json (`keywords` je Alias) lösen Werkzeuge aus. Standard: aus. */
     @SerialName("keywords_enabled") val keywordsEnabled: Boolean = false,
+    /** Beim Vorlesen mit Stimmen für wörtliche Rede: Reden, die die Regeln nicht zuordnen, vom Server (KI) zuordnen lassen. Standard: aus (Textausschnitte gehen an den Server). */
+    @SerialName("dialogue_judge") val dialogueJudge: Boolean = false,
     /** Sprechgeschwindigkeit der Sprachausgabe (1.0 = normal; die deutsche Stimme spricht etwa 20 % langsamer als die englische). */
     @SerialName("speech_rate") val speechRate: Double = 1.0,
 ) {

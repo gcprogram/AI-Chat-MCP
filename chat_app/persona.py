@@ -31,6 +31,8 @@ class Persona:
     approved_tools: list[str] = field(default_factory=list)  # davon vorab genehmigt: laufen ohne Rückfrage
     tool_mode: str = "marker"  # "marker": Textmarker im Prompt | "native": Parameter 'tools' der Chat-API
     voice: str = ""  # Stimme der Sprachausgabe (nur Android-App); hier nur durchgereicht, damit Speichern sie nicht verliert
+    voice_male: str = ""  # Stimme für männliche wörtliche Rede beim Vorlesen (nur Android-App, durchgereicht)
+    voice_female: str = ""  # Stimme für weibliche wörtliche Rede beim Vorlesen (nur Android-App, durchgereicht)
     id: str = ""  # Dateiname ohne .json; wird beim Laden/Speichern gesetzt, nicht in der Datei gespeichert
 
     def system_prompt(self, user_name: str, tools_section: str = "") -> str:

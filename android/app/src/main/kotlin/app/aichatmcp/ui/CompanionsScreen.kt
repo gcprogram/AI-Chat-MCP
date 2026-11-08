@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.core.PIPER_PREFIX
 import app.aichatmcp.core.Persona
 import app.aichatmcp.core.Speech
 import app.aichatmcp.core.normalizeName
@@ -79,6 +80,8 @@ private fun PersonaForm(
     var approved by remember { mutableStateOf(initial.approvedTools.map { normalizeName(it) }.toSet()) }
     var confirmDelete by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(initial.voice) }
+    var voiceMale by remember { mutableStateOf(initial.voiceMale) }
+    var voiceFemale by remember { mutableStateOf(initial.voiceFemale) }
     var voiceOptions by remember { mutableStateOf<List<SpeechOutput.VoiceOption>?>(null) } // null = wird noch geladen
     LaunchedEffect(language) {
         voiceOptions = null
@@ -128,6 +131,29 @@ private fun PersonaForm(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
         )
     }
+    // Stimmen für wörtliche Rede: nur Piper-Stimmen (die Systemstimme lässt sich mitten im Text nicht wechseln), nur mit Piper-Erzähler
+    val piperOptions = options.filter { it.name.startsWith(PIPER_PREFIX) }
+    if (piperOptions.isNotEmpty()) {
+        Text(
+            "Wörtliche Rede beim Vorlesen von Dokumenten: Der Erzähler spricht mit der Stimme oben (muss eine Piper-Stimme sein), Reden von Männern und Frauen " +
+                "mit diesen Stimmen. Wer spricht, erkennt die App am Begleitsatz („sagte sie“), an Vornamen und am Absatzwechsel; wo das nicht klappt, spricht der Erzähler.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        listOf(
+            Triple("Stimme für männliche Rede", voiceMale) { v: String -> voiceMale = v },
+            Triple("Stimme für weibliche Rede", voiceFemale) { v: String -> voiceFemale = v },
+        ).forEach { (label, current, set) ->
+            val none = "(wie Erzähler)"
+            val shown = piperOptions.firstOrNull { it.name == current }?.label ?: if (current.isEmpty()) none else "(nicht verfügbar: Erzähler)"
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                DropdownField(
+                    label, listOf(none) + piperOptions.map { it.label }, shown,
+                    { picked -> set(piperOptions.firstOrNull { it.label == picked }?.name.orEmpty()) }, Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = { onTestVoice(language, current) }, enabled = current.isNotEmpty()) { Text("Anhören") }
+            }
+        }
+    }
     TextSetting("Begrüßung", greeting, { greeting = it }, minLines = 2, maxLines = 5)
     TextSetting("Regeln (eine pro Zeile)", rules, { rules = it }, minLines = 2, maxLines = 8)
 
@@ -151,7 +177,7 @@ private fun PersonaForm(
             onSave(
                 initial.copy(
                     name = name.trim(), description = description.trim(), language = language.trim().ifEmpty { "Deutsch" },
-                    voice = voice, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                    voice = voice, voiceMale = voiceMale, voiceFemale = voiceFemale, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
                     tools = available.filter { it in tools } + hidden,
                     approvedTools = available.filter { it in approved && it in tools } + hiddenApproved,
                 ),

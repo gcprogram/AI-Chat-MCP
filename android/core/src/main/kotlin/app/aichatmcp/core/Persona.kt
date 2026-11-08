@@ -29,6 +29,9 @@ data class Persona(
     @SerialName("tool_mode") val toolMode: String = TOOL_MODE_MARKER,
     /** Name der Stimme der Sprachausgabe (Android-Voice, z. B. "de-de-x-nfh-local"); leer = Standardstimme der Sprache. */
     val voice: String = "",
+    /** Stimmen für wörtliche Rede beim Vorlesen von Dokumenten (nur Piper-Stimmen, Format wie [voice]); leer = Standardstimme des Erzählers. */
+    @SerialName("voice_male") val voiceMale: String = "",
+    @SerialName("voice_female") val voiceFemale: String = "",
     /** Dateiname ohne .json; wird beim Laden gesetzt, nicht in der Datei gespeichert. */
     @Transient val id: String = "",
 ) {

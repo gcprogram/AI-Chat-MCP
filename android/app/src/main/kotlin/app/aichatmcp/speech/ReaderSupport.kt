@@ -25,6 +25,9 @@ class SpeechReaderOutput(private val speech: SpeechOutput, private val onProblem
     override fun speak(text: String, id: String, language: String?, flush: Boolean) =
         speech.speakItem(text, id, language, flush, onProblem)
 
+    override fun speakParts(parts: List<app.aichatmcp.core.Utterance>, id: String, language: String?, flush: Boolean) =
+        speech.speakItemParts(parts, id, language, flush, onProblem)
+
     override fun stopSpeaking() = speech.stopItems()
 }
 

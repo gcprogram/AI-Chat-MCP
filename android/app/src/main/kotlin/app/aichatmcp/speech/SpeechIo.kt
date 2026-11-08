@@ -19,6 +19,8 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import app.aichatmcp.core.PiperNames
 import app.aichatmcp.core.PiperStore
+import app.aichatmcp.core.Role
+import app.aichatmcp.core.Utterance
 import app.aichatmcp.core.Speech
 import java.util.Locale
 
@@ -212,6 +214,34 @@ class SpeechOutput(private val context: Context) {
         val installed = piperStore?.list()?.firstOrNull { it.name == name } ?: return null
         val wanted = languageTag ?: Locale.getDefault().toLanguageTag()
         return name.takeIf { installed.language == null || Speech.voiceFitsLanguage(installed.language!!, wanted) }
+    }
+
+    /** Stimmen für männliche und weibliche wörtliche Rede beim Vorlesen (nur Piper; leer = die Stimme des Erzählers). */
+    @Volatile var voiceMale: String = ""
+    @Volatile var voiceFemale: String = ""
+
+    /**
+     * Spricht einen Abschnitt, der in Erzähler- und Rede-Stücke zerlegt ist, jedes mit der Stimme seiner Rolle. Das geht nur mit einer
+     * Piper-Stimme für den Erzähler (die Systemstimme lässt sich mitten in der Warteschlange nicht wechseln); sonst wird alles zusammen mit
+     * der Standardstimme gesprochen. Stimmen, die nicht installiert sind oder nicht zur Sprache passen, ersetzt die Stimme des Erzählers.
+     */
+    fun speakItemParts(parts: List<Utterance>, id: String, languageTag: String?, flush: Boolean, onProblem: (String) -> Unit) {
+        val narrator = piperFor(voice, languageTag)
+        if (narrator == null) {
+            speakItem(parts.joinToString(" ") { it.text }, id, languageTag, flush, onProblem)
+            return
+        }
+        val male = piperFor(voiceMale, languageTag) ?: narrator
+        val female = piperFor(voiceFemale, languageTag) ?: narrator
+        val segments = mutableListOf<PiperSpeaker.Segment>()
+        for (p in parts) {
+            val v = when (p.role) { Role.MALE -> male; Role.FEMALE -> female; Role.NARRATOR -> narrator }
+            val last = segments.lastOrNull()
+            if (last != null && last.voice == v) segments[segments.size - 1] = PiperSpeaker.Segment(v, last.text + " " + p.text)
+            else segments += PiperSpeaker.Segment(v, p.text)
+        }
+        if (flush) tts?.stop()
+        piper()?.speakSegments(segments, id, flush, rate, onProblem)
     }
 
     /** Für Tests und Vorschau: erzeugt Audio einer Piper-Stimme ohne es abzuspielen. */

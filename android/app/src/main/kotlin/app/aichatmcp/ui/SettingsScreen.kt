@@ -56,6 +56,7 @@ fun SettingsScreen(
     var voiceAutoSend by remember { mutableStateOf(c.voiceAutoSend) }
     var speechOnline by remember { mutableStateOf(c.speechOnline) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
+    var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
     var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
     var resultChars by remember { mutableStateOf(c.toolResultChars.toString()) }
@@ -213,6 +214,18 @@ fun SettingsScreen(
             OutlinedButton(onClick = vm::refreshVoices) { Text("Aktualisieren") }
         }
 
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Unklare wörtliche Rede vom Server zuordnen lassen (KI)", modifier = Modifier.weight(1f))
+            Switch(checked = dialogueJudge, onCheckedChange = { dialogueJudge = it })
+        }
+        Text(
+            "Gilt beim Vorlesen mit Stimmen für männliche und weibliche Rede (Companion-Editor). Die Regeln erkennen den Sprecher am Begleitsatz, an " +
+                "Vornamen und am Absatzwechsel. Für den Rest fragt die App den Server (Chat-Modell, z. B. LM Studio) im Hintergrund, während schon " +
+                "gelesen wird; bis die Antwort da ist, spricht der Erzähler. Dabei gehen kurze Textausschnitte (etwa 300 Zeichen je Rede) an den Server. " +
+                "Nur bei Server-Betrieb, nicht mit dem Modell auf dem Handy. Standard: aus.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         SectionTitle("Piper-Stimmen (offline, auch eigene)")
         Text(
             "Piper-Stimmen sprechen komplett auf dem Gerät, auch ohne Google-Sprachausgabe. „Stimmenordner wählen…“ übernimmt einen Ordner " +
@@ -280,7 +293,7 @@ fun SettingsScreen(
                     frequencyPenalty = frequency.toDoubleOrNull() ?: c.frequencyPenalty,
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
-                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled,
+                    confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
                     speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                     maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
                     toolResultChars = resultChars.toIntOrNull() ?: c.toolResultChars,

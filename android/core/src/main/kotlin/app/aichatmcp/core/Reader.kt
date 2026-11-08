@@ -8,6 +8,13 @@ interface ReaderOutput {
     /** Spricht [text] in [language] (Sprach-Tag oder null). [flush] ersetzt alles Laufende, sonst wird angehängt. */
     fun speak(text: String, id: String, language: String?, flush: Boolean)
 
+    /**
+     * Wie [speak], aber der Abschnitt ist in Erzähler- und Rede-Stücke zerlegt (jedes mit seiner [Role]); die Rückmeldung kommt erst nach dem
+     * letzten Stück. Ohne eigene Umsetzung wird alles zusammen mit einer Stimme gesprochen.
+     */
+    fun speakParts(parts: List<Utterance>, id: String, language: String?, flush: Boolean) =
+        speak(parts.joinToString(" ") { it.text }, id, language, flush)
+
     /** Bricht das Sprechen sofort ab (auch Angehängtes). */
     fun stopSpeaking()
 }
@@ -207,7 +214,7 @@ class Reader(
         events.onPosition(index, total)
         when (val item = plan.items[i]) {
             is ReadItem.Speech -> {
-                speak(i, item.text, textLanguage, flush = true, fromImage = false)
+                speak(i, item.text, textLanguage, flush = true, fromImage = false, parts = item.parts)
                 queueNext(i)
                 prefetchPictureAfter(i)
             }
@@ -220,13 +227,17 @@ class Reader(
         val n = i + 1
         val item = plan.items.getOrNull(n) as? ReadItem.Speech ?: return
         if (n <= queuedUpTo) return
-        speak(n, item.text, textLanguage, flush = false, fromImage = false, announce = false)
+        speak(n, item.text, textLanguage, flush = false, fromImage = false, announce = false, parts = item.parts)
     }
 
-    private fun speak(i: Int, text: String, language: String?, flush: Boolean, fromImage: Boolean, announce: Boolean = true) {
+    private fun speak(
+        i: Int, text: String, language: String?, flush: Boolean, fromImage: Boolean, announce: Boolean = true,
+        parts: List<Utterance> = emptyList(),
+    ) {
         queuedUpTo = i
         if (announce) events.onSpoken(text, fromImage)
-        output.speak(text, "r:$generation:$i", language, flush)
+        if (parts.isEmpty()) output.speak(text, "r:$generation:$i", language, flush)
+        else output.speakParts(parts, "r:$generation:$i", language, flush)
     }
 
     private fun advanceFrom(done: Int) {
@@ -240,7 +251,7 @@ class Reader(
         when (val item = plan.items[n]) {
             is ReadItem.Speech -> {
                 // war schon angehängt (läuft bereits); sonst jetzt sprechen
-                if (queuedUpTo < n) speak(n, item.text, textLanguage, flush = true, fromImage = false) else events.onSpoken(item.text, false)
+                if (queuedUpTo < n) speak(n, item.text, textLanguage, flush = true, fromImage = false, parts = item.parts) else events.onSpoken(item.text, false)
                 queueNext(n)
                 prefetchPictureAfter(n)
             }

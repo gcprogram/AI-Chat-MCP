@@ -3,7 +3,17 @@ package app.aichatmcp
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.aichatmcp.core.DocKind
+import app.aichatmcp.core.DocText
 import app.aichatmcp.core.PiperStore
+import app.aichatmcp.core.ReadItem
+import app.aichatmcp.core.ReadPlan
+import app.aichatmcp.core.Reader
+import app.aichatmcp.core.ReaderEvents
+import app.aichatmcp.core.ReaderPictures
+import app.aichatmcp.speech.SpeechReaderOutput
+import app.aichatmcp.core.Role
+import app.aichatmcp.core.Utterance
 import app.aichatmcp.speech.SpeechOutput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -28,6 +38,20 @@ class PiperOnDeviceTest {
     private val text = "Der Hafen von Rotterdam ist der größte Seehafen Europas. Jährlich werden dort mehr als vierhundert Millionen Tonnen Güter umgeschlagen."
 
     private fun output() = SpeechOutput(context).apply { piperStore = store; piperThreads = { 4 }; piperVolume = 0f }
+
+    /**
+     * Geräte ohne `run-as` (Emulator): Stimmen aus `Android/data/app.aichatmcp/files/piper-test` (per adb dorthin kopiert, Ordner wie
+     * `files/piper`) übernehmen, solange noch keine installiert ist.
+     */
+    private fun stageFromExternal() {
+        if (store.list().isNotEmpty()) return
+        val src = File(context.getExternalFilesDir(null), "piper-test")
+        if (src.isDirectory) src.copyRecursively(File(context.filesDir, "piper"), overwrite = true)
+    }
+
+    init {
+        stageFromExternal()
+    }
 
     @Test
     fun piperVoiceSynthesizesSpeechAndMatchesLanguage() {
@@ -126,4 +150,80 @@ class PiperOnDeviceTest {
             out.shutdown()
         }
     }
+
+    /**
+     * Mehrere Stimmen in einem Abschnitt (Erzähler, männliche und weibliche Rede): die Rückmeldung kommt einmal, erst nach dem letzten Stück, und
+     * auch eine Stimme mit anderer Abtastrate (low = 16 kHz) läuft im selben AudioTrack durch.
+     */
+    @Test
+    fun partsWithSeveralVoicesReportOnceAfterTheLastPart() {
+        val voices = store.list()
+        if (voices.size < 2) { Log.i("AiChatPiper", "Weniger als zwei Piper-Stimmen: Test übersprungen"); return }
+        val narrator = voices.first()
+        val other = voices.firstOrNull { it.name.contains("low") && it.name != narrator.name } ?: voices[1]
+        val out = output()
+        out.voice = narrator.id
+        out.voiceMale = other.id
+        out.voiceFemale = "" // leer: der Erzähler spricht auch die weibliche Rede
+        val done = CopyOnWriteArrayList<String>()
+        val latch = CountDownLatch(1)
+        out.setItemSink(object : SpeechOutput.ItemSink {
+            override fun done(id: String) { done += id; latch.countDown() }
+            override fun failed(id: String) { done += "FAILED:$id"; latch.countDown() }
+        })
+        try {
+            val start = System.nanoTime()
+            out.speakItemParts(
+                listOf(
+                    Utterance("Das sagte der Erzähler.", Role.NARRATOR), Utterance("Hallo, wie geht es dir?", Role.MALE),
+                    Utterance("Antwortete sie leise.", Role.NARRATOR), Utterance("Gut, danke.", Role.FEMALE),
+                ),
+                "r:4:0", "de-DE", true,
+            ) { Log.w("AiChatPiper", it) }
+            assertTrue("Keine Rückmeldung: $done", latch.await(90, TimeUnit.SECONDS))
+            assertEquals(listOf("r:4:0"), done.toList())
+            Log.i("AiChatPiper", "Mehrstimmig (%s + %s): gehört nach %.1f s".format(narrator.name, other.name, (System.nanoTime() - start) / 1e9))
+            assertTrue("Zu schnell fertig: Abschnitt nicht abgespielt?", (System.nanoTime() - start) / 1e9 > 4)
+        } finally {
+            out.shutdown()
+        }
+    }
+
+    /** Die ganze Kette wie im Betrieb: Dialogdokument -> Ablauf mit Rollen -> Vorleser -> Sprachausgabe mit zwei Stimmen -> Ende. */
+    @Test
+    fun readerReadsADialogueDocumentWithTwoVoicesToTheEnd() {
+        val voices = store.list()
+        if (voices.size < 2) { Log.i("AiChatPiper", "Weniger als zwei Piper-Stimmen: Test übersprungen"); return }
+        val out = output()
+        out.voice = voices[0].id
+        out.voiceMale = voices[1].id
+        out.voiceFemale = voices[0].id
+        val text = "„Kommst du heute Abend?“, fragte Anna.\n\n„Ja, gern“, sagte Thomas.\n\nSie gingen gemeinsam los."
+        val plan = ReadPlan.of(DocText("t.md", DocKind.MARKDOWN, text), dialogue = true)
+        val roles = (plan.items.single() as ReadItem.Speech).parts.map { it.role.name }
+        Log.i("AiChatPiper", "Rollen: $roles")
+        assertEquals(listOf("FEMALE", "NARRATOR", "MALE", "NARRATOR"), roles)
+        val finished = CountDownLatch(1)
+        val pictures = object : ReaderPictures {
+            override fun describe(picture: ReadItem.Picture, done: (String?) -> Unit) = done(null)
+            override fun prefetch(picture: ReadItem.Picture) {}
+            override fun cancel() {}
+        }
+        val events = object : ReaderEvents { override fun onFinished() { finished.countDown() } }
+        lateinit var reader: Reader
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { reader = Reader(plan, SpeechReaderOutput(out) { Log.w("AiChatPiper", it) }, pictures, events, "de-DE") }
+        out.setItemSink(object : SpeechOutput.ItemSink {
+            override fun done(id: String) = reader.utteranceDone(id)
+            override fun failed(id: String) = reader.utteranceFailed(id)
+        })
+        try {
+            val start = System.nanoTime()
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { reader.play() }
+            assertTrue("Vorlesen wurde nicht fertig", finished.await(120, TimeUnit.SECONDS))
+            Log.i("AiChatPiper", "Dialogdokument gelesen in %.1f s".format((System.nanoTime() - start) / 1e9))
+        } finally {
+            out.shutdown()
+        }
+    }
 }
+
