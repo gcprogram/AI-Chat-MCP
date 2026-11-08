@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.util.Log
+import app.aichatmcp.core.PiperNames
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.studio.AudioMath
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -31,6 +32,8 @@ class PiperSpeaker(
     private val onDone: (String) -> Unit,
     private val onFailed: (String) -> Unit,
     private val volume: () -> Float = { 1f },
+    /** Schwankung der Stimme: (noise_scale, noise_scale_w). Gilt beim Laden einer Stimme; eine Änderung lädt die Stimmen neu. */
+    private val noise: () -> Pair<Float, Float> = { DEFAULT_NOISE },
 ) {
     /** Ein Stück Text mit der Piper-Stimme, die es sprechen soll. */
     class Segment(val voice: String, val text: String)
@@ -45,6 +48,7 @@ class PiperSpeaker(
     private var written = 0L // Frames seit Anlegen des AudioTrack (Mono: Frames = Samples)
     private val ends = ConcurrentLinkedQueue<Pair<String, Long>>()
     private val engines = LinkedHashMap<String, OfflineTts>(4, 0.75f, true) // Zugriffsreihenfolge: das am längsten ungenutzte steht vorn
+    private var loadedNoise = DEFAULT_NOISE // Schwankungswerte, mit denen die geladenen Stimmen gebaut wurden
 
     init {
         watcher.scheduleWithFixedDelay({ checkPlayed() }, 40, 40, TimeUnit.MILLISECONDS)
@@ -93,7 +97,7 @@ class PiperSpeaker(
     /** Erzeugt Audio ohne es abzuspielen (für Tests): Samples und Abtastrate, oder null bei unvollständiger Stimme. */
     fun render(voice: String, text: String, speed: Float = 1f): Pair<FloatArray, Int>? {
         val tts = engineFor(voice) ?: return null
-        val audio = tts.generate(text, sid = 0, speed = speed)
+        val audio = tts.generate(text, sid = PiperNames.speakerOf(voice), speed = speed)
         return audio.samples to audio.sampleRate
     }
 
@@ -101,7 +105,7 @@ class PiperSpeaker(
         var mine = 0L
         for (segment in job.segments) {
             if (job.generation != generation) return
-            val tts = engineFor(segment.voice) ?: throw IllegalStateException(store.problem(segment.voice) ?: "Stimme '${segment.voice}' nicht gefunden")
+            val tts = engineFor(segment.voice) ?: throw IllegalStateException(store.problem(PiperNames.nameOf(segment.voice)) ?: "Stimme '${PiperNames.nameOf(segment.voice)}' nicht gefunden")
             if (job.generation != generation) return
             val rate = tts.sampleRate()
             // Ein ausdrückliches Objekt statt einer Lambda: der native Code ruft invoke([F)Ljava/lang/Integer; auf, und diese Signatur
@@ -118,19 +122,30 @@ class PiperSpeaker(
                     return 1
                 }
             }
-            tts.generateWithCallback(segment.text, sid = 0, speed = job.speed, callback = callback)
+            tts.generateWithCallback(segment.text, sid = PiperNames.speakerOf(segment.voice), speed = job.speed, callback = callback)
         }
         if (job.generation != generation) return
         synchronized(trackLock) { ends.add(job.id to written) }
         if (mine == 0L) checkPlayed() // nichts erzeugt (z. B. nur Satzzeichen): sofort als gehört melden
     }
 
-    private fun engineFor(voice: String): OfflineTts? = synchronized(engines) {
+    /** Lädt die Stimme (Ordner) zur Kennung; ein angehängter Sprecher (`#4`) gehört nicht zum Ordnernamen und teilt sich das geladene Modell. */
+    private fun engineFor(voiceWithSpeaker: String): OfflineTts? = synchronized(engines) {
+        val voice = PiperNames.nameOf(voiceWithSpeaker)
+        val wanted = noise()
+        if (wanted != loadedNoise) { // Schwankung geändert: die Werte stecken in der geladenen Stimme, also neu laden
+            engines.values.forEach { runCatching { it.release() } }
+            engines.clear()
+            loadedNoise = wanted
+        }
         engines[voice]?.let { return it }
         val files = store.files(voice) ?: return null
         val config = OfflineTtsConfig(
             model = OfflineTtsModelConfig(
-                vits = OfflineTtsVitsModelConfig(model = files.onnx.path, tokens = files.tokens.path, dataDir = files.espeakData.path),
+                vits = OfflineTtsVitsModelConfig(
+                    model = files.onnx.path, tokens = files.tokens.path, dataDir = files.espeakData.path,
+                    noiseScale = wanted.first, noiseScaleW = wanted.second,
+                ),
                 numThreads = threads().coerceIn(1, 8),
                 debug = false,
                 provider = "cpu",
@@ -199,5 +214,8 @@ class PiperSpeaker(
 
         /** Abtastrate des AudioTrack; Stimmen mit anderer Rate (low/x_low: 16 kHz) werden angeglichen. */
         const val OUT_RATE = 22050
+
+        /** Vorgabewerte von Piper/sherpa-onnx für noise_scale und noise_scale_w. */
+        val DEFAULT_NOISE = 0.667f to 0.8f
     }
 }

@@ -1,7 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
@@ -58,6 +61,8 @@ fun SettingsScreen(
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
     var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
+    var piperNoise by remember { mutableStateOf(c.piperNoise.toString()) }
+    var piperNoiseW by remember { mutableStateOf(c.piperNoiseW.toString()) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
     var resultChars by remember { mutableStateOf(c.toolResultChars.toString()) }
     var timeout by remember { mutableStateOf(c.toolTimeout.toString()) }
@@ -227,6 +232,13 @@ fun SettingsScreen(
         )
 
         SectionTitle("Piper-Stimmen (offline, auch eigene)")
+        NumberSetting("Schwankung der Stimme (0.667 = Vorgabe, höher = lebendiger)", piperNoise) { piperNoise = it }
+        NumberSetting("Schwankung der Betonung/Rhythmik (0.8 = Vorgabe, höher = abwechslungsreicher)", piperNoiseW) { piperNoiseW = it }
+        Text(
+            "Gilt nach dem Speichern (die Stimmen werden neu geladen). Zum Probieren z. B. 0.9 und 1.1 eintragen, speichern und " +
+                "eine Stimme anhören; zu hohe Werte lassen sie stolpern oder rauschen (zurück auf 0.667 und 0.8).",
+            style = MaterialTheme.typography.bodySmall,
+        )
         Text(
             "Piper-Stimmen sprechen komplett auf dem Gerät, auch ohne Google-Sprachausgabe. „Stimmenordner wählen…“ übernimmt einen Ordner " +
                 "im Format der sherpa-onnx-Pakete (vits-piper-…: .onnx, tokens.txt, einmalig espeak-ng-data). Eine eigene Stimme entsteht durch " +
@@ -253,8 +265,14 @@ fun SettingsScreen(
                         Text(voice.title)
                         Text(voice.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     }
-                    OutlinedButton(onClick = { vm.testPiper(voice) }) { Text("Anhören") }
+                    if (voice.speakers.size < 2) OutlinedButton(onClick = { vm.testPiper(voice) }) { Text("Anhören") }
                     TextButton(onClick = { vm.deletePiper(voice) }) { Text("Löschen") }
+                }
+                if (voice.speakers.size >= 2) {
+                    Text("Mehrere Sprecher/Stimmungen, im Companion-Editor einzeln wählbar. Anhören:", style = MaterialTheme.typography.bodySmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        voice.speakers.forEach { (speaker, sid) -> OutlinedButton(onClick = { vm.testPiper(voice, sid) }) { Text(speaker) } }
+                    }
                 }
             }
         }
@@ -295,6 +313,8 @@ fun SettingsScreen(
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                     confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
                     speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
+                    piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
+                    piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,
                     maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
                     toolResultChars = resultChars.toIntOrNull() ?: c.toolResultChars,
                     toolTimeout = timeout.toIntOrNull() ?: c.toolTimeout,

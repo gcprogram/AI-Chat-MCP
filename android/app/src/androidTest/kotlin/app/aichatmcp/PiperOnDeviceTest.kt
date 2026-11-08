@@ -44,9 +44,9 @@ class PiperOnDeviceTest {
      * `files/piper`) übernehmen, solange noch keine installiert ist.
      */
     private fun stageFromExternal() {
-        if (store.list().isNotEmpty()) return
         val src = File(context.getExternalFilesDir(null), "piper-test")
-        if (src.isDirectory) src.copyRecursively(File(context.filesDir, "piper"), overwrite = true)
+        val dst = File(context.filesDir, "piper")
+        src.listFiles().orEmpty().filter { it.isDirectory && !File(dst, it.name).exists() }.forEach { it.copyRecursively(File(dst, it.name), overwrite = true) }
     }
 
     init {
@@ -225,5 +225,27 @@ class PiperOnDeviceTest {
             out.shutdown()
         }
     }
-}
 
+    /** Stimme mit mehreren Sprechern (z. B. Thorsten Emotional): jeder Sprecher liefert Audio, und geänderte Schwankung lädt neu. */
+    @Test
+    fun speakersAndNoiseChangesWork() {
+        val voice = store.list().firstOrNull { it.speakers.size >= 2 }
+        if (voice == null) { Log.i("AiChatPiper", "Keine Stimme mit mehreren Sprechern: Test übersprungen"); return }
+        val out = output()
+        try {
+            val last = voice.speakers.last()
+            assertEquals("${voice.name}#${last.second}", out.piperFor("${voice.id}#${last.second}", "de-DE"))
+            assertEquals("${voice.name}#0", out.piperFor("${voice.id}#999", "de-DE")) // unbekannte Nummer: Sprecher 0
+            for ((speaker, sid) in voice.speakers) {
+                val (samples, rate) = out.renderPiper("${voice.name}#$sid", "Das ist ein kurzer Satz.")!!
+                Log.i("AiChatPiper", "Sprecher %s (%d): %.2f s".format(speaker, sid, samples.size.toDouble() / rate))
+                assertTrue("$speaker: Stille", samples.maxOf { kotlin.math.abs(it) } > 0.05f)
+            }
+            out.piperNoise = 1.0f to 1.0f // andere Schwankung: Stimme wird neu geladen und funktioniert weiter
+            val (again, _) = out.renderPiper(voice.name, "Das ist ein kurzer Satz.")!!
+            assertTrue("nach Wechsel der Schwankung: Stille", again.maxOf { kotlin.math.abs(it) } > 0.05f)
+        } finally {
+            out.shutdown()
+        }
+    }
+}

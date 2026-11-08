@@ -12,6 +12,46 @@ class PiperTest {
     private fun tempDir(): File = kotlin.io.path.createTempDirectory("piper").toFile()
 
     @Test
+    fun speakersComeFromTheJsonAndGetOwnChoices() {
+        val json = """{"num_speakers": 3, "speaker_id_map": {"neutral": 4, "amused": 0, "angry": 1}, "language": {"code": "de_DE"}}"""
+        assertEquals(listOf("amused" to 0, "angry" to 1, "neutral" to 4), PiperNames.speakersOf(json))
+        assertEquals(emptyList(), PiperNames.speakersOf("""{"speaker_id_map": {}}"""))
+        assertEquals(emptyList(), PiperNames.speakersOf(null))
+        val voice = PiperVoice("vits-piper-de_DE-thorsten_emotional-medium-int8", "de", PiperNames.speakersOf(json))
+        assertEquals(
+            listOf("piper:vits-piper-de_DE-thorsten_emotional-medium-int8#0", "piper:vits-piper-de_DE-thorsten_emotional-medium-int8#1", "piper:vits-piper-de_DE-thorsten_emotional-medium-int8#4"),
+            voice.choices.map { it.id },
+        )
+        assertEquals("Thorsten Emotional · medium – neutral", voice.choices.last().title)
+        assertEquals(listOf(PiperChoice("piper:ich", "Ich", null)), PiperVoice("ich", null).choices) // einfache Stimme: ein Eintrag, kein Sprecher
+        assertEquals("vits-x", PiperNames.nameOf("piper:vits-x#4"))
+        assertEquals(4, PiperNames.speakerOf("piper:vits-x#4"))
+        assertEquals(0, PiperNames.speakerOf("piper:vits-x"))
+        assertEquals(0, PiperNames.speakerOf("piper:vits-x#abc"))
+    }
+
+    @Test
+    fun storeListsSpeakersOfAMultiSpeakerVoice() {
+        val root = tempDir()
+        val dir = File(root, "de_DE-mood").apply { mkdirs() }
+        File(dir, "m.onnx").writeText("x")
+        File(dir, "tokens.txt").writeText("a 0")
+        File(dir, "m.onnx.json").writeText("""{"speaker_id_map": {"froh": 0, "traurig": 1}}""")
+        val voice = PiperStore(root).list().single()
+        assertEquals(listOf("froh" to 0, "traurig" to 1), voice.speakers)
+        assertEquals("de", voice.language)
+    }
+
+    @Test
+    fun noiseSettingsAreBounded() {
+        val c = Config(piperNoise = 9.0, piperNoiseW = -1.0).sanitize()
+        assertEquals(1.5, c.piperNoise)
+        assertEquals(0.0, c.piperNoiseW)
+        assertEquals(0.667, Config().piperNoise)
+        assertEquals(0.8, Config().piperNoiseW)
+    }
+
+    @Test
     fun languageComesFromJsonOrFolderName() {
         assertEquals("de", PiperNames.languageOf("x", """{"language": {"code": "de_DE", "family": "de"}}"""))
         assertEquals("en", PiperNames.languageOf("x", """{"language":{"code":"en-US"}}"""))

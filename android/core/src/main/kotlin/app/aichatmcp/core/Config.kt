@@ -49,12 +49,18 @@ data class Config(
     @SerialName("dialogue_judge") val dialogueJudge: Boolean = false,
     /** Sprechgeschwindigkeit der Sprachausgabe (1.0 = normal; die deutsche Stimme spricht etwa 20 % langsamer als die englische). */
     @SerialName("speech_rate") val speechRate: Double = 1.0,
+    /** Piper: Stärke der Zufallsschwankung der Stimme (0.667 = Vorgabe der Stimme; höher = lebendiger, aber unruhiger). */
+    @SerialName("piper_noise") val piperNoise: Double = 0.667,
+    /** Piper: Schwankung der Sprechrhythmik/Betonung (0.8 = Vorgabe; höher = abwechslungsreicher, bei zu viel Stolpern). */
+    @SerialName("piper_noise_w") val piperNoiseW: Double = 0.8,
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },
         userName = userName.trim().ifEmpty { "Nutzer" },
         temperature = temperature.coerceIn(0.0, 2.0),
         speechRate = speechRate.coerceIn(0.5, 2.5),
+        piperNoise = piperNoise.coerceIn(0.0, 1.5),
+        piperNoiseW = piperNoiseW.coerceIn(0.0, 1.5),
         maxReplyTokens = maxReplyTokens.coerceIn(16, 8192),
         contextTokens = contextTokens.coerceIn(1024, 1_000_000),
         topP = topP.coerceIn(0.05, 1.0),

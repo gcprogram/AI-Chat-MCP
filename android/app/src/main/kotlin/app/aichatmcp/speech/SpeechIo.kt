@@ -192,6 +192,8 @@ class SpeechOutput(private val context: Context) {
     @Volatile var piperThreads: () -> Int = { 4 }
     /** Lautstärke der Piper-Wiedergabe (1 = normal; Tests spielen mit 0 stumm). */
     @Volatile var piperVolume: Float = 1f
+    /** Schwankung der Piper-Stimmen (noise_scale, noise_scale_w); eine Änderung lädt die Stimmen beim nächsten Sprechen neu. */
+    @Volatile var piperNoise: Pair<Float, Float> = PiperSpeaker.DEFAULT_NOISE
     private var piperSpeaker: PiperSpeaker? = null
 
     private fun piper(): PiperSpeaker? {
@@ -201,6 +203,7 @@ class SpeechOutput(private val context: Context) {
             { id -> if (id.startsWith("r:")) main.post { itemSink?.done(id) } },
             { id -> if (id.startsWith("r:")) main.post { itemSink?.failed(id) } },
             { piperVolume },
+            { piperNoise },
         ).also { piperSpeaker = it }
     }
 
@@ -213,7 +216,10 @@ class SpeechOutput(private val context: Context) {
         val name = PiperNames.nameOf(voiceName)
         val installed = piperStore?.list()?.firstOrNull { it.name == name } ?: return null
         val wanted = languageTag ?: Locale.getDefault().toLanguageTag()
-        return name.takeIf { installed.language == null || Speech.voiceFitsLanguage(installed.language!!, wanted) }
+        if (installed.language != null && !Speech.voiceFitsLanguage(installed.language!!, wanted)) return null
+        // Mit Sprecher (`#4`, z. B. eine Stimmung) zurückgeben; nur eine vorhandene Nummer, sonst Sprecher 0
+        val sid = PiperNames.speakerOf(voiceName).takeIf { s -> installed.speakers.isEmpty() || installed.speakers.any { it.second == s } } ?: 0
+        return if (voiceName.contains('#')) "$name#$sid" else name
     }
 
     /** Stimmen für männliche und weibliche wörtliche Rede beim Vorlesen (nur Piper; leer = die Stimme des Erzählers). */

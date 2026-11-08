@@ -7,12 +7,23 @@ import java.io.InputStream
 const val PIPER_PREFIX = "piper:"
 
 /** Eine installierte Piper-Stimme: Ordnername und Sprache ("de"), falls erkennbar. */
-data class PiperVoice(val name: String, val language: String?) {
+data class PiperVoice(val name: String, val language: String?, val speakers: List<Pair<String, Int>> = emptyList()) {
     val id: String get() = PIPER_PREFIX + name
 
     /** Kurzer Anzeigename ("Thorsten · medium") statt des Ordnernamens. */
     val title: String get() = PiperNames.title(name)
+
+    /**
+     * Wählbare Einträge: eine einfache Stimme ist einer, bei einer Stimme mit mehreren Sprechern (z. B. Thorsten Emotional: Stimmungen)
+     * ein Eintrag je Sprecher. Die Kennung trägt die Sprechernummer (`piper:<Ordner>#4`).
+     */
+    val choices: List<PiperChoice>
+        get() = if (speakers.size < 2) listOf(PiperChoice(id, title, null))
+        else speakers.map { (speaker, sid) -> PiperChoice("$id#$sid", "$title – $speaker", sid) }
 }
+
+/** Ein wählbarer Stimmeneintrag ([sid] = Sprechernummer bei Stimmen mit mehreren Sprechern, sonst null). */
+data class PiperChoice(val id: String, val title: String, val sid: Int?)
 
 /** Dateien einer vollständigen Piper-Stimme für sherpa-onnx. */
 data class PiperFiles(val onnx: File, val tokens: File, val espeakData: File)
@@ -20,7 +31,20 @@ data class PiperFiles(val onnx: File, val tokens: File, val espeakData: File)
 object PiperNames {
     fun isPiper(voice: String): Boolean = voice.startsWith(PIPER_PREFIX)
 
-    fun nameOf(voice: String): String = voice.removePrefix(PIPER_PREFIX)
+    /** Ordnername der Stimme, ohne Präfix und ohne Sprecher (`piper:ordner#4` -> `ordner`). */
+    fun nameOf(voice: String): String = voice.removePrefix(PIPER_PREFIX).substringBefore('#')
+
+    /** Sprechernummer aus der Kennung (`piper:ordner#4` -> 4); ohne Angabe 0. */
+    fun speakerOf(voice: String): Int = voice.substringAfter('#', "").toIntOrNull()?.coerceAtLeast(0) ?: 0
+
+    /** Sprecher aus `speaker_id_map` der Datei `<modell>.onnx.json` (Name zu Nummer, nach Nummer sortiert, höchstens [MAX_SPEAKERS]). */
+    fun speakersOf(json: String?): List<Pair<String, Int>> {
+        val block = json?.let { Regex("\"speaker_id_map\"\\s*:\\s*\\{([^\\}]*)\\}").find(it)?.groupValues?.get(1) } ?: return emptyList()
+        return Regex("\"([^\"]+)\"\\s*:\\s*(\\d+)").findAll(block).map { it.groupValues[1] to it.groupValues[2].toInt() }
+            .sortedBy { it.second }.take(MAX_SPEAKERS).toList()
+    }
+
+    const val MAX_SPEAKERS = 16
 
     /**
      * Lesbarer Name aus dem Ordnernamen eines sherpa-Pakets: "vits-piper-de_DE-thorsten_emotional-medium-int8" ->
@@ -72,7 +96,7 @@ class PiperStore(private val root: File) {
             .sortedBy { it.name }
             .map { dir ->
                 val json = dir.listFiles { f -> f.name.endsWith(".onnx.json") }?.firstOrNull()?.let { runCatching { it.readText() }.getOrNull() }
-                PiperVoice(dir.name, PiperNames.languageOf(dir.name, json))
+                PiperVoice(dir.name, PiperNames.languageOf(dir.name, json), PiperNames.speakersOf(json))
             }
 
     /** Dateien zum Laden, oder null, wenn etwas fehlt. */

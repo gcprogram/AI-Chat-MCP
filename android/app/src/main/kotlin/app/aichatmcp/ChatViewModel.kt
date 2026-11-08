@@ -866,7 +866,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val tag = Speech.languageTag(languageName)
         val piper = storage.piper.list()
             .filter { it.language == null || (tag != null && Speech.voiceFitsLanguage(it.language!!, tag)) }
-            .map { SpeechOutput.VoiceOption(it.id, "Piper: ${it.title} (offline)") }
+            .flatMap { v -> v.choices.map { SpeechOutput.VoiceOption(it.id, "Piper: ${it.title} (offline)") } }
         speechOut.voicesFor(tag) { onResult(it + piper) }
     }
 
@@ -929,11 +929,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Beispielsatz mit einer Piper-Stimme (Einstellungen). */
-    fun testPiper(voice: PiperVoice) {
+    fun testPiper(voice: PiperVoice, sid: Int? = null) {
         piperNote = ""
         val language = voice.language
         val tag = PACK_LANGUAGES.map { it.first }.firstOrNull { language != null && it.startsWith(language) } ?: language
-        speechOut.speak(VOICE_SAMPLES[tag] ?: "Hello, this is how my voice sounds.", tag, voice.id) { piperNote = it }
+        speechOut.speak(VOICE_SAMPLES[tag] ?: "Hello, this is how my voice sounds.", tag, if (sid != null) "${voice.id}#$sid" else voice.id) { piperNote = it }
     }
 
     /** Beispielsatz mit einer bestimmten Stimme (Companion-Editor, noch nicht gespeichert). */
@@ -1079,6 +1079,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun saveConfig(newConfig: Config) {
         config = newConfig.sanitize()
         speechOut.rate = config.speechRate.toFloat()
+        speechOut.piperNoise = config.piperNoise.toFloat() to config.piperNoiseW.toFloat()
         storage.saveConfig(config)
         session.config = effectiveConfig(config)
         updateContext()
@@ -1328,6 +1329,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.rate = config.speechRate.toFloat()
         speechOut.piperStore = storage.piper
         speechOut.piperThreads = { config.localThreads }
+        speechOut.piperNoise = config.piperNoise.toFloat() to config.piperNoiseW.toFloat()
         piperVoices = storage.piper.list()
         personaIds = storage.personas.list()
         val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
