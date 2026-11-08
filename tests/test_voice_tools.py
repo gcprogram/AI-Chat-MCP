@@ -219,5 +219,37 @@ class PiperConfigTest(unittest.TestCase):
         self.assertEqual(v.model_metadata(self.CONFIG, "xx_YY")["language"], "xx")
 
 
+class CloudNotebookTest(unittest.TestCase):
+    """Das Cloud-Notebook lässt sich ohne GPU nur eingeschränkt prüfen: gültiges JSON, parsbare Zellen, Hilfsfunktionen."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        nb = json.loads((ROOT / "tools" / "voice" / "train_voice.ipynb").read_text(encoding="utf-8"))
+        cls.codes = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
+
+    def test_all_cells_parse(self):
+        import ast
+        for i, src in enumerate(self.codes, 1):
+            ast.parse(src, filename=f"zelle{i}")
+
+    def test_helpers_check_dataset_and_build_piper_files(self):
+        ns: dict = {}
+        exec(next(c for c in self.codes if "TEST_SENTENCE" in c), ns)  # Einstellungen
+        exec(next(c for c in self.codes if "def locate_dataset" in c), ns)  # Hilfsfunktionen
+        with tempfile.TemporaryDirectory() as d:
+            make_dataset(Path(d) / "oben" / "stimme", 4, seconds=2.0)  # ZIP mit Oberordner
+            root = ns["locate_dataset"](str(Path(d) / "oben"))
+            self.assertTrue(root.endswith("stimme"))
+            count, minutes, errors = ns["dataset_info"](root)
+            self.assertEqual((count, errors), (4, []))
+            self.assertAlmostEqual(minutes, 4 * 2.4 / 60, delta=0.02)  # 2 s Ton + 0,4 s Rand je Datei
+            make_dataset(Path(d) / "falsch", 2, rate=44100)
+            self.assertTrue(any("44100" in e for e in ns["dataset_info"](str(Path(d) / "falsch"))[2]))
+        config = PiperConfigTest.CONFIG
+        self.assertEqual(ns["tokens_from_config"](config), v.tokens_from_config(config))
+        self.assertEqual(ns["model_metadata"](config, "de_DE"), v.model_metadata(config, "de_DE"))  # Notebook und Werkzeug sagen dasselbe
+
+
 if __name__ == "__main__":
     unittest.main()

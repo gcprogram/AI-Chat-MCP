@@ -109,6 +109,21 @@ python3 -m piper.train.export_onnx --checkpoint /pfad/zum/checkpoint.ckpt --outp
 
 Die Konfiguration `meine-stimme.onnx.json` (aus `--data.config_path`) gehört zum Modell, beide Dateien brauchst du im nächsten Schritt.
 
+### Ohne eigene NVIDIA-Grafikkarte: Cloud-Notebook `train_voice.ipynb`
+
+Wer keine NVIDIA-GPU hat, trainiert auf einer gemieteten oder kostenlosen: Das Notebook `train_voice.ipynb` macht Schritt 3 **und** 4 in einem Rutsch
+(Piper installieren, deutsche Ausgangsstimme laden, feinabstimmen, nach ONNX exportieren, verpacken, Testsatz anhören, Ergebnis herunterladen).
+
+1. In Kaggle (kaggle.com, kostenloses Konto) oder Google Colab ein neues Notebook anlegen und `train_voice.ipynb` hochladen (*File → Import notebook* bzw. *Datei → Notebook hochladen*).
+2. GPU einschalten (Kaggle: *Settings → Accelerator → GPU*; Colab: *Laufzeit → Laufzeittyp ändern → T4*). Bei Kaggle muss für Downloads das Internet im Notebook an sein (dafür ist eine Handynummern-Bestätigung nötig).
+3. Die ZIP aus dem **Stimmen-Studio** (Als ZIP exportieren) bereitstellen: Kaggle *Add Input → Upload*, Colab lädt die Zelle selbst hoch. Aus den Aufnahmen vom PC-Skript: `python -c "import shutil; shutil.make_archive('meine-stimme','zip','meine-stimme')"`.
+4. Zellen von oben nach unten ausführen; nur Zelle 1 hat Einstellungen (Name, Sprache, Ausgangsstimme, Epochen, Zeitgrenze).
+5. Das ZIP mit dem fertigen Stimmenordner herunterladen und wie in Schritt 5 aufs Handy bringen.
+
+Wichtig: **Deine Aufnahmen gehen zum Anbieter.** Die Ausgangsstimme (Thorsten medium, ca. 850 MB) wird aus dem Piper-Checkpoint-Archiv geladen; sie steht bei Epoche 3135, das Notebook rechnet
+`max_epochs` deshalb als Epoche des Checkpoints plus `EXTRA_EPOCHS` (Piper-Anleitung: der Zähler wird fortgesetzt). Die Trainings-, Export- und Download-Zellen konnten **nicht auf einer GPU getestet** werden;
+geprüft sind JSON, Syntax und die Hilfsfunktionen (Datensatzprüfung, Verpacken gegen das offizielle sherpa-Paket, Testsatz).
+
 ## 4. Verpacken: `package_voice.py`
 
 Macht aus Modell und Konfiguration den Ordner im Format der sherpa-onnx-Pakete (tokens.txt, Metadaten im Modell, Ordnername `de_DE-meine-stimme-medium`).
