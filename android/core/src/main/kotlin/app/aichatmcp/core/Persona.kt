@@ -32,10 +32,13 @@ data class Persona(
     /** Stimmen für wörtliche Rede beim Vorlesen von Dokumenten (nur Piper-Stimmen, Format wie [voice]); leer = Standardstimme des Erzählers. */
     @SerialName("voice_male") val voiceMale: String = "",
     @SerialName("voice_female") val voiceFemale: String = "",
+    /** Beim ersten Start des Tages ein Tagesupdate (offene Todos, Termine) im Chat anzeigen; von der App zusammengestellt, ohne Modell. */
+    @SerialName("daily_update") val dailyUpdate: Boolean = false,
     /** Dateiname ohne .json; wird beim Laden gesetzt, nicht in der Datei gespeichert. */
     @Transient val id: String = "",
 ) {
-    private fun isGerman(): Boolean = language.trim().lowercase() in setOf("deutsch", "german", "de", "de-de", "deutsch (de)")
+    /** Antwortsprache Deutsch (bestimmt Sprache der Prompt-Regeln und des Tagesupdates). */
+    fun isGerman(): Boolean = language.trim().lowercase() in setOf("deutsch", "german", "de", "de-de", "deutsch (de)")
 
     /**
      * Du/Ich-Regeln. Der Prompt benutzt "du" für das Modell, deshalb hier ausdrücklich je Rolle erklärt und mit Beispielen zum Spiegeln

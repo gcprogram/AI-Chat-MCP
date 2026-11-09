@@ -62,6 +62,8 @@ data class Config(
      * z. B. Deutsch zu einem englischen Companion), "auto" = die gesprochene Sprache erkennen und so schreiben, sonst ein Code ("de", "en", …).
      */
     @SerialName("whisper_language") val whisperLanguage: String = "",
+    /** Companion-ID -> Datum (ISO) des zuletzt gezeigten Tagesupdates. */
+    @SerialName("briefing_days") val briefingDays: Map<String, String> = emptyMap(),
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },

@@ -8,6 +8,7 @@ import app.aichatmcp.core.LoadedChat
 import app.aichatmcp.core.PersonaStore
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.ReadMarks
+import app.aichatmcp.core.TodoStore
 import app.aichatmcp.core.WhisperStore
 import app.aichatmcp.core.string
 import kotlinx.serialization.json.JsonObject
@@ -37,9 +38,14 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
     /** Whisper-Modelle (Spracheingabe auf dem Gerät). */
     val whisper = WhisperStore(File(root, "whisper"))
 
+    /** Todos des Organizers (Werkzeuge `todo-*` und Tagesupdate). */
+    val todos = TodoStore(File(root, "todos.json"))
+    private val offeredFile = File(root, "defaults_offered.txt")
+
     /** Beim ersten Start: Standard-Companion und Werkzeugkonfiguration aus den mitgelieferten Dateien anlegen. */
     fun ensureDefaults() {
         if (!mcpFile.exists()) asset("default_mcp_servers.json")?.let { mcpFile.writeText(it) }
+        mergeNewDefaults()
         if (personas.list().isEmpty()) {
             asset("default_persona.json")?.let {
                 personasDir.mkdirs()
@@ -83,6 +89,29 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
     fun loadConfig(): Config = Config.fromJson(configFile.takeIf { it.exists() }?.readText())
 
     fun saveConfig(config: Config) = configFile.writeText(config.toJson())
+
+    /**
+     * Neue Standard-Werkzeuge (Server/Aliase, die es bei der Installation noch nicht gab) werden einmal in eine bestehende
+     * mcp_servers.json eingetragen, damit Updates sie nicht verstecken. Was der Nutzer danach löscht, kommt nicht wieder
+     * (`defaults_offered.txt` merkt sich, was schon angeboten wurde). Vorhandene Einträge bleiben unverändert.
+     */
+    private fun mergeNewDefaults() {
+        val offered = offeredFile.takeIf { it.isFile }?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+        val pending = NEW_DEFAULTS.filter { it !in offered }
+        if (pending.isEmpty()) return
+        val current = runCatching { AppJson.parseToJsonElement(mcpFile.readText()) as? JsonObject }.getOrNull() ?: return // kaputte Datei: nicht anfassen
+        val defaults = (asset("default_mcp_servers.json")?.let { runCatching { AppJson.parseToJsonElement(it) as? JsonObject }.getOrNull() }) ?: return
+        fun section(o: JsonObject, key: String) = (o[key] as? JsonObject).orEmpty()
+        val servers = section(current, "servers").toMutableMap()
+        val aliases = section(current, "aliases").toMutableMap()
+        for (name in pending) {
+            section(defaults, "servers")[name]?.let { servers.putIfAbsent(name, it) }
+            section(defaults, "aliases")[name]?.let { aliases.putIfAbsent(name, it) }
+        }
+        val merged = JsonObject(current.toMutableMap().apply { put("servers", JsonObject(servers)); put("aliases", JsonObject(aliases)) })
+        if (merged != current) mcpFile.writeText(AppJson.encodeToString(JsonObject.serializer(), merged) + "\n")
+        offeredFile.writeText((offered + pending).joinToString("\n") + "\n")
+    }
 
     // --- Werkzeuge (mcp_servers.json), Geheimnisse, Zertifikate -------------------------------------------
 
@@ -145,5 +174,10 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
     fun deleteChat(personaId: String) {
         chatFile(personaId).delete()
         legacyChatFile(personaId).delete()
+    }
+
+    private companion object {
+        /** Standard-Einträge, die nachträglich in bestehende Konfigurationen übernommen werden (Server und Aliase). */
+        val NEW_DEFAULTS = listOf("organizer", "todo-add", "todo-list", "todo-done")
     }
 }

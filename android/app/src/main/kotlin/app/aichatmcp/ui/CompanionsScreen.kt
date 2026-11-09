@@ -9,6 +9,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,6 +83,7 @@ private fun PersonaForm(
     var voice by remember { mutableStateOf(initial.voice) }
     var voiceMale by remember { mutableStateOf(initial.voiceMale) }
     var voiceFemale by remember { mutableStateOf(initial.voiceFemale) }
+    var dailyUpdate by remember { mutableStateOf(initial.dailyUpdate) }
     var voiceOptions by remember { mutableStateOf<List<SpeechOutput.VoiceOption>?>(null) } // null = wird noch geladen
     LaunchedEffect(language) {
         voiceOptions = null
@@ -156,6 +158,16 @@ private fun PersonaForm(
     }
     TextSetting("Begrüßung", greeting, { greeting = it }, minLines = 2, maxLines = 5)
     TextSetting("Regeln (eine pro Zeile)", rules, { rules = it }, minLines = 2, maxLines = 8)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Tagesupdate beim Start")
+            Text(
+                "Einmal am Tag zeigt der Companion beim Öffnen seine offenen Todos (von der App zusammengestellt, ohne Modell).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        Switch(checked = dailyUpdate, onCheckedChange = { dailyUpdate = it })
+    }
 
     SectionTitle("Werkzeuge")
     if (available.isEmpty()) {
@@ -177,7 +189,7 @@ private fun PersonaForm(
             onSave(
                 initial.copy(
                     name = name.trim(), description = description.trim(), language = language.trim().ifEmpty { "Deutsch" },
-                    voice = voice, voiceMale = voiceMale, voiceFemale = voiceFemale, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                    voice = voice, voiceMale = voiceMale, voiceFemale = voiceFemale, dailyUpdate = dailyUpdate, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
                     tools = available.filter { it in tools } + hidden,
                     approvedTools = available.filter { it in approved && it in tools } + hiddenApproved,
                 ),

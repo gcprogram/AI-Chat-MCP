@@ -8,6 +8,10 @@
       "builtin": "websearch",
       "raw": false
     },
+    "organizer": {
+      "builtin": "organizer",
+      "raw": false
+    },
     "remote": {
       "disabled": true,
       "url": "https://127.0.0.1:8443/mcp",
@@ -247,6 +251,38 @@
       "hint": "Switch the TV off",
       "result": "discard",
       "status": "TV: off"
+    },
+    "todo-add": {
+      "server": "organizer",
+      "tool": "todo_add",
+      "params": [
+        "text",
+        "due"
+      ],
+      "hint": "Adds a to-do to the user's list (optional due date: today, tomorrow, monday, 2026-11-25)",
+      "example": "[[mcp:todo-add|Buy milk|tomorrow]]",
+      "result": "both",
+      "confirm": false
+    },
+    "todo-list": {
+      "server": "organizer",
+      "tool": "todo_list",
+      "params": [],
+      "hint": "Lists the user's open to-dos",
+      "example": "[[mcp:todo-list]]",
+      "result": "both",
+      "confirm": false
+    },
+    "todo-done": {
+      "server": "organizer",
+      "tool": "todo_done",
+      "params": [
+        "item"
+      ],
+      "hint": "Marks a to-do as done (its number or part of its text)",
+      "example": "[[mcp:todo-done|2]]",
+      "result": "both",
+      "confirm": false
     }
   }
 }

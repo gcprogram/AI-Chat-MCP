@@ -72,7 +72,10 @@ abstract class LocalServer(override val name: String) : McpClient {
         }
     }
 
-    protected fun tool(name: String, description: String, properties: List<Triple<String, String, String>>, required: List<String>) =
+    protected fun tool(
+        name: String, description: String, properties: List<Triple<String, String, String>>, required: List<String>,
+        readOnly: Boolean = true,
+    ) =
         McpTool(
             name, description,
             buildJsonObject {
@@ -82,7 +85,7 @@ abstract class LocalServer(override val name: String) : McpClient {
                 }
                 if (required.isNotEmpty()) putJsonArray("required") { required.forEach { add(JsonPrimitive(it)) } }
             },
-            readOnly = true,
+            readOnly = readOnly,
         )
 }
 
@@ -360,14 +363,17 @@ class DefaultServerFactory(
     /** PEM-Text eines importierten Zertifikats nach Dateiname (ohne Pfad). */
     private val certificate: (String) -> String? = { null },
     private val http: OkHttpClient = OkHttpClient(),
+    /** Speicher der Todos für den eingebauten Server "organizer". */
+    private val todos: TodoStore? = null,
 ) : ServerFactory {
     override fun create(name: String, entry: JsonObject): McpClient {
         val builtin = entry.string("builtin") ?: scriptBuiltin(entry)
         when (builtin) {
             "weather" -> return WeatherServer(name, fetcher)
             "websearch" -> return WebsearchServer(name, fetcher)
+            "organizer" -> return OrganizerServer(name, todos ?: throw McpException("Der Server 'organizer' braucht einen Speicher für die Todos."))
             null -> {}
-            else -> throw McpException("Eingebauter Server '$builtin' unbekannt (weather, websearch).")
+            else -> throw McpException("Eingebauter Server '$builtin' unbekannt (weather, websearch, organizer).")
         }
         val url = entry.string("url")
             ?: throw McpException("Server mit 'command' lassen sich auf Android nicht starten; 'url' oder 'builtin' verwenden.")

@@ -33,6 +33,7 @@ class Persona:
     voice: str = ""  # Stimme der Sprachausgabe (nur Android-App); hier nur durchgereicht, damit Speichern sie nicht verliert
     voice_male: str = ""  # Stimme für männliche wörtliche Rede beim Vorlesen (nur Android-App, durchgereicht)
     voice_female: str = ""  # Stimme für weibliche wörtliche Rede beim Vorlesen (nur Android-App, durchgereicht)
+    daily_update: bool = False  # Tagesupdate beim Start (nur Android-App, durchgereicht)
     id: str = ""  # Dateiname ohne .json; wird beim Laden/Speichern gesetzt, nicht in der Datei gespeichert
 
     def _german(self) -> bool:

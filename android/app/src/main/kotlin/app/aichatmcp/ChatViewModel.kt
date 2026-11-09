@@ -47,6 +47,7 @@ import app.aichatmcp.core.DocumentException
 import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
+import app.aichatmcp.core.DailyUpdate
 import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
 import app.aichatmcp.core.NoticeKind
@@ -1215,7 +1216,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         session.reset()
         saveConfig(config.copy(persona = id))
         restoreChat()
+        showDailyUpdate()
         status = "Bereit"
+    }
+
+    /**
+     * Tagesupdate: Hat der Companion `daily_update` und wurde heute noch keines gezeigt, erscheint eine Nachricht mit den offenen Todos.
+     * Sie wird von der App zusammengestellt (ohne Modell, sofort, auch ohne Server) und als angezeigtes Ergebnis in den Verlauf
+     * gelegt, damit das Modell sie mit der nächsten Nutzernachricht als Kontext bekommt. Einmal pro Tag und Companion.
+     */
+    private fun showDailyUpdate(today: java.time.LocalDate = java.time.LocalDate.now()) {
+        if (!persona.dailyUpdate || persona.id.isEmpty() || streaming) return
+        if (config.briefingDays[persona.id] == today.toString()) return
+        val text = DailyUpdate.text(storage.todos.open(), today, persona.isGerman())
+        session.addToolShown("daily-update", text)
+        messages += UiMessage(UiKind.SHOWN, text)
+        saveChat()
+        config = config.copy(briefingDays = config.briefingDays + (persona.id to today.toString()))
+        storage.saveConfig(config)
+        updateContext()
     }
 
     fun savePersona(edited: Persona): String {
@@ -1298,6 +1317,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     fresh.startFromConfig(storage.mcpJson(), DefaultServerFactory(
                         secret = { storage.secrets()[it] },
                         certificate = { storage.certPem(it) },
+                        todos = storage.todos,
                     ))
                 } catch (e: Exception) {
                     fresh.errors += "Werkzeuge konnten nicht geladen werden: ${e.message}"
@@ -1453,6 +1473,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey) },
         ) { call, spec -> askUser(call, spec) }
         restoreChat()
+        showDailyUpdate()
         mcpText = storage.mcpJson()
         secretNames = storage.secrets().keys.sorted()
         certNames = storage.certNames()
