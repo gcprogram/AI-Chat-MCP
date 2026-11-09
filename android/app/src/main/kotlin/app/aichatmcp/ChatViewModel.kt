@@ -1278,12 +1278,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         avatarVersion++
     }
 
-    /** Companion aus einer JSON-Datei der PC-App übernehmen. Liefert die neue ID. */
-    /** Importiert einen Companion aus einer JSON-Datei; null bei Erfolg, sonst der Fehlertext (es wird dann nichts angelegt). */
+    /** Importiert einen Companion aus einer JSON-Datei und macht ihn zum aktiven Companion; null bei Erfolg, sonst der Fehlertext (es wird dann nichts angelegt). */
     fun importPersona(text: String, fileName: String): String? {
         val id = storage.personas.uniqueId(fileName.removeSuffix(".json").ifEmpty { "companion" })
         val persona = Persona.parse(text, id).getOrElse { return "Kein gültiger Companion (JSON): ${it.message?.lineSequence()?.firstOrNull() ?: "unlesbar"}" }
         savePersona(persona)
+        selectPersona(id) // der neue Companion wird gleich aktiv (sonst bliebe der alte gewählt, und der Import wirkt wirkungslos)
         return null
     }
 

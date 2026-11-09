@@ -53,6 +53,31 @@ class PiperOnDeviceTest {
         stageFromExternal()
     }
 
+    /** Messung: jede installierte Stimme spricht einen Satz ihrer Sprache; im Log steht der Echtzeitfaktor (Rechenzeit / Audiolänge, unter 1 = schneller als Sprechen). */
+    @Test
+    fun everyInstalledVoiceIsMeasured() {
+        val voices = store.list()
+        if (voices.isEmpty()) { Log.i("AiChatPiper", "Keine Piper-Stimme: Messung übersprungen"); return }
+        val samples = mapOf(
+            "de" to "Guten Morgen! Heute wird es im Norden sonnig, im Süden ziehen am Nachmittag einige Wolken auf.",
+            "en" to "Good morning! Today it will be sunny in the north, and some clouds will move in over the south this afternoon.",
+        )
+        val out = output()
+        try {
+            for (v in voices) {
+                val sentence = samples[v.language] ?: samples.getValue("en")
+                out.renderPiper(v.name, "Hi.") // Laden zählt nicht mit
+                val t = System.nanoTime()
+                val (audio, rate) = out.renderPiper(v.name, sentence) ?: continue
+                val took = (System.nanoTime() - t) / 1e9
+                val seconds = audio.size.toDouble() / rate
+                Log.i("AiChatPiper", "Messung ${v.name}: %.1f s Audio in %.2f s (Faktor %.2f)".format(seconds, took, took / seconds))
+            }
+        } finally {
+            out.shutdown()
+        }
+    }
+
     @Test
     fun piperVoiceSynthesizesSpeechAndMatchesLanguage() {
         val voice = store.list().firstOrNull()
