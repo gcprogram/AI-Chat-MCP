@@ -269,6 +269,16 @@ class ChatLogTest(unittest.TestCase):
         self.assertEqual(loaded.messages, self.messages)
         self.assertEqual(loaded.persona, "mia")
 
+    def test_chat_files_get_their_own_extension_and_old_json_still_loads(self):
+        self.assertTrue(chatlog.default_filename("mia").endswith(".aichat"))
+        self.assertNotEqual(chatlog.default_filename("mia"), "mia.json")  # nie der blanke Companion-Name
+        with tempfile.TemporaryDirectory() as tmp:
+            new, old = Path(tmp) / "c.aichat", Path(tmp) / "c.json"
+            chatlog.save_json(new, self.messages, "mia", "Alex")
+            old.write_bytes(new.read_bytes())
+            self.assertEqual(chatlog.load_chat(new, {"Alex"}, {"Mia"}).messages, self.messages)
+            self.assertEqual(chatlog.load_chat(old, {"Alex"}, {"Mia"}).messages, self.messages)
+
     def test_text_roundtrip_and_old_export_format(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "c.txt"
@@ -430,7 +440,7 @@ class GuiToolsTest(unittest.TestCase):
         self.assertNotIn("[[mcp", shown)
         self.assertNotIn("99", shown)
 
-        path = Path(self.tmp.name) / "chat.json"
+        path = Path(self.tmp.name) / "chat.aichat"
         self.assertTrue(self.app.save_chat_to(path))
         self.app.session.reset()
         with mock.patch.object(self.registry, "run", side_effect=AssertionError("Werkzeug beim Laden ausgeführt")) as run:
@@ -443,7 +453,7 @@ class GuiToolsTest(unittest.TestCase):
         self.assertEqual(self.app.session.history, history)
         shown = self.app.chat.get("1.0", "end")
         self.assertIn("» Werkzeug rechnen: 6*7", shown)
-        self.assertIn("Chat geladen: chat.json", shown)
+        self.assertIn("Chat geladen: chat.aichat", shown)
 
         self.ask("Und 7 mal 7?")  # nach dem Laden normal weiterchatten
         self.assertEqual(len(self.app.session.history), 8)

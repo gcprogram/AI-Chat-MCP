@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.aichatmcp.core.ChatLog
 import app.aichatmcp.ui.ChatScreen
 import app.aichatmcp.ui.CompanionsScreen
 import app.aichatmcp.ui.Screen
@@ -127,7 +128,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
     val importChat = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { vm.importChat(it)?.let(::toast) } ?: toast("Datei nicht lesbar") }
     }
-    val exportChat = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+    val exportChat = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         uri?.let { u ->
             runCatching { context.contentResolver.openOutputStream(u)?.use { it.write(vm.exportChat().toByteArray(Charsets.UTF_8)) } }
                 .onSuccess { toast("Chat gespeichert") }.onFailure { toast("Speichern fehlgeschlagen: ${it.message}") }
@@ -137,7 +138,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
     when (screen) {
         Screen.CHAT -> ChatScreen(
             vm, open = { screen = it },
-            onExport = { exportChat.launch("${vm.persona.id.ifEmpty { "chat" }}.json") },
+            onExport = { exportChat.launch(ChatLog.fileName(vm.persona.id)) },
             onImport = { importChat.launch("*/*") },
             onMic = ::onMic,
             onUpload = { pickDocument.launch(arrayOf("*/*")) },

@@ -29,7 +29,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 ## Tests / Start
 ```bash
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
-set PYTHONPATH=. && python -m unittest discover -s tests      # 105 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
+set PYTHONPATH=. && python -m unittest discover -s tests      # 106 Tests inkl. GUI-End-to-End mit Fake-LLM-Server und echtem MCP-Demo-Server
 python main.py
 ```
 
@@ -43,7 +43,7 @@ python main.py
   geht als `user`-Nachricht (`Message.kind = tool_result/tool_error`, Rollen bleiben abwechselnd) zurück. Ergebnisse
   werden gekürzt, Marker darin entschärft, Aufrufe standardmäßig bestätigt. Geladene Chats führen **nie** aus.
 - Companions: `personas/*.json` + `personas/avatars/`, Editor in `persona_editor.py`; Werkzeuge pro Companion
-  (`tools`), davon vorab genehmigte ohne Rückfrage (`approved_tools`, schlägt globale Einstellung und Alias-`confirm`). Chats: `chatlog.py` (JSON vollständig, TXT lesbar/ladbar), Ordner `chats/` (gitignored).
+  (`tools`), davon vorab genehmigte ohne Rückfrage (`approved_tools`, schlägt globale Einstellung und Alias-`confirm`). Chats: `chatlog.py` (Endung **`.aichat`** = JSON vollständig, damit ein Chat nie eine Companion-Datei `*.json` überschreibt; ältere `.json` laden weiter; TXT lesbar/ladbar; Android: `ChatLog.fileName`, interner Chat `chats/<id>.aichat` mit Rückfall auf `.json`), Ordner `chats/` (gitignored).
 - `mcp_servers.json` ist gitignored (kann Schlüssel enthalten); Vorlage in `examples/`.
 - **MCP-Transporte**: `McpClient` (Basis, `mcp_client.py`) mit `McpServer` (stdio) und `HttpMcpServer` (`mcp_http.py`,
   Streamable HTTP: JSON oder SSE, `Mcp-Session-Id`, einmalige Neuanmeldung bei 404). Eintrag mit `url` statt `command`;

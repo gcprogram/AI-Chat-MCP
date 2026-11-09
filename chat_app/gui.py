@@ -490,7 +490,8 @@ class ChatApp:
             pass
         path = filedialog.asksaveasfilename(
             initialdir=self.chats_dir, initialfile=chatlog.default_filename(self.session.persona.id),
-            defaultextension=".json", filetypes=[("Chat (JSON, vollständig)", "*.json"), ("Text", "*.txt")])
+            defaultextension=chatlog.CHAT_EXTENSION,
+            filetypes=[("Chat (vollständig)", "*.aichat"), ("Text (lesbar)", "*.txt"), ("Chat (JSON, älteres Format)", "*.json")])
         if path:
             self.save_chat_to(path)
 
@@ -510,7 +511,7 @@ class ChatApp:
         if self.streaming:
             return
         path = filedialog.askopenfilename(initialdir=self.chats_dir, filetypes=[
-            ("Chats", "*.json *.txt"), ("Alle Dateien", "*.*")])
+            ("Chats", "*.aichat *.json *.txt"), ("Alle Dateien", "*.*")])
         if path:
             self.load_chat_from(path)
 

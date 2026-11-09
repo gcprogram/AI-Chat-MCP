@@ -125,10 +125,13 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
 
     // --- Chats (je Companion der laufende Chat; Dateiformat wie die Python-App) --------------------------
 
-    private fun chatFile(personaId: String) = File(chatsDir, safeName(personaId) + ".json")
+    private fun chatFile(personaId: String) = File(chatsDir, safeName(personaId) + ChatLog.EXTENSION)
+
+    /** Chat-Dateien hießen früher `<companion>.json`; sie werden weiter gelesen und beim nächsten Speichern umgestellt. */
+    private fun legacyChatFile(personaId: String) = File(chatsDir, safeName(personaId) + ".json")
 
     fun loadChat(personaId: String): LoadedChat? = try {
-        chatFile(personaId).takeIf { it.isFile }?.let { ChatLog.fromJson(it.readText()) }
+        (chatFile(personaId).takeIf { it.isFile } ?: legacyChatFile(personaId).takeIf { it.isFile })?.let { ChatLog.fromJson(it.readText()) }
     } catch (_: ChatFileException) {
         null
     }
@@ -136,9 +139,11 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
     fun saveChat(personaId: String, json: String) {
         chatsDir.mkdirs()
         chatFile(personaId).writeText(json)
+        legacyChatFile(personaId).delete()
     }
 
     fun deleteChat(personaId: String) {
         chatFile(personaId).delete()
+        legacyChatFile(personaId).delete()
     }
 }

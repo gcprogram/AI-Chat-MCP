@@ -25,6 +25,13 @@ class ChatLogTest {
     }
 
     @Test
+    fun chatFilesGetTheirOwnExtensionAndNeverTheBareCompanionName() {
+        assertEquals("fern_2026-11-04_1205.aichat", ChatLog.fileName("fern", LocalDateTime.of(2026, 11, 4, 12, 5, 33)))
+        assertEquals("chat_2026-11-04_1205.aichat", ChatLog.fileName("", LocalDateTime.of(2026, 11, 4, 12, 5)))
+        assertTrue(!ChatLog.fileName("fern").endsWith(".json"))
+    }
+
+    @Test
     fun readsTheFileFormatOfThePythonApp() {
         val python = """{"format": "ai-chat-mcp", "version": 1, "saved": "2026-11-01T10:00:00", "persona": "secretary", "user_name": "Stefan",
             "messages": [{"role": "user", "content": "Hi"}, {"role": "user", "content": "noch eins"},

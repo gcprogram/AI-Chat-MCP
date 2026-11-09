@@ -1,7 +1,8 @@
 """Chats speichern und laden.
 
-JSON (Standard) enthält den vollständigen Verlauf inkl. Werkzeugaufrufen/-ergebnissen. Text (.txt) ist ein
-lesbarer Export ("Name: Text"), der sich auch wieder laden lässt (z. B. ältere Exporte).
+Die Chat-Datei (Endung .aichat, Inhalt JSON) enthält den vollständigen Verlauf inkl. Werkzeugaufrufen/-ergebnissen; eine eigene
+Endung, damit ein Chat nie versehentlich eine Companion-Datei (personas/*.json) überschreibt. Ältere Chats als .json lassen sich
+weiter laden. Text (.txt) ist ein lesbarer Export ("Name: Text"), der sich auch wieder laden lässt (z. B. ältere Exporte).
 
 Beim Laden wird nichts ausgeführt: gespeicherte Werkzeugaufrufe und ihre Ergebnisse sind reiner Verlauf."""
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 from .context import CHAT, TOOL_ERROR, TOOL_RESULT, TOOL_SHOWN, Message
 
 FORMAT_VERSION = 1
+CHAT_EXTENSION = ".aichat"
 MAX_FILE_BYTES = 10_000_000
 TOOL_HEADER = "Werkzeug"  # Sprechername von Werkzeugergebnissen im Textformat
 
@@ -46,7 +48,7 @@ def save_text(path: Path | str, messages: list[Message], user_name: str, persona
     Path(path).write_text("\n\n".join(f"{speaker(m)}: {m.content}" for m in messages) + "\n", encoding="utf-8")
 
 
-def default_filename(persona_id: str, suffix: str = ".json") -> str:
+def default_filename(persona_id: str, suffix: str = CHAT_EXTENSION) -> str:
     return f"{persona_id or 'chat'}_{datetime.now():%Y-%m-%d_%H%M}{suffix}"
 
 
@@ -120,6 +122,6 @@ def load_chat(path: Path | str, user_names: set[str], assistant_names: set[str])
         text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
         raise ChatFileError(f"Datei nicht lesbar: {exc}") from exc
-    if path.suffix.lower() == ".json" or text.lstrip().startswith(("{", "[")):
+    if path.suffix.lower() in (CHAT_EXTENSION, ".json") or text.lstrip().startswith(("{", "[")):
         return _load_json(text)
     return _load_text(text, user_names | {"Nutzer", "User"}, assistant_names)

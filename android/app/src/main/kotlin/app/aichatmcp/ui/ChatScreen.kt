@@ -296,7 +296,7 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
 }
 
 /**
- * Tasten im Vorlese-Modus: << Seite zurück (ohne Seiten 10 Abschnitte), < ein Abschnitt zurück, ■ Stopp, ▶ Play, || Pause,
+ * Tasten im Vorlese-Modus: << Seite zurück (ohne Seiten 10 Abschnitte), < ein Abschnitt zurück, ■ Stopp, ▶/|| Play und Pause in einer Taste,
  * > ein Abschnitt vor, >> Seite vor (ohne Seiten 10 Abschnitte). Ein Abschnitt dauert etwa 25 Sekunden zum Hören: Das ist als
  * Schritt klein genug zum Wiederholen und kostet keine Wartezeit (nur bei Bildern, die erst beschrieben werden müssen).
  */
@@ -316,8 +316,8 @@ private fun ReaderControls(vm: ChatViewModel) {
         ReaderKey("<<", Modifier.weight(1f), onClick = vm::readerJumpBack)
         ReaderKey("<", Modifier.weight(1f), onClick = vm::readerPrevious)
         ReaderKey("■", Modifier.weight(1f), onClick = vm::readerStop)
-        ReaderKey("▶", Modifier.weight(1f), enabled = !playing, onClick = vm::readerPlay)
-        ReaderKey("||", Modifier.weight(1f), enabled = playing, onClick = vm::readerPause)
+        // Ein Knopf für Play und Pause: während des Vorlesens "||" (pausiert), sonst "▶" (setzt fort)
+        ReaderKey(if (playing) "||" else "▶", Modifier.weight(1f), onClick = if (playing) vm::readerPause else vm::readerPlay)
         ReaderKey(">", Modifier.weight(1f), onClick = vm::readerNext)
         ReaderKey(">>", Modifier.weight(1f), onClick = vm::readerJumpForward)
     }

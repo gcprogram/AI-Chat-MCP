@@ -25,6 +25,13 @@ data class LoadedChat(
 object ChatLog {
     private const val FORMAT_VERSION = 1
 
+    /** Endung der Chat-Dateien (Inhalt JSON). Eigene Endung, damit ein Chat nie eine Companion-Datei (*.json) überschreibt. */
+    const val EXTENSION = ".aichat"
+
+    /** Vorgeschlagener Dateiname beim Speichern: `<companion>_<Datum>_<Uhrzeit>.aichat` (wie in der Python-App). */
+    fun fileName(personaId: String, now: LocalDateTime = LocalDateTime.now()): String =
+        "${personaId.ifEmpty { "chat" }}_${now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmm"))}$EXTENSION"
+
     fun toJson(messages: List<Message>, personaId: String, userName: String, saved: LocalDateTime = LocalDateTime.now()): String {
         val data = buildJsonObject {
             put("format", "ai-chat-mcp")
