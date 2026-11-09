@@ -14,8 +14,8 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /**
- * Whisper auf dem echten Gerät (sherpa-onnx, JNI). Braucht ein Whisper-Modell und eine deutsche Piper-Stimme; beides wird aus
- * `Android/data/app.aichatmcp/files/whisper-test/<Ordner>` bzw. `files/piper-test` übernommen (per adb dorthin kopiert, nicht im Repo),
+ * Whisper auf dem echten Gerät (sherpa-onnx, JNI). Braucht ein Whisper-Modell und eine deutsche Piper-Stimme in `files/whisper` bzw. `files/piper` (auf dem S21 per `run-as … tar`); alternativ wird beides aus
+ * `Android/data/app.aichatmcp/files/whisper-test/<Ordner>` bzw. `piper-test` übernommen (nur Emulator, nicht im Repo),
  * sonst steht nur ein Hinweis im Log und der Test gilt als bestanden. Er spricht einen Satz mit Piper, rechnet auf 16 kHz um, lässt
  * Whisper den Satz erkennen und misst die Zeit (Echtzeitfaktor = Rechenzeit / Audiolänge). Das Mikrofon selbst wird nicht geprüft.
  * Log-Tag: AiChatWhisper.
