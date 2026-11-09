@@ -35,4 +35,18 @@ class PersonaImportTest {
         assertNull(Persona.parse("{}", "x").exceptionOrNull()) // leeres Objekt ist gültig (alles Vorgabe)
         assertEquals("Mia", Persona.fromJson("kaputt").name) // fromJson (Laden eigener Dateien) bleibt tolerant
     }
+
+    @Test
+    fun promptExplainsDuAndIchPerRoleLikeThePythonApp() {
+        val german = Persona(name = "Mia").systemPrompt("Alex")
+        for (needle in listOf(
+            "bedeutet \"ich/mir/mich/mein\" immer Mia", "\"du/dir/dich/dein\" an", "Spiegeln:", "\"Ich bin müde.\" -> \"Du klingst müde.\"",
+            "Merke: \"ich\" in deinen Antworten ist immer Mia, \"du\" ist immer Alex.",
+        )) assertTrue(needle in german, needle)
+        assertTrue("\"Ich\" bist immer du" !in german)
+        val english = Persona(name = "Fern", language = "English").systemPrompt("Alex")
+        assertTrue("\"I/me/my\" always means Fern and \"you/your\" always means Alex" in english)
+        assertTrue("Spiegeln:" !in english && "Merke:" !in english)
+    }
 }
+

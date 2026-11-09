@@ -119,6 +119,17 @@ class PersonaAndSessionTest(unittest.TestCase):
             self.assertIn(needle, prompt)
         self.assertIn("\nAlex:", Persona(name="Mia").stop_sequences("Alex"))
 
+    def test_prompt_explains_du_and_ich_per_role_with_mirroring(self):
+        german = Persona(name="Mia").system_prompt("Alex")
+        for needle in ('bedeutet "ich/mir/mich/mein" immer Mia', '"du/dir/dich/dein" an', "Spiegeln:", '"Ich bin müde." -> "Du klingst müde."',
+                       'Merke: "ich" in deinen Antworten ist immer Mia, "du" ist immer Alex.'):
+            self.assertIn(needle, german)
+        self.assertNotIn('"Ich" bist immer du', german)  # der alte, widersprüchliche Satz (du = Modell und Nutzer)
+        english = Persona(name="Fern", language="English").system_prompt("Alex")
+        self.assertIn('"I/me/my" always means Fern and "you/your" always means Alex', english)
+        self.assertNotIn("Spiegeln:", english)
+        self.assertNotIn("Merke:", english)
+
     def test_shipped_persona_loads_and_bad_file_falls_back(self):
         self.assertIn("companion", list_personas())
         self.assertEqual(load_persona("companion").name, "Mia")
