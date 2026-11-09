@@ -41,29 +41,34 @@ class WhisperOnDeviceTest {
 
     @Test
     fun whisperRecognizesASpokenSentenceAndWeMeasureTheSpeed() {
-        val model = whisper.list().firstOrNull()
+        val models = whisper.list()
         val voice = piper.list().firstOrNull { it.language == "de" }
-        if (model == null || voice == null) { Log.i("AiChatWhisper", "Kein Whisper-Modell oder keine deutsche Piper-Stimme: Test übersprungen"); return }
+        if (models.isEmpty() || voice == null) { Log.i("AiChatWhisper", "Kein Whisper-Modell oder keine deutsche Piper-Stimme: Test übersprungen"); return }
         val out = SpeechOutput(context).apply { piperStore = piper; piperThreads = { 4 }; piperVolume = 0f }
-        val input = WhisperInput(whisper) { 4 }
         try {
             val (samples, rate) = out.renderPiper(voice.name, text)!!
             val audio = AudioMath.resample(samples, rate, 16000)
             val seconds = audio.size / 16000.0
-            val t0 = System.nanoTime()
-            val first = input.transcribe(model, "de", audio)
-            val loadAndFirst = (System.nanoTime() - t0) / 1e9
-            val t1 = System.nanoTime()
-            val second = input.transcribe(model, "de", audio)
-            val took = (System.nanoTime() - t1) / 1e9
-            Log.i("AiChatWhisper", "${model.name}: %.1f s Audio; Laden+erste Erkennung %.1f s, zweite %.1f s (Faktor %.2f)".format(seconds, loadAndFirst, took, took / seconds))
-            Log.i("AiChatWhisper", "Erkannt: $first")
             val expected = words(text)
-            val hit = words(first).intersect(expected).size
-            assertTrue("Zu wenig erkannt ($hit von ${expected.size}): $first", hit >= expected.size * 0.6)
-            assertTrue("Zweite Erkennung weicht ab: $second", words(second).intersect(expected).size >= expected.size * 0.6)
+            for (model in models) { // jedes installierte Modell einzeln (Geschwindigkeit im Vergleich)
+                val input = WhisperInput(whisper) { 4 }
+                try {
+                    val t0 = System.nanoTime()
+                    val first = input.transcribe(model, "de", audio)
+                    val loadAndFirst = (System.nanoTime() - t0) / 1e9
+                    val t1 = System.nanoTime()
+                    val second = input.transcribe(model, "de", audio)
+                    val took = (System.nanoTime() - t1) / 1e9
+                    Log.i("AiChatWhisper", "${model.name}: %.1f s Audio; Laden+erste Erkennung %.1f s, zweite %.1f s (Faktor %.2f)".format(seconds, loadAndFirst, took, took / seconds))
+                    Log.i("AiChatWhisper", "${model.name} erkannt: $first")
+                    val hit = words(first).intersect(expected).size
+                    assertTrue("${model.name}: zu wenig erkannt ($hit von ${expected.size}): $first", hit >= expected.size * 0.6)
+                    assertTrue("${model.name}: zweite Erkennung weicht ab: $second", words(second).intersect(expected).size >= expected.size * 0.6)
+                } finally {
+                    input.release()
+                }
+            }
         } finally {
-            input.release()
             out.shutdown()
         }
     }

@@ -109,7 +109,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
                 Text(if (vm.docBusy) "…" else "📎")
             }
             Spacer(Modifier.padding(2.dp))
-            OutlinedButton(onClick = onMic, enabled = !vm.streaming, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (vm.listening) "■" else "🎤") }
+            OutlinedButton(onClick = onMic, enabled = !vm.streaming && !vm.recognizing, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(if (vm.listening) "■" else "🎤") }
             Spacer(Modifier.padding(2.dp))
             if (vm.streaming) Button(onClick = vm::stop) { Text("Stopp") }
             else Button(onClick = vm::send, enabled = vm.input.isNotBlank()) { Text("Senden") }

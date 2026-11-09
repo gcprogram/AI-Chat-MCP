@@ -57,6 +57,11 @@ data class Config(
     @SerialName("speech_engine") val speechEngine: String = "google",
     /** Ordnername des gewählten Whisper-Modells; leer = das erste installierte. */
     @SerialName("whisper_model") val whisperModel: String = "",
+    /**
+     * Sprache, in der Whisper schreibt: leer = Antwortsprache des Companions (Whisper übersetzt dann, was in einer anderen Sprache gesprochen wird,
+     * z. B. Deutsch zu einem englischen Companion), "auto" = die gesprochene Sprache erkennen und so schreiben, sonst ein Code ("de", "en", …).
+     */
+    @SerialName("whisper_language") val whisperLanguage: String = "",
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },

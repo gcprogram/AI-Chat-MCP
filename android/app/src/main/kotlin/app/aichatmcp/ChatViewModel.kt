@@ -163,6 +163,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var listening by mutableStateOf(false)
         private set
+    /** Whisper erkennt gerade (Aufnahme ist zu Ende): der Mikrofon-Knopf ist solange gesperrt. */
+    var recognizing by mutableStateOf(false)
+        private set
     var packRows by mutableStateOf<List<PackRow>>(emptyList())
         private set
     var packNote by mutableStateOf("")
@@ -342,17 +345,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             listening = true
             listeningWithWhisper = true
             speechMode = "Whisper, offline"
+            recognizing = false
             whisperIn.start(
-                model, languageTag(),
+                model, WhisperNames.targetLanguage(config.whisperLanguage, languageTag()),
                 onStatus = { status = it },
+                onRecognizing = { recognizing = true },
                 onResult = { text ->
                     listening = false
+                    recognizing = false
                     input = text
                     status = "Erkannt ($speechMode)"
                     if (config.voiceAutoSend) send()
                 },
                 onError = { message ->
                     listening = false
+                    recognizing = false
                     status = "$message ($speechMode)"
                 },
             )

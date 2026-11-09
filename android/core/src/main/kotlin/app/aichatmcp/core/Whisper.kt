@@ -30,6 +30,16 @@ object WhisperNames {
     fun redundant(names: List<String>): Set<String> =
         names.filter { it.endsWith(".int8.onnx") }.map { it.removeSuffix(".int8.onnx") + ".onnx" }.filter { it in names }.toSet()
 
+    /**
+     * Sprache, in der Whisper schreibt, aus der Einstellung [setting] (leer = Sprache des Companions [companionTag], "auto" oder ein Code):
+     * null = Whisper erkennt die gesprochene Sprache selbst.
+     */
+    fun targetLanguage(setting: String, companionTag: String?): String? = when (val s = setting.trim().lowercase()) {
+        "" -> languageOf(companionTag)
+        "auto" -> null
+        else -> languageOf(s)
+    }
+
     /** Anzahl der Mel-Bänder: large-v3 und turbo rechnen mit 128, alle älteren Modelle mit 80. */
     fun featureDim(folder: String): Int = if (Regex("large-v3|turbo", RegexOption.IGNORE_CASE).containsMatchIn(folder)) 128 else 80
 

@@ -91,6 +91,16 @@ class WhisperTest {
     }
 
     @Test
+    fun targetLanguageFollowsTheCompanionUnlessChosen() {
+        assertEquals("en", WhisperNames.targetLanguage("", "en-US")) // leer: Sprache des Companions (Whisper übersetzt)
+        assertEquals("de", WhisperNames.targetLanguage("  ", "de-DE"))
+        assertNull(WhisperNames.targetLanguage("auto", "en-US")) // erkennen
+        assertNull(WhisperNames.targetLanguage(" AUTO ", null))
+        assertEquals("fr", WhisperNames.targetLanguage("fr", "en-US"))
+        assertNull(WhisperNames.targetLanguage("", null))
+    }
+
+    @Test
     fun silenceIsRecognizedBeforeWhisperInventsText() {
         assertTrue(WhisperAudio.isSilent(FloatArray(0)))
         assertTrue(WhisperAudio.isSilent(FloatArray(16000))) // 1 s Stille

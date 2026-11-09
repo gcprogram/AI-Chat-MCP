@@ -40,10 +40,15 @@ class WhisperInput(private val store: WhisperStore, private val threads: () -> I
     private var loadedKey = ""
 
     /**
-     * Startet die Aufnahme mit [model]. [languageTag] ist der Sprach-Tag der Antwortsprache (null = Whisper erkennt die Sprache selbst).
-     * [onStatus] meldet die Phasen ("Höre zu…", "Erkenne…"), [onResult] den erkannten Text, [onError] einen Fehlertext.
+     * Startet die Aufnahme mit [model]. [languageTag] ist die Sprache, in der Whisper schreibt ("de", "de-DE"; null = Whisper erkennt die gesprochene
+     * Sprache selbst). Eine festgelegte Sprache zwingt Whisper, in ihr zu schreiben: Andere gesprochene Sprachen werden dabei übersetzt
+     * (am PC mit small und medium geprüft, Deutsch gesprochen und Englisch geschrieben). [onStatus] meldet die Phasen ("Höre zu…", "Erkenne…"), [onRecognizing] den Beginn der Erkennung (die
+     * Aufnahme ist dann zu Ende und nicht mehr zu stoppen), [onResult] den erkannten Text, [onError] einen Fehlertext.
      */
-    fun start(model: WhisperModel, languageTag: String?, onStatus: (String) -> Unit, onResult: (String) -> Unit, onError: (String) -> Unit) {
+    fun start(
+        model: WhisperModel, languageTag: String?, onStatus: (String) -> Unit, onResult: (String) -> Unit, onError: (String) -> Unit,
+        onRecognizing: () -> Unit = {},
+    ) {
         stop()
         val gen = ++generation
         fun post(block: () -> Unit) = main.post { if (gen == generation) block() }
@@ -62,7 +67,7 @@ class WhisperInput(private val store: WhisperStore, private val threads: () -> I
             }
             if (gen != generation) return@Thread
             recording = false
-            post { onStatus("Erkenne… (Whisper)") }
+            post { onRecognizing(); onStatus("Erkenne… (Whisper)") }
             val samples = WhisperAudio.fromPcm16(pcm.toByteArray())
             if (WhisperAudio.isSilent(samples)) {
                 post { onError("Keine Sprache gehört.") }

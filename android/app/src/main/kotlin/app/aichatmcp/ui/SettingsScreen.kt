@@ -63,6 +63,7 @@ fun SettingsScreen(
     var speechOnline by remember { mutableStateOf(c.speechOnline) }
     var speechEngine by remember { mutableStateOf(c.speechEngine) }
     var whisperModel by remember { mutableStateOf(c.whisperModel) }
+    var whisperLanguage by remember { mutableStateOf(c.whisperLanguage) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
     var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
@@ -162,6 +163,13 @@ fun SettingsScreen(
                 "(kein Mitlesen), die Aufnahme endet nach einer Pause oder beim erneuten Tippen auf das Mikrofon. Größere Modelle erkennen besser, " +
                 "brauchen aber länger: „small“ ist ein guter Anfang, „medium“ ist auf dem Handy meist zu langsam. Modellpakete: sherpa-onnx " +
                 "(Pakete „sherpa-onnx-whisper-…“, Ordner mit Encoder, Decoder und tokens.txt).",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextSetting("Sprache für Whisper (leer = Sprache des Companions, auto = erkennen, sonst z. B. de)", whisperLanguage, { whisperLanguage = it })
+        Text(
+            "Das Feld legt fest, in welcher Sprache Whisper schreibt. Leer: in der Antwortsprache des Companions; sprichst du Deutsch zu einem englischen " +
+                "Companion, kommt der Text schon auf Englisch heraus (Whisper übersetzt). „auto“ schreibt in der gesprochenen Sprache, ein Code wie „de“ " +
+                "immer in dieser Sprache.",
             style = MaterialTheme.typography.bodySmall,
         )
         vm.whisperModels.forEach { m ->
@@ -349,7 +357,7 @@ fun SettingsScreen(
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                     confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
-                    speechEngine = speechEngine, whisperModel = whisperModel,
+                    speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
                     speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                     piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
                     piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,
