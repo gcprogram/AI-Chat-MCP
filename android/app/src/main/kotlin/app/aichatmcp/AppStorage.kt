@@ -8,6 +8,7 @@ import app.aichatmcp.core.LoadedChat
 import app.aichatmcp.core.PersonaStore
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.ReadMarks
+import app.aichatmcp.core.WhisperStore
 import app.aichatmcp.core.string
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,6 +33,9 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
 
     /** Piper-Stimmen (Modelle für die Sprachausgabe auf dem Gerät). */
     val piper = PiperStore(File(root, "piper"))
+
+    /** Whisper-Modelle (Spracheingabe auf dem Gerät). */
+    val whisper = WhisperStore(File(root, "whisper"))
 
     /** Beim ersten Start: Standard-Companion und Werkzeugkonfiguration aus den mitgelieferten Dateien anlegen. */
     fun ensureDefaults() {

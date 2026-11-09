@@ -53,6 +53,10 @@ data class Config(
     @SerialName("piper_noise") val piperNoise: Double = 0.667,
     /** Piper: Schwankung der Sprechrhythmik/Betonung (0.8 = Vorgabe; höher = abwechslungsreicher, bei zu viel Stolpern). */
     @SerialName("piper_noise_w") val piperNoiseW: Double = 0.8,
+    /** Spracheingabe: "google" (Erkennung des Systems) oder "whisper" (eigenes Modell auf dem Gerät, komplett offline). */
+    @SerialName("speech_engine") val speechEngine: String = "google",
+    /** Ordnername des gewählten Whisper-Modells; leer = das erste installierte. */
+    @SerialName("whisper_model") val whisperModel: String = "",
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },

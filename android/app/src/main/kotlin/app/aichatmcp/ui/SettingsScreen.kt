@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -27,6 +28,8 @@ import androidx.compose.runtime.LaunchedEffect
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.core.BACKEND_LOCAL
 import app.aichatmcp.core.BACKEND_SERVER
+import app.aichatmcp.core.ENGINE_GOOGLE
+import app.aichatmcp.core.ENGINE_WHISPER
 import app.aichatmcp.local.LOCAL_MAX_CONTEXT
 import kotlinx.coroutines.launch
 
@@ -36,7 +39,7 @@ private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
 @Composable
 fun SettingsScreen(
     vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit,
-    onPickPiper: () -> Unit,
+    onPickPiper: () -> Unit, onPickWhisper: () -> Unit,
 ) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
@@ -58,6 +61,8 @@ fun SettingsScreen(
     var speakReplies by remember { mutableStateOf(c.speakReplies) }
     var voiceAutoSend by remember { mutableStateOf(c.voiceAutoSend) }
     var speechOnline by remember { mutableStateOf(c.speechOnline) }
+    var speechEngine by remember { mutableStateOf(c.speechEngine) }
+    var whisperModel by remember { mutableStateOf(c.whisperModel) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
     var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
@@ -146,6 +151,38 @@ fun SettingsScreen(
                 "Online-Erkennung an Google.",
             style = MaterialTheme.typography.bodySmall,
         )
+
+        SectionTitle("Spracheingabe mit Whisper (offline)")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Whisper statt Google für das Mikrofon", modifier = Modifier.weight(1f))
+            Switch(checked = speechEngine == ENGINE_WHISPER, onCheckedChange = { speechEngine = if (it) ENGINE_WHISPER else ENGINE_GOOGLE })
+        }
+        Text(
+            "Whisper läuft komplett auf dem Gerät, ohne Google und ohne Netz, und erkennt viele Sprachen. Es erkennt erst nach dem Sprechen " +
+                "(kein Mitlesen), die Aufnahme endet nach einer Pause oder beim erneuten Tippen auf das Mikrofon. Größere Modelle erkennen besser, " +
+                "brauchen aber länger: „small“ ist ein guter Anfang, „medium“ ist auf dem Handy meist zu langsam. Modellpakete: sherpa-onnx " +
+                "(Pakete „sherpa-onnx-whisper-…“, Ordner mit Encoder, Decoder und tokens.txt).",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        vm.whisperModels.forEach { m ->
+            val selected = (vm.whisperModels.firstOrNull { it.name == whisperModel } ?: vm.whisperModels.first()).name == m.name
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = selected, onClick = { whisperModel = m.name })
+                Column(Modifier.weight(1f)) {
+                    Text(m.title)
+                    Text(
+                        m.name + if (m.englishOnly) " (nur Englisch)" else "", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+                TextButton(onClick = { vm.deleteWhisper(m) }) { Text("Löschen") }
+            }
+        }
+        if (vm.whisperModels.isEmpty()) {
+            Text("Noch kein Whisper-Modell installiert.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        }
+        if (vm.whisperNote.isNotEmpty()) Text(vm.whisperNote, style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = onPickWhisper, enabled = !vm.whisperBusy) { Text(if (vm.whisperBusy) "Kopiere…" else "Whisper-Ordner wählen…") }
 
         SectionTitle("Offline-Sprachpakete (Spracherkennung)")
         if (!vm.packsSupported) {
@@ -312,6 +349,7 @@ fun SettingsScreen(
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                     confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
+                    speechEngine = speechEngine, whisperModel = whisperModel,
                     speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                     piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
                     piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,

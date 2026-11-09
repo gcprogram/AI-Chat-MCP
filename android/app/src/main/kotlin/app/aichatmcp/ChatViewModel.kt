@@ -55,6 +55,9 @@ import app.aichatmcp.core.SpeakerJudge
 import app.aichatmcp.core.PiperNames
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.PiperVoice
+import app.aichatmcp.core.ENGINE_WHISPER
+import app.aichatmcp.core.WhisperModel
+import app.aichatmcp.core.WhisperNames
 import app.aichatmcp.core.Speech
 import app.aichatmcp.core.TOOL_ERROR
 import app.aichatmcp.core.TOOL_RESULT
@@ -75,6 +78,7 @@ import app.aichatmcp.local.effectiveConfig
 import app.aichatmcp.speech.DescribedPictures
 import app.aichatmcp.speech.ReaderFocus
 import app.aichatmcp.speech.SpeechInput
+import app.aichatmcp.speech.WhisperInput
 import app.aichatmcp.speech.SpeechReaderOutput
 import app.aichatmcp.speech.SpeechPacks
 import app.aichatmcp.speech.SpeechOutput
@@ -185,6 +189,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var piperBusy by mutableStateOf(false)
         private set
+    var whisperModels by mutableStateOf<List<WhisperModel>>(emptyList())
+        private set
+    var whisperNote by mutableStateOf("")
+        private set
+    var whisperBusy by mutableStateOf(false)
+        private set
     var mcpText by mutableStateOf("")
 
     /** Vorschau eines Schlüsselwort-Imports (CSV/Excel), wartet auf "Übernehmen". */
@@ -206,6 +216,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val visionAvailable: Boolean get() = visionVersion >= 0 && vision.available
     private var visionVersion by mutableStateOf(0) // ändert sich beim Import/Entfernen, damit die Oberfläche neu liest
     private val speechIn = SpeechInput(app)
+    private val whisperIn = WhisperInput(storage.whisper) { config.localThreads }
+    private var listeningWithWhisper = false
     private val speechOut = SpeechOutput(app)
     private val packs = SpeechPacks(app)
     private var registry = ToolRegistry()
@@ -315,10 +327,38 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Mikrofon-Knopf: Aufnahme starten bzw. beenden. Die Berechtigung holt die Oberfläche vorher ein. */
     fun toggleListening() {
         if (listening) {
-            speechIn.finish()
+            if (listeningWithWhisper) whisperIn.finish() else speechIn.finish()
             return
         }
         if (streaming) return
+        if (config.speechEngine == ENGINE_WHISPER) {
+            val model = storage.whisper.resolve(config.whisperModel)
+            if (model == null) {
+                status = "Kein Whisper-Modell installiert (Einstellungen → Sprache)."
+                return
+            }
+            readerPause()
+            speechOut.stop()
+            listening = true
+            listeningWithWhisper = true
+            speechMode = "Whisper, offline"
+            whisperIn.start(
+                model, languageTag(),
+                onStatus = { status = it },
+                onResult = { text ->
+                    listening = false
+                    input = text
+                    status = "Erkannt ($speechMode)"
+                    if (config.voiceAutoSend) send()
+                },
+                onError = { message ->
+                    listening = false
+                    status = "$message ($speechMode)"
+                },
+            )
+            return
+        }
+        listeningWithWhisper = false
         if (!speechIn.isAvailable()) {
             status = "Keine Spracherkennung auf diesem Gerät."
             return
@@ -873,6 +913,44 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // --- Piper-Stimmen (eigene Modelle) ----------------------------------------------------------------------
 
     /**
+     * Kopiert die Dateien eines Ordners aus dem Auswahldialog ([tree]) mit [write] (relativer Pfad, Inhalt; true = übernommen).
+     * [skip] sagt für jede Datei eines Ordners (relativer Ordner, Name, alle Namen dieses Ordners), ob sie ausgelassen wird, und [skipDir]
+     * für jeden Unterordner. Liefert die Zahl der übernommenen Dateien. Auf einem Hintergrundfaden aufrufen.
+     */
+    private fun copyTree(
+        tree: Uri, skipDir: (relative: String, name: String) -> Boolean = { _, _ -> false },
+        skip: (name: String, all: List<String>) -> Boolean = { _, _ -> false }, write: (String, java.io.InputStream) -> Boolean,
+    ): Int {
+        val resolver = getApplication<Application>().contentResolver
+        var files = 0
+        fun walk(documentId: String, relative: String) {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+            val columns = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+            )
+            // Zuerst alle Einträge lesen, dann kopieren (der Cursor soll nicht während langer Kopien offen bleiben)
+            val entries = resolver.query(children, columns, null, null, null)?.use { c ->
+                generateSequence { if (c.moveToNext()) Triple(c.getString(0), c.getString(1), c.getString(2)) else null }.toList()
+            }.orEmpty()
+            val names = entries.map { it.second }
+            for ((id, name, mime) in entries) {
+                val path = if (relative.isEmpty()) name else "$relative/$name"
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    if (!skipDir(relative, name)) walk(id, path)
+                } else if (!skip(name, names)) {
+                    val input = resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, id)) ?: continue
+                    if (input.use { write(path, it) }) files++
+                }
+            }
+        }
+        walk(DocumentsContract.getTreeDocumentId(tree), "")
+        return files
+    }
+
+    private fun folderNameOf(tree: Uri) = PiperNames.safeName(DocumentsContract.getTreeDocumentId(tree).substringAfterLast(':').substringAfterLast('/'))
+
+    /**
      * Übernimmt einen Stimmenordner aus dem Auswahldialog (Modell `*.onnx`, `tokens.txt`, optional `*.onnx.json`, dazu einmalig
      * `espeak-ng-data`) in den App-Speicher. Der Ordnername wird zum Namen der Stimme.
      */
@@ -881,33 +959,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         piperBusy = true
         piperNote = "Kopiere die Stimme…"
         viewModelScope.launch {
-            val folder = PiperNames.safeName(DocumentsContract.getTreeDocumentId(tree).substringAfterLast(':').substringAfterLast('/'))
+            val folder = folderNameOf(tree)
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
-                    val resolver = getApplication<Application>().contentResolver
                     val skipShared = storage.piper.espeakReady()
-                    var files = 0
-                    fun walk(documentId: String, relative: String) {
-                        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
-                        val columns = arrayOf(
-                            DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                            DocumentsContract.Document.COLUMN_MIME_TYPE,
-                        )
-                        // Zuerst alle Einträge lesen, dann kopieren (der Cursor soll nicht während langer Kopien offen bleiben)
-                        val entries = resolver.query(children, columns, null, null, null)?.use { c ->
-                            generateSequence { if (c.moveToNext()) Triple(c.getString(0), c.getString(1), c.getString(2)) else null }.toList()
-                        }.orEmpty()
-                        for ((id, name, mime) in entries) {
-                            val path = if (relative.isEmpty()) name else "$relative/$name"
-                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                                if (!(skipShared && name == PiperStore.ESPEAK && relative.isEmpty())) walk(id, path)
-                            } else {
-                                val input = resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree, id)) ?: continue
-                                if (input.use { storage.piper.importFile(folder, path, it, skipShared) }) files++
-                            }
-                        }
-                    }
-                    walk(DocumentsContract.getTreeDocumentId(tree), "")
+                    val files = copyTree(
+                        tree, skipDir = { relative, name -> skipShared && name == PiperStore.ESPEAK && relative.isEmpty() },
+                        write = { path, input -> storage.piper.importFile(folder, path, input, skipShared) },
+                    )
                     storage.piper.problem(folder)?.let { problem ->
                         storage.piper.discardIncomplete(folder)
                         throw IllegalStateException(problem)
@@ -920,6 +979,47 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             piperVoices = storage.piper.list()
             piperBusy = false
         }
+    }
+
+    // --- Whisper-Modelle (Spracheingabe auf dem Gerät) ------------------------------------------------------
+
+    /**
+     * Übernimmt einen Whisper-Ordner aus dem Auswahldialog (Paket `sherpa-onnx-whisper-…`: Encoder, Decoder, `*tokens.txt`). Gibt es
+     * von einem Modell eine int8-Fassung, wird die große weggelassen (spart Speicher und Kopierzeit). Der Ordnername wird zum Modellnamen.
+     */
+    fun importWhisperFolder(tree: Uri) {
+        if (whisperBusy) return
+        whisperBusy = true
+        whisperNote = "Kopiere das Modell (das kann bei großen Modellen etwas dauern)…"
+        viewModelScope.launch {
+            val folder = folderNameOf(tree)
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    // Nur der oberste Ordner; die große Fassung wird nicht kopiert, wenn die int8-Fassung daneben liegt
+                    val files = copyTree(
+                        tree, skipDir = { _, _ -> true },
+                        skip = { name, all -> name in WhisperNames.redundant(all) },
+                        write = { path, input -> storage.whisper.importFile(folder, path, input) },
+                    )
+                    storage.whisper.problem(folder)?.let { problem ->
+                        storage.whisper.delete(folder)
+                        throw IllegalStateException(problem)
+                    }
+                    files
+                }
+            }
+            outcome.onSuccess { whisperNote = "Modell „$folder“ übernommen. Unter „Spracheingabe“ auswählbar." }
+            outcome.onFailure { whisperNote = "Import fehlgeschlagen: ${it.message}" }
+            whisperModels = storage.whisper.list()
+            whisperBusy = false
+        }
+    }
+
+    fun deleteWhisper(model: WhisperModel) {
+        storage.whisper.delete(model.name)
+        whisperModels = storage.whisper.list()
+        whisperNote = "Modell „${model.name}“ gelöscht."
+        whisperIn.release()
     }
 
     fun deletePiper(voice: PiperVoice) {
@@ -1319,6 +1419,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         android.util.Log.w("AiChat", "ViewModel onCleared")
         speechIn.stop()
+        whisperIn.release()
         speechOut.shutdown()
         localLlm.unload()
         registry.shutdown()
@@ -1334,6 +1435,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.piperThreads = { config.localThreads }
         speechOut.piperNoise = config.piperNoise.toFloat() to config.piperNoiseW.toFloat()
         piperVoices = storage.piper.list()
+        whisperModels = storage.whisper.list()
         personaIds = storage.personas.list()
         val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
         persona = storage.personas.load(id)

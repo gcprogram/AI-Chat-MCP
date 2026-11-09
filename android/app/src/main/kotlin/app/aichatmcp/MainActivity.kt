@@ -119,6 +119,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
     // Kein MIME-Filter: CSV und Excel melden die Dateimanager uneinheitlich; das Format erkennt die App am Namen/Inhalt
     val pickKeywords = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::previewKeywordImport) }
     val pickPiper = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::importPiperFolder) }
+    val pickWhisper = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::importWhisperFolder) }
     val pickVision = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.importVisionModel(it, nameOf(it)) } }
     val pickVisionProj = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.importVisionProj(it, nameOf(it)) } }
     // Kein MIME-Filter: manche Dateimanager melden .md/.txt mit unbekanntem Typ. Das Format prüft die App am Namen.
@@ -145,6 +146,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) },
             onPickVision = { pickVision.launch(arrayOf("*/*")) }, onPickVisionProj = { pickVisionProj.launch(arrayOf("*/*")) },
             onPickPiper = { pickPiper.launch(null) },
+            onPickWhisper = { pickWhisper.launch(null) },
         )
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
