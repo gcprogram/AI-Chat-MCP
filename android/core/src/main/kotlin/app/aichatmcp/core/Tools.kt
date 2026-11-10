@@ -133,6 +133,12 @@ private fun coerce(param: Param, value: Any?): Any? {
 
 private val NAMED_ARG_RE = Regex("^([A-Za-z_]\\w*)\\s*=\\s*(.*)$", RegexOption.DOT_MATCHES_ALL)
 
+/** Schritt eines Makros: ein Aufruf eines anderen Aliases (mit Argumenten wie im Marker) oder eine Pause. */
+sealed class MacroStep {
+    data class Call(val alias: String, val args: String) : MacroStep()
+    data class Wait(val seconds: Double) : MacroStep()
+}
+
 data class ToolSpec(
     val alias: String,
     val server: String,
@@ -149,6 +155,7 @@ data class ToolSpec(
     val confirm: Boolean? = null, // null = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
     val remember: Boolean = false, // Ergebnis bei show/discard dem Modell im Verlauf zeigen
     val keywords: List<Keyword> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
+    val macro: List<MacroStep> = emptyList(), // Makro: mehrere Aufrufe nacheinander (dann ohne eigenen Server-Aufruf)
 ) {
     val usage: String get() = "[[mcp:" + (listOf(alias) + params.map { "<${it.name}>" }).joinToString("|") + "]]"
 
@@ -263,6 +270,10 @@ class ToolRegistry {
     val tools = linkedMapOf<String, ToolSpec>() // was das Modell benutzen darf (Aliase)
     val remote = linkedMapOf<Pair<String, String>, ToolSpec>() // alle Werkzeuge der Server, auch unsichtbare
     val errors = mutableListOf<String>()
+    private val buttons = mutableMapOf<String, Map<String, String>>() // Server -> Schlüssel (Beschriftung, Hex, Dezimal; klein) -> Code "0x11"
+
+    /** Pause in einem Makro (in Millisekunden); in Tests ersetzbar. */
+    var sleeper: (Long) -> Unit = { Thread.sleep(it) }
 
     /** Startet den Server (blockierend) und registriert seine Werkzeuge. Mit exposeRaw=false nur über Aliase. */
     fun addServer(name: String, server: McpClient, overrides: JsonObject? = null, exposeRaw: Boolean = true): List<String> {
@@ -298,8 +309,12 @@ class ToolRegistry {
     /** Registriert Kurznamen aus dem Block "aliases" (Fehler landen in errors). */
     fun addAliases(aliases: JsonObject?, skipServers: Set<String> = emptySet()): List<String> {
         val added = mutableListOf<String>()
+        val skipped = mutableSetOf<String>() // Aliase auf deaktivierte/ausgefallene Server: Makros, die sie aufrufen, entfallen still
         for ((rawName, entry) in aliases.orEmpty()) {
-            if (entry is JsonObject && entry.string("server") in skipServers) continue
+            if (entry is JsonObject && entry.string("server") in skipServers) {
+                skipped += normalizeName(rawName)
+                continue
+            }
             val alias = normalizeName(rawName)
             try {
                 tools[alias] = buildAlias(alias, entry)
@@ -308,15 +323,106 @@ class ToolRegistry {
                 errors += "Alias '$alias': ${e.message}"
             }
         }
-        return added
+        return checkMacros(added, skipped)
     }
 
-    private fun buildAlias(alias: String, entry: Any?): ToolSpec {
-        require(entry is JsonObject) { "Eintrag ist kein Objekt" }
-        val server = entry.string("server").orEmpty()
-        val tool = entry.string("tool").orEmpty()
+    /**
+     * Die Tasten eines Servers mit Werkzeug "buttons" (Fernbedienung): Schlüssel (Beschriftung, Hex, Dezimalzahl; klein) -> Code "0x11".
+     * Die Beschriftungen stehen nur dort (im Profil der Fernbedienung), nicht noch einmal in mcp_servers.json.
+     */
+    fun buttonCodes(server: String): Map<String, String> = buttons.getOrPut(server) {
+        require((server to "buttons") in remote) { "Server '$server' hat kein Werkzeug 'buttons'" }
+        val (text, isError) = servers.getValue(server).callTool("buttons", emptyMap(), 15.0)
+        val items = try {
+            (AppJson.parseToJsonElement(text) as? JsonArray)?.takeIf { !isError }
+        } catch (_: Exception) {
+            null
+        } ?: throw IllegalArgumentException("Tasten von '$server' nicht lesbar: ${text.take(80)}")
+        val codes = linkedMapOf<String, String>()
+        for (item in items) {
+            val o = item as? JsonObject ?: continue
+            val number = (o["code"] as? JsonPrimitive)?.content?.toIntOrNull() ?: continue
+            val code = "0x" + number.toString(16).padStart(2, '0')
+            for (key in listOf(o.string("label"), o.string("hex"), code, number.toString())) {
+                if (!key.isNullOrBlank()) codes.putIfAbsent(key.trim().lowercase(), code)
+            }
+        }
+        codes
+    }
+
+    private fun buildMacro(alias: String, entry: JsonObject): ToolSpec {
+        val raw = entry["macro"] as? JsonArray
+        require(raw != null && raw.isNotEmpty()) { "'macro' muss eine nicht leere Liste sein" }
+        require(raw.size <= 20) { "'macro' hat zu viele Schritte (höchstens 20)" }
+        val steps = raw.map { el ->
+            val wait = ((el as? JsonObject)?.get("wait") ?: el) as? JsonPrimitive
+            val seconds = if (wait != null && !wait.isString) wait.content.toDoubleOrNull() else null
+            when {
+                seconds != null -> {
+                    require(seconds > 0 && seconds <= 60) { "eine Wartezeit muss zwischen 0 und 60 Sekunden liegen" }
+                    MacroStep.Wait(seconds)
+                }
+                el is JsonPrimitive && el.isString && el.content.isNotBlank() ->
+                    MacroStep.Call(normalizeName(el.content.substringBefore('|')), el.content.substringAfter('|', "").trim())
+                else -> throw IllegalArgumentException("Schritt nicht verständlich: $el (erlaubt: \"alias\", \"alias|Argument\", 3, {\"wait\": 3})")
+            }
+        }
+        require(steps.any { it is MacroStep.Call }) { "'macro' braucht mindestens einen Aufruf" }
+        val mode = entry.string("result") ?: RESULT_DISCARD
+        require(mode in RESULT_MODES) { "'result' muss ${RESULT_MODES.joinToString(", ")} sein" }
+        val confirmEl = entry["confirm"]
+        val confirm = when {
+            confirmEl == null || confirmEl is kotlinx.serialization.json.JsonNull -> null
+            confirmEl is JsonPrimitive && confirmEl.booleanOrNull != null -> confirmEl.booleanOrNull
+            else -> throw IllegalArgumentException("'confirm' muss true oder false sein")
+        }
+        return ToolSpec(
+            alias = alias, server = "", remoteName = "",
+            description = entry.string("hint")?.takeIf { it.isNotEmpty() } ?: "Runs several tools one after another",
+            example = entry.string("example").orEmpty(), result = mode, status = entry.string("status").orEmpty(), confirm = confirm,
+            remember = (entry["remember"] as? JsonPrimitive)?.booleanOrNull ?: false, macro = steps,
+        )
+    }
+
+    /** Prüft nach dem Aufbau aller Aliase, ob jedes Makro nur vorhandene Werkzeuge aufruft (keine Makros in Makros). */
+    private fun checkMacros(names: List<String>, skipped: Set<String>): List<String> = names.filter { name ->
+        val spec = tools[name] ?: return@filter true
+        if (spec.macro.isEmpty()) return@filter true
+        if (spec.macro.any { it is MacroStep.Call && it.alias in skipped }) {
+            tools.remove(name) // ruft ein Werkzeug eines abgeschalteten Servers auf: kein Fehler
+            return@filter false
+        }
+        val bad = spec.macro.filterIsInstance<MacroStep.Call>().firstOrNull { tools[it.alias] == null || tools.getValue(it.alias).macro.isNotEmpty() }
+        if (bad != null) {
+            tools.remove(name)
+            errors += "Alias '$name': '${bad.alias}' " + if (tools[bad.alias] == null) "gibt es nicht" else "ist selbst ein Makro"
+        }
+        bad == null
+    }
+
+    private fun buildAlias(alias: String, rawEntry: Any?): ToolSpec {
+        require(rawEntry is JsonObject) { "Eintrag ist kein Objekt" }
+        if ("macro" in rawEntry) return buildMacro(alias, rawEntry)
+        val server = rawEntry.string("server").orEmpty()
+        val button = rawEntry.string("button")?.trim().orEmpty()
+        // Taste der Fernbedienung per Beschriftung: send mit dem Code, den "buttons" dazu meldet
+        val tool = rawEntry.string("tool").orEmpty().ifEmpty { if (button.isNotEmpty()) "send" else "" }
         val base = remote[server to tool]
             ?: throw IllegalArgumentException("Werkzeug '$server/$tool' nicht gefunden (Server nicht gestartet?)")
+        val entry = if (button.isEmpty()) rawEntry else {
+            val codes = buttonCodes(server)
+            val code = codes[button.lowercase()] ?: run {
+                val labels = codes.keys.filter { !Regex("(0x)?[0-9a-f]{1,3}").matches(it) }.ifEmpty { codes.keys.toList() }.sorted().take(30)
+                throw IllegalArgumentException("Taste '$button' gibt es auf '$server' nicht (bekannt: ${labels.joinToString(", ")})")
+            }
+            JsonObject(
+                rawEntry.toMutableMap().also { m ->
+                    m["args"] = JsonObject(((rawEntry["args"] as? JsonObject) ?: JsonObject(emptyMap())) + ("code" to JsonPrimitive(code)))
+                    m.putIfAbsent("result", JsonPrimitive(RESULT_DISCARD))
+                    m.putIfAbsent("status", JsonPrimitive(button))
+                },
+            )
+        }
         val fixedEl = entry["args"] ?: JsonObject(emptyMap())
         val defaultsEl = entry["defaults"] ?: JsonObject(emptyMap())
         require(fixedEl is JsonObject && defaultsEl is JsonObject) { "'args' und 'defaults' müssen Objekte sein" }
@@ -436,6 +542,7 @@ class ToolRegistry {
                 "Unbekanntes Werkzeug '${call.name}'. Verfügbar: ${allowed.joinToString(", ").ifEmpty { "keine" }}.",
             )
         }
+        if (spec.macro.isNotEmpty()) return runMacro(spec, maxChars, timeoutSec)
         val arguments = try {
             spec.resolve(call.args)
         } catch (e: ToolArgError) {
@@ -450,5 +557,24 @@ class ToolRegistry {
         if (text.length > maxChars) text = text.substring(0, maxChars).trimEnd() + " […gekürzt]"
         if (isError) return ToolOutcome(spec.alias, false, text)
         return ToolOutcome(spec.alias, true, text, spec.result, spec.status.ifEmpty { "${spec.alias} ausgeführt" }, spec.remember)
+    }
+
+    /** Spielt die Schritte nacheinander ab (Aufrufe der Werkzeuge, Pausen). Der erste Fehler beendet das Makro. */
+    private fun runMacro(spec: ToolSpec, maxChars: Int, timeoutSec: Double): ToolOutcome {
+        val lines = mutableListOf<String>()
+        spec.macro.forEachIndexed { index, step ->
+            when (step) {
+                is MacroStep.Wait -> {
+                    sleeper((step.seconds * 1000).toLong())
+                    lines += "(wartet ${step.seconds.toString().removeSuffix(".0")} s)"
+                }
+                is MacroStep.Call -> {
+                    val outcome = run(ToolCall(step.alias, step.args, "", 0, 0), tools.keys.toList(), maxChars, timeoutSec)
+                    if (!outcome.ok) return ToolOutcome(spec.alias, false, "Schritt ${index + 1} (${step.alias}): ${outcome.text}")
+                    lines += "${step.alias}: ${outcome.text}"
+                }
+            }
+        }
+        return ToolOutcome(spec.alias, true, lines.joinToString("\n").take(maxChars), spec.result, spec.status.ifEmpty { "${spec.alias} ausgeführt" }, spec.remember)
     }
 }

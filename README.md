@@ -115,9 +115,25 @@ Je kürzer und einfacher das, was das Modell schreiben muss, desto zuverlässige
 }
 ```
 
+Tasten und Makros einer Fernbedienung, ohne Codes:
+
+```json
+"aliases": {
+  "tv-p1": {"server": "remote", "button": "P1", "hint": "Switch the TV to program 1"},
+  "tv-off": {"server": "remote", "tool": "off", "hint": "Switch the TV off", "result": "discard"},
+  "tv-demo": {"macro": ["tv-p1", 3, "tv-off"], "hint": "Short TV demo"}
+}
+```
+
+**Aliase vom Server lesen** (statt von Hand abzuschreiben): PC `set PYTHONPATH=. && python -m chat_app.server_import remote --prefix tv- [--dry-run]`,
+Android: Werkzeuge → „Werkzeuge von einem Server lesen“. Je Taste entsteht ein kurzer Eintrag (`server` + `button` + `hint`), je weiteres
+Werkzeug ein Alias; Vorhandenes wird nicht verändert, beim Server wird `"raw": false` gesetzt. Die Hinweise (`hint`) danach anpassen.
+
 | Feld | Bedeutung |
 |---|---|
-| `server`, `tool` | echtes MCP-Werkzeug (Pflicht) |
+| `server`, `tool` | echtes MCP-Werkzeug (Pflicht, außer bei `button` und `macro`) |
+| `button` | Taste einer Fernbedienung (Server mit den Werkzeugen `buttons` und `send`, z. B. Broadcast-Remote) **mit ihrer Beschriftung**: `{"server": "remote", "button": "P1"}`. Der Code kommt vom Server (`buttons`), er steht nicht noch einmal in `mcp_servers.json`; Standard `result: discard`, `status` = Beschriftung. Auch Hex-Code (`"0x11"`) geht |
+| `macro` | mehrere Aufrufe nacheinander: `{"macro": ["tv-p1", 3, "tv-off"], "hint": "…"}`. Ein Schritt ist ein Alias (mit Argumenten: `"alias\|Argument"`) oder eine Zahl = Pause in Sekunden (1–60, auch `{"wait": 3}`); höchstens 20 Schritte, keine Makros in Makros, der erste Fehler beendet das Makro; Standard `result: discard` |
 | `args` | feste Argumente, die das Modell nicht sieht und nicht ändern kann |
 | `params` | Argumente, die das Modell schreibt (Reihenfolge = Reihenfolge im Marker); ohne Angabe alle, die nicht in `args` stehen |
 | `defaults` | Ersatz für fehlende Argumente (das Argument wird dadurch optional) |

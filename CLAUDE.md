@@ -33,7 +33,7 @@ set PYTHONPATH=. && python -m unittest discover -s tests      # 110 Tests inkl. 
 python main.py
 ```
 
-Modellvergleich fuer Sekretariatsaufgaben gegen LM Studio: `set PYTHONPATH=. && python tools/model_eval.py [-m Modell ...] [--repeat 3] [--report x.md]` (21 feste Saetze: Todo/Wetter-Marker mit Argumenten und Chatfaelle ohne Marker; echter Prompt der App, nur Text, keine Ausfuehrung; Test `tests/test_model_eval.py` mit Schein-Server). Noch nicht gegen ein echtes Modell gelaufen.
+Modellvergleich fuer Sekretariatsaufgaben gegen LM Studio: `set PYTHONPATH=. && python tools/model_eval.py [-m Modell ...] [--repeat 3] [--report x.md]` (21 feste Saetze: Todo/Wetter-Marker mit Argumenten und Chatfaelle ohne Marker; echter Prompt der App, nur Text, keine Ausfuehrung; Test `tests/test_model_eval.py` mit Schein-Server). Gemessen (Marker-Modus, 22 Faelle je Durchgang, Nov 2026): `thedrummer_gemmasutra-small-4b-v1` 6/22 (Ø 11,7 s), `silicon-maid-7b` 9/22 (Ø 13,9 s) - beides Rollenspiel-Feinabstimmungen, die den Marker kaum schreiben und Chatfaelle mit erfundenen Aufrufen beantworten; `qwen3-8b-hivemind…` brach in LM Studio ab (`Engine protocol predict request failed`). Instruct-Modelle (Qwen3-4B-Instruct-2507, Gemma 3 4B) sind dort noch nicht installiert, also ungemessen.
 
 ## Entscheidungen (Erweiterung)
 - **Wiederholungen** (4B-Modell): Sampling-Parameter (`Config.sampling_params`, `repeat_penalty` 0 = nicht senden),
@@ -63,6 +63,13 @@ Modellvergleich fuer Sekretariatsaufgaben gegen LM Studio: `set PYTHONPATH=. && 
   Beschreibungen und der Prompt-Abschnitt sind englisch** (`weather`, `weather-past`, `websearch`, `tv-p1`…, `tv-off`):
   kleine Modelle folgen englischen Anweisungen besser. Marker für nicht freigeschaltete Werkzeuge werden im Chat gemeldet
   (sonst wirkt ein Companion ohne `tools` wie „Werkzeuge gehen nicht“).
+- **Tasten und Makros** (`button`/`macro` im Alias; Python `tools.py`, Kotlin `Tools.kt`, gleiche Regeln): `{"server":"remote","button":"P1"}` löst die Beschriftung über das Werkzeug `buttons` des Servers auf
+  (`ToolRegistry.button_codes`/`buttonCodes`, einmal gelesen und gemerkt; Schlüssel Beschriftung, Hex, Dezimal; Code kommt als `"0x11"` an `send`), Standard `result: discard`, `status` = Beschriftung.
+  Die Codes stehen so nur im Profil der Fernbedienung (Broadcast-Remote, Profile in der App), nicht mehr in `mcp_servers.json` (Broadcast-Remote selbst musste nicht geändert werden). `macro`: Liste aus Alias (optional `alias|Arg`),
+  Zahl oder `{"wait":n}` (0 bis 60 s, höchstens 20 Schritte); keine Makros in Makros, unbekannte Schritte verwerfen das Makro mit Fehlermeldung, erster Fehler beendet (`Schritt N (alias): …`);
+  das Makro ruft die Aliase über dieselbe `run`-Logik (ohne eigene Rückfrage je Schritt: das Makro selbst hat `confirm`). Pause blockiert den Werkzeug-Thread (kein Abbruch mitten in der Pause). **Aliase vom Server lesen**: `chat_app/server_import.py`
+  (CLI `python -m chat_app.server_import <server> --prefix tv-`, schreibt `.bak`), Kotlin `core/ServerImport.kt` + `ChatViewModel.importServerTools` + Werkzeuge-Bildschirm (fügt nur in das Textfeld ein, gespeichert wird von Hand); vorhandene Aliase bleiben, `raw:false` wird beim Server gesetzt.
+  Tests `tests/test_buttons_macros.py`, `ButtonsMacrosTest` (Schein-Fernbedienung). NICHT geprüft: gegen die echte Fernbedienung (`buttons` mit Beschriftungen), Importknopf auf dem Gerät.
 - **Nativer Modus** (`Persona.tool_mode = "native"`, Schalter im Companion-Editor): Aliase gehen als `tools`-Parameter
   (`ToolRegistry.native_tools`, klein dank fester `args`). `llm_client` setzt `delta.tool_calls` zusammen und liefert
   `StreamEvent("tool_call")`; die GUI macht daraus per `ToolRegistry.native_call` einen Marker (Anzeige/Verlauf/Speichern

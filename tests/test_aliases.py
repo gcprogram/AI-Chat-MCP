@@ -371,5 +371,17 @@ class SearchServerTest(unittest.TestCase):
         self.assertTrue(format_results(results).startswith("1. Titel A & Co (https://example.org/a?x=1)\n   Auszug"))
 
 
+def setUpModule():
+    # Die zyklische GC darf nicht in einem Streaming-Thread laufen: gibt sie dort Tk-Variablen frei, bricht Tcl ab (Tcl_AsyncDelete)
+    import gc
+    gc.disable()
+
+
+def tearDownModule():
+    import gc
+    gc.collect()  # im Hauptthread aufräumen
+    gc.enable()
+
+
 if __name__ == "__main__":
     unittest.main()

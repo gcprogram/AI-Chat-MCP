@@ -218,5 +218,17 @@ class GuiEndToEndTest(ServerCase):
             root.destroy()
 
 
+def setUpModule():
+    # Die zyklische GC darf nicht in einem Streaming-Thread laufen: gibt sie dort Tk-Variablen frei, bricht Tcl ab (Tcl_AsyncDelete)
+    import gc
+    gc.disable()
+
+
+def tearDownModule():
+    import gc
+    gc.collect()  # im Hauptthread aufräumen
+    gc.enable()
+
+
 if __name__ == "__main__":
     unittest.main()

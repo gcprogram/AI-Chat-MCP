@@ -117,6 +117,8 @@ def main() -> int:
     parser.add_argument("--language", default="Deutsch", help="Antwortsprache des Test-Companions")
     parser.add_argument("--report", help="Ergebnis zusätzlich als Markdown-Datei schreiben")
     args = parser.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):  # Modellantworten enthalten beliebige Zeichen (Windows-Konsole: cp1252)
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     cfg = Config.load()
     client = ChatClient(args.url or cfg.base_url, args.api_key or os.environ.get("AICHAT_API_KEY") or cfg.api_key)

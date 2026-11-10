@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -155,6 +156,8 @@ class ToolSpec:
     status: str = ""  # Statuszeile bei discard
     confirm: bool | None = None  # None = globale Einstellung "Vor jedem Werkzeugaufruf nachfragen"
     remember: bool = False  # Ergebnis bei show/discard dem Modell im Verlauf zeigen
+    # Makro: Schritte ("call", Alias, Argumente) oder ("wait", Sekunden); dann gibt es keinen eigenen Server-Aufruf
+    macro: list[tuple] = field(default_factory=list)
 
     @property
     def usage(self) -> str:
@@ -261,6 +264,7 @@ class ToolRegistry:
         self.tools: dict[str, ToolSpec] = {}  # was das Modell benutzen darf (Aliase)
         self.remote: dict[tuple[str, str], ToolSpec] = {}  # alle Werkzeuge der Server, auch unsichtbare
         self.errors: list[str] = []
+        self._buttons: dict[str, dict[str, str]] = {}  # Server -> Schlüssel (Label, Hex, Dezimal; klein) -> Code "0x11"
 
     # --- Aufbau --------------------------------------------------------------------------------
 
@@ -303,8 +307,10 @@ class ToolRegistry:
                 self.errors.append("'aliases' ist kein Objekt")
             return []
         added = []
+        skipped: set[str] = set()  # Aliase auf deaktivierte/ausgefallene Server: Makros, die sie aufrufen, entfallen still
         for raw_name, entry in aliases.items():
             if isinstance(entry, dict) and entry.get("server") in skip_servers:
+                skipped.add(normalize_name(str(raw_name)))
                 continue
             alias = normalize_name(str(raw_name))
             try:
@@ -313,15 +319,106 @@ class ToolRegistry:
                 self.errors.append(f"Alias '{alias}': {exc}")
             else:
                 added.append(alias)
-        return added
+        return self._check_macros(added, skipped)
+
+    def button_codes(self, server: str) -> dict[str, str]:
+        """Die Tasten eines Servers mit Werkzeug "buttons" (Fernbedienung): Schlüssel (Label, Hex, Dezimalzahl; klein) -> Code "0x11".
+        Die Beschriftungen stehen nur dort (im Profil der Fernbedienung), nicht noch einmal in mcp_servers.json."""
+        if server not in self._buttons:
+            if (server, "buttons") not in self.remote:
+                raise ValueError(f"Server '{server}' hat kein Werkzeug 'buttons'")
+            text, is_error = self.servers[server].call_tool("buttons", {}, 15.0)
+            try:
+                items = json.loads(text)
+                if is_error or not isinstance(items, list):
+                    raise ValueError
+            except ValueError:
+                raise ValueError(f"Tasten von '{server}' nicht lesbar: {text[:80]}") from None
+            codes: dict[str, str] = {}
+            for item in items:
+                if not isinstance(item, dict) or not isinstance(item.get("code"), int):
+                    continue
+                code = f"0x{item['code']:02x}"
+                for key in (item.get("label"), item.get("hex"), code, str(item["code"])):
+                    if key not in (None, ""):
+                        codes.setdefault(str(key).strip().lower(), code)
+            self._buttons[server] = codes
+        return self._buttons[server]
+
+    def _build_macro(self, alias: str, entry: dict) -> ToolSpec:
+        raw = entry.get("macro")
+        if not isinstance(raw, list) or not raw:
+            raise ValueError("'macro' muss eine nicht leere Liste sein")
+        if len(raw) > 20:
+            raise ValueError("'macro' hat zu viele Schritte (höchstens 20)")
+        steps: list[tuple] = []
+        for step in raw:
+            wait = step.get("wait") if isinstance(step, dict) else step
+            if isinstance(wait, (int, float)) and not isinstance(wait, bool):
+                if not 0 < wait <= 60:
+                    raise ValueError("eine Wartezeit muss zwischen 0 und 60 Sekunden liegen")
+                steps.append(("wait", float(wait)))
+            elif isinstance(step, str) and step.strip():
+                name, _, args = step.partition("|")
+                steps.append(("call", normalize_name(name), args.strip()))
+            else:
+                raise ValueError(f"Schritt nicht verständlich: {step!r} (erlaubt: \"alias\", \"alias|Argument\", 3, {{\"wait\": 3}})")
+        if not any(s[0] == "call" for s in steps):
+            raise ValueError("'macro' braucht mindestens einen Aufruf")
+        mode = str(entry.get("result") or RESULT_DISCARD)
+        if mode not in RESULT_MODES:
+            raise ValueError(f"'result' muss {', '.join(RESULT_MODES)} sein")
+        confirm = entry.get("confirm")
+        if confirm is not None and not isinstance(confirm, bool):
+            raise ValueError("'confirm' muss true oder false sein")
+        return ToolSpec(
+            alias=alias, server="", remote_name="", description=str(entry.get("hint") or "Runs several tools one after another"),
+            example=str(entry.get("example") or ""), result=mode, status=str(entry.get("status") or ""), confirm=confirm,
+            remember=bool(entry.get("remember", False)), macro=steps)
+
+    def _check_macros(self, names: list[str], skipped: set[str] = frozenset()) -> list[str]:
+        """Prüft nach dem Aufbau aller Aliase, ob jedes Makro nur vorhandene Werkzeuge aufruft (keine Makros in Makros)."""
+        ok = []
+        for name in names:
+            spec = self.tools.get(name)
+            if spec is None or not spec.macro:
+                ok.append(name)
+                continue
+            if any(step[0] == "call" and step[1] in skipped for step in spec.macro):
+                del self.tools[name]  # ruft ein Werkzeug eines abgeschalteten Servers auf: kein Fehler, das Makro gibt es nur dann nicht
+                continue
+            problem = next((f"'{step[1]}' gibt es nicht" if step[1] not in self.tools else f"'{step[1]}' ist selbst ein Makro"
+                            for step in spec.macro if step[0] == "call"
+                            and (step[1] not in self.tools or self.tools[step[1]].macro)), "")
+            if problem:
+                del self.tools[name]
+                self.errors.append(f"Alias '{name}': {problem}")
+            else:
+                ok.append(name)
+        return ok
 
     def _build_alias(self, alias: str, entry: Any) -> ToolSpec:
         if not isinstance(entry, dict):
             raise ValueError("Eintrag ist kein Objekt")
+        if "macro" in entry:
+            return self._build_macro(alias, entry)
         server, tool = str(entry.get("server") or ""), str(entry.get("tool") or "")
+        button = str(entry["button"]).strip() if entry.get("button") not in (None, "") else ""
+        if button:  # Taste der Fernbedienung per Beschriftung: send mit dem Code, den "buttons" dazu meldet
+            tool = tool or "send"
         base = self.remote.get((server, tool))
         if base is None:
             raise ValueError(f"Werkzeug '{server}/{tool}' nicht gefunden (Server nicht gestartet?)")
+        entry = dict(entry)
+        if button:
+            codes = self.button_codes(server)
+            code = codes.get(button.lower())
+            if code is None:
+                known = sorted({k for k in codes if not re.fullmatch(r"(0x)?[0-9a-f]{1,3}", k)}) or sorted(codes)
+                raise ValueError(f"Taste '{button}' gibt es auf '{server}' nicht (bekannt: {', '.join(known[:30])})")
+            entry["args"] = {**(entry.get("args") or {}), "code": code}
+            entry.setdefault("result", RESULT_DISCARD)
+            entry.setdefault("status", button)
         fixed, defaults = entry.get("args") or {}, entry.get("defaults") or {}
         if not isinstance(fixed, dict) or not isinstance(defaults, dict):
             raise ValueError("'args' und 'defaults' müssen Objekte sein")
@@ -470,6 +567,8 @@ class ToolRegistry:
         if spec is None or alias not in allowed:
             return ToolOutcome(call.name, False,
                                f"Unbekanntes Werkzeug '{call.name}'. Verfügbar: {', '.join(allowed) or 'keine'}.")
+        if spec.macro:
+            return self._run_macro(spec, allowed, max_chars, timeout)
         try:
             arguments = spec.resolve(call.args, call.arguments)
         except ToolArgError as exc:
@@ -485,3 +584,18 @@ class ToolRegistry:
             return ToolOutcome(spec.alias, False, text)
         status = spec.status or f"{spec.alias} ausgeführt"
         return ToolOutcome(spec.alias, True, text, spec.result, status, spec.remember)
+
+    def _run_macro(self, spec: ToolSpec, allowed: list[str], max_chars: int, timeout: float) -> ToolOutcome:
+        """Spielt die Schritte nacheinander ab (Aufrufe der freigeschalteten Werkzeuge, Pausen). Der erste Fehler beendet das Makro."""
+        lines: list[str] = []
+        for number, step in enumerate(spec.macro, 1):
+            if step[0] == "wait":
+                time.sleep(step[1])
+                lines.append(f"(wartet {step[1]:g} s)")
+                continue
+            outcome = self.run(ToolCall(step[1], step[2], "", 0, 0), list(self.tools), max_chars=max_chars, timeout=timeout)
+            if not outcome.ok:
+                return ToolOutcome(spec.alias, False, f"Schritt {number} ({step[1]}): {outcome.text}")
+            lines.append(f"{step[1]}: {outcome.text}")
+        return ToolOutcome(spec.alias, True, "\n".join(lines)[:max_chars], spec.result,
+                           spec.status or f"{spec.alias} ausgeführt", spec.remember)

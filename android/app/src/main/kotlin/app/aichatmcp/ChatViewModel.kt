@@ -60,6 +60,7 @@ import app.aichatmcp.core.PiperVoice
 import app.aichatmcp.core.ENGINE_WHISPER
 import app.aichatmcp.core.WhisperModel
 import app.aichatmcp.core.WhisperNames
+import app.aichatmcp.core.ServerImport
 import app.aichatmcp.core.Speech
 import app.aichatmcp.core.TOOL_ERROR
 import app.aichatmcp.core.TOOL_RESULT
@@ -1428,6 +1429,31 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         mcpText = text
         reloadTools()
         return null
+    }
+
+    /** Namen der gestarteten Server (für "Werkzeuge von einem Server lesen"). */
+    val serverNames: List<String> get() = registry.servers.keys.toList()
+
+    /**
+     * Liest Werkzeuge und Tasten eines laufenden Servers und fügt sie als Aliase in [currentText] ein (vorhandene bleiben).
+     * Liefert (neuer Text oder null, Meldung). Gespeichert wird nicht: der Nutzer prüft den Text und speichert selbst.
+     */
+    suspend fun importServerTools(server: String, prefix: String, currentText: String): Pair<String?, String> = withContext(Dispatchers.IO) {
+        val client = registry.servers[server] ?: return@withContext null to "Der Server '$server' läuft nicht (Konfiguration erst speichern)."
+        val config = try {
+            AppJson.parseToJsonElement(currentText) as? JsonObject
+        } catch (_: Exception) {
+            null
+        } ?: return@withContext null to "Die Konfiguration im Feld ist kein gültiges JSON."
+        try {
+            val (found, buttons) = ServerImport.read(client)
+            val merged = ServerImport.merge(config, server, found, buttons, prefix)
+            val note = "${merged.added.size} neue Aliase eingefügt (noch nicht gespeichert): ${merged.added.joinToString(", ").ifEmpty { "-" }}." +
+                if (merged.skipped.isNotEmpty()) " Schon vorhanden, nicht geändert: ${merged.skipped.joinToString(", ")}." else ""
+            AppJson.encodeToString(JsonObject.serializer(), merged.config) to note
+        } catch (e: Exception) {
+            null to "Lesen fehlgeschlagen: ${e.message}"
+        }
     }
 
     /** Liest eine Liste `Wort;Werkzeug;Parameter…` (CSV oder Excel) und zeigt vor dem Übernehmen, was sich in mcp_servers.json ändert. */

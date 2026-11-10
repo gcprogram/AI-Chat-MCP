@@ -1,9 +1,12 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
@@ -42,6 +45,9 @@ fun ToolsScreen(
     var certName by remember { mutableStateOf("remote.pem") }
     var certStatus by remember { mutableStateOf("") }
     var fetched by remember { mutableStateOf<FetchedCert?>(null) }
+    var readServer by remember { mutableStateOf("") }
+    var readPrefix by remember { mutableStateOf("") }
+    var readNote by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     ScreenFrame("Werkzeuge", onBack) {
@@ -56,16 +62,40 @@ fun ToolsScreen(
         SectionTitle("mcp_servers.json")
         Text(
             "Gleiches Format wie am PC. 'builtin': weather oder websearch läuft in der App, 'url' spricht einen MCP-Server " +
-                "über HTTP an. Die Python-Server des PCs werden automatisch durch die eingebauten ersetzt.",
+                "über HTTP an. Die Python-Server des PCs werden automatisch durch die eingebauten ersetzt. " +
+                "Eine Taste der Fernbedienung braucht nur {\"server\": \"remote\", \"button\": \"P1\"} (die Beschriftung kommt vom Server, " +
+                "keine Codes hier). Ein Makro spielt mehrere Werkzeuge ab: {\"macro\": [\"tv-p1\", 3, \"tv-off\"], \"hint\": \"…\"} (Zahl = Pause in Sekunden).",
             style = MaterialTheme.typography.bodySmall,
         )
         TextSetting("Konfiguration", text, { text = it; jsonError = "" }, minLines = 10, maxLines = 24)
         if (jsonError.isNotEmpty()) Text(jsonError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { jsonError = vm.saveMcpJson(text).orEmpty() }) { Text("Speichern & neu laden") }
             OutlinedButton(onClick = onImportMcp) { Text("Aus Datei") }
             OutlinedButton(onClick = { onExportMcp(text) }) { Text("Exportieren") } // der Text im Feld, auch ungespeicherte Änderungen
             OutlinedButton(onClick = vm::resetMcpJson) { Text("Standard") }
+        }
+
+        SectionTitle("Werkzeuge von einem Server lesen")
+        Text(
+            "Liest die Werkzeuge des laufenden Servers (bei einer Fernbedienung: alle Tasten mit ihrer Beschriftung) und fügt sie " +
+                "als kurze Aliase oben ein. Vorhandene Aliase bleiben unverändert; danach prüfen und \"Speichern & neu laden\".",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (vm.serverNames.isEmpty()) {
+            Text("Kein Server gestartet (erst eine Konfiguration mit Server speichern).", style = MaterialTheme.typography.bodySmall)
+        } else {
+            if (readServer !in vm.serverNames) readServer = vm.serverNames.first()
+            DropdownField("Server", vm.serverNames, readServer, { readServer = it; readPrefix = "$it-" })
+            TextSetting("Vorsilbe der Aliasnamen", readPrefix.ifEmpty { "$readServer-" }, { readPrefix = it })
+            OutlinedButton(onClick = {
+                scope.launch {
+                    val (updated, note) = vm.importServerTools(readServer, readPrefix.ifEmpty { "$readServer-" }, text)
+                    if (updated != null) { text = updated; jsonError = "" }
+                    readNote = note
+                }
+            }) { Text("Lesen und einfügen") }
+            if (readNote.isNotEmpty()) Text(readNote, style = MaterialTheme.typography.bodySmall)
         }
 
         SectionTitle("Schlüsselwörter aus Liste")
