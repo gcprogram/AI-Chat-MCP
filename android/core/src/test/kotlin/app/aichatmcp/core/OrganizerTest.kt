@@ -151,6 +151,25 @@ class OrganizerTest {
     }
 
     @Test
+    fun dailyUpdateIsShownOnlyOncePerDayForAllCompanions() {
+        assertFalse(DailyUpdate.alreadyShown(emptyMap(), today))
+        assertTrue(DailyUpdate.alreadyShown(mapOf("secretary" to today.toString()), today)) // ein anderer Companion hat es heute gezeigt
+        assertFalse(DailyUpdate.alreadyShown(mapOf("secretary" to today.minusDays(1).toString()), today)) // gestern: heute wieder
+    }
+
+    @Test
+    fun exportedCompanionLoadsAgainUnchanged() {
+        val persona = Persona(
+            name = "Selena", description = "A secretary.", language = "English", greeting = "Hi!", rules = listOf("Be brief."),
+            avatar = "avatars/secretary.png", tools = listOf("weather", "todo-add"), approvedTools = listOf("weather"), voice = "piper:x#2", dailyUpdate = true,
+            id = "secretary",
+        )
+        val back = Persona.parse(persona.toJson() + "\n", "secretary").getOrThrow()
+        assertEquals(persona, back)
+        assertFalse(persona.toJson().contains("\"id\"")) // die Kennung ist der Dateiname, nicht Teil der Datei
+    }
+
+    @Test
     fun personaAndConfigCarryTheDailyUpdateSettings() {
         assertFalse(Persona().dailyUpdate)
         assertTrue(Persona.parse("""{"name": "Selena", "daily_update": true}""").getOrThrow().dailyUpdate)

@@ -183,6 +183,9 @@ class OrganizerServer(name: String, private val todos: TodoStore, private val to
 /** Text des Tagesupdates (von der App zusammengestellt, ohne Modell). Sprache nach der Antwortsprache des Companions. */
 object DailyUpdate {
     private const val MAX_LISTED = 8
+
+    /** Wurde das Tagesupdate heute schon gezeigt (von irgendeinem Companion)? Dann zeigen es die anderen nicht noch einmal. */
+    fun alreadyShown(shownDays: Map<String, String>, today: LocalDate): Boolean = today.toString() in shownDays.values
     private val DE_DAYS = listOf("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
     private val EN_DAYS = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 

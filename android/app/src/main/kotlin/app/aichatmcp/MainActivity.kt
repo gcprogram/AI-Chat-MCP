@@ -136,6 +136,13 @@ private fun Root(vm: ChatViewModel = viewModel()) {
     val importChat = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { vm.importChat(it)?.let(::toast) } ?: toast("Datei nicht lesbar") }
     }
+    var exportPersonaId by remember { mutableStateOf("") }
+    val exportPersona = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        uri?.let { u ->
+            runCatching { context.contentResolver.openOutputStream(u)?.use { it.write(vm.exportPersona(exportPersonaId).toByteArray(Charsets.UTF_8)) } }
+                .onSuccess { toast("Companion exportiert") }.onFailure { toast("Export fehlgeschlagen: ${it.message}") }
+        }
+    }
     val exportChat = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         uri?.let { u ->
             runCatching { context.contentResolver.openOutputStream(u)?.use { it.write(vm.exportChat().toByteArray(Charsets.UTF_8)) } }
@@ -161,6 +168,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
         )
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
+            onExport = { id -> exportPersonaId = id; exportPersona.launch("$id.json") },
             onImportAvatars = { avatarFolder.launch(null) },
             onPickAvatar = { id -> avatarTarget = id; avatarPick.launch(arrayOf("image/*")) },
         )

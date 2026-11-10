@@ -62,7 +62,7 @@ data class Config(
      * z. B. Deutsch zu einem englischen Companion), "auto" = die gesprochene Sprache erkennen und so schreiben, sonst ein Code ("de", "en", …).
      */
     @SerialName("whisper_language") val whisperLanguage: String = "",
-    /** Companion-ID -> Datum (ISO) des zuletzt gezeigten Tagesupdates. */
+    /** Companion-ID -> Datum (ISO) des zuletzt gezeigten Tagesupdates; es gibt nur einen Eintrag (einmal pro Tag für alle Companions). */
     @SerialName("briefing_days") val briefingDays: Map<String, String> = emptyMap(),
     /** Tägliche Push-Nachricht (Kurzübersicht der Todos) zur Uhrzeit [dailyReminderTime] ("HH:mm"). */
     @SerialName("daily_reminder") val dailyReminder: Boolean = false,

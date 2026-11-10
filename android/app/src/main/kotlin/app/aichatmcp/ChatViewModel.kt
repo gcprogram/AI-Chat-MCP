@@ -1229,16 +1229,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Tagesupdate: Hat der Companion `daily_update` und wurde heute noch keines gezeigt, erscheint eine Nachricht mit den offenen Todos.
      * Sie wird von der App zusammengestellt (ohne Modell, sofort, auch ohne Server) und als angezeigtes Ergebnis in den Verlauf
-     * gelegt, damit das Modell sie mit der nächsten Nutzernachricht als Kontext bekommt. Einmal pro Tag und Companion.
+     * gelegt, damit das Modell sie mit der nächsten Nutzernachricht als Kontext bekommt. Einmal pro Tag insgesamt: Hat heute schon ein
+     * Companion das Update gezeigt, zeigen es die anderen nicht noch einmal.
      */
     private fun showDailyUpdate(today: java.time.LocalDate = java.time.LocalDate.now()) {
         if (!persona.dailyUpdate || persona.id.isEmpty() || streaming) return
-        if (config.briefingDays[persona.id] == today.toString()) return
+        if (DailyUpdate.alreadyShown(config.briefingDays, today)) return // heute schon von einem Companion gezeigt
         val text = DailyUpdate.text(storage.todos.open(), today, persona.isGerman())
         session.addToolShown("daily-update", text)
         messages += UiMessage(UiKind.SHOWN, text)
         saveChat()
-        config = config.copy(briefingDays = config.briefingDays + (persona.id to today.toString()))
+        config = config.copy(briefingDays = mapOf(persona.id to today.toString())) // nur der letzte Tag zählt; der Name zeigt, wer es gezeigt hat
         storage.saveConfig(config)
         updateContext()
     }
@@ -1264,6 +1265,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadPersona(id: String): Persona = storage.personas.load(id)
+
+    /** Der gespeicherte Companion als JSON (gleiches Format wie die Companion-Dateien der PC-App; das Avatar-Bild liegt nicht darin). */
+    fun exportPersona(id: String): String = storage.personas.load(id).toJson() + "\n"
 
     fun avatarFile(persona: Persona): File? = storage.avatarFile(persona.avatar)
 

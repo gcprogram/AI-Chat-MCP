@@ -33,7 +33,8 @@ private const val NEW_ENTRY = "(Neu)"
 
 @Composable
 fun CompanionsScreen(
-    vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit, onImportAvatars: () -> Unit, onPickAvatar: (String) -> Unit,
+    vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit, onExport: (String) -> Unit, onImportAvatars: () -> Unit,
+    onPickAvatar: (String) -> Unit,
 ) {
     var selected by remember { mutableStateOf(vm.persona.id) }
     ScreenFrame("Companions", onBack) {
@@ -43,6 +44,7 @@ fun CompanionsScreen(
                 { selected = if (it == NEW_ENTRY) "" else it }, Modifier.weight(1f),
             )
             OutlinedButton(onClick = onImport) { Text("Importieren") }
+            OutlinedButton(onClick = { onExport(selected) }, enabled = selected.isNotEmpty()) { Text("Exportieren") }
         }
         OutlinedButton(onClick = onImportAvatars) { Text("Avatare aus Ordner holen…") }
         key(selected) {
