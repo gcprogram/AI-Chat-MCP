@@ -61,7 +61,7 @@ CASES = [
     Case("Ich muss bis Freitag die Steuererklärung abgeben, notier das bitte.", "todo-add", (r"steuer", r"^(friday|freitag)$")),
     Case("Notiere für heute: Oma anrufen.", "todo-add", (r"oma", r"^(today|heute)$")),
     Case("Trag bitte ein: Auto zum TÜV am 25.11.", "todo-add", (r"t[üu]v", r"25\.\s*11\.?|2026-11-25")),
-    Case("Remind me to pay the rent on monday.", "todo-add", (r"rent", r"^monday$")),
+    Case("Remind me to pay the rent on monday.", "todo-add", (r"rent|miete", r"^(monday|montag)$")),
     Case("Was steht heute an?", "todo-list"),
     Case("Welche Todos habe ich noch offen?", "todo-list"),
     Case("Zeig mir meine Aufgabenliste.", "todo-list"),
