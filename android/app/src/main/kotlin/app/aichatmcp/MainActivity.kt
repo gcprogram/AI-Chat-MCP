@@ -110,6 +110,14 @@ private fun Root(vm: ChatViewModel = viewModel()) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) vm.toggleListening()
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) toast("Ohne Berechtigung für Benachrichtigungen kommt keine Erinnerung.")
+    }
+    fun requestNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
             // Zugriff dauerhaft behalten, sonst ist die Datei nach einem Neustart nicht mehr lesbar
@@ -148,6 +156,8 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onPickVision = { pickVision.launch(arrayOf("*/*")) }, onPickVisionProj = { pickVisionProj.launch(arrayOf("*/*")) },
             onPickPiper = { pickPiper.launch(null) },
             onPickWhisper = { pickWhisper.launch(null) },
+            onRequestNotifications = ::requestNotifications,
+            onToast = ::toast,
         )
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },

@@ -64,6 +64,9 @@ data class Config(
     @SerialName("whisper_language") val whisperLanguage: String = "",
     /** Companion-ID -> Datum (ISO) des zuletzt gezeigten Tagesupdates. */
     @SerialName("briefing_days") val briefingDays: Map<String, String> = emptyMap(),
+    /** Tägliche Push-Nachricht (Kurzübersicht der Todos) zur Uhrzeit [dailyReminderTime] ("HH:mm"). */
+    @SerialName("daily_reminder") val dailyReminder: Boolean = false,
+    @SerialName("daily_reminder_time") val dailyReminderTime: String = Reminder.DEFAULT_TIME,
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },
@@ -72,6 +75,7 @@ data class Config(
         speechRate = speechRate.coerceIn(0.5, 2.5),
         piperNoise = piperNoise.coerceIn(0.0, 1.5),
         piperNoiseW = piperNoiseW.coerceIn(0.0, 1.5),
+        dailyReminderTime = Reminder.parseTime(dailyReminderTime)?.let { Reminder.format(it) } ?: Reminder.DEFAULT_TIME,
         maxReplyTokens = maxReplyTokens.coerceIn(16, 8192),
         contextTokens = contextTokens.coerceIn(1024, 1_000_000),
         topP = topP.coerceIn(0.05, 1.0),

@@ -78,6 +78,7 @@ import app.aichatmcp.local.VisionLlm
 import app.aichatmcp.local.effectiveConfig
 import app.aichatmcp.speech.DescribedPictures
 import app.aichatmcp.speech.ReaderFocus
+import app.aichatmcp.reminder.DailyReminder
 import app.aichatmcp.speech.SpeechInput
 import app.aichatmcp.speech.WhisperInput
 import app.aichatmcp.speech.SpeechReaderOutput
@@ -1189,10 +1190,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.rate = config.speechRate.toFloat()
         speechOut.piperNoise = config.piperNoise.toFloat() to config.piperNoiseW.toFloat()
         storage.saveConfig(config)
+        DailyReminder.apply(getApplication(), config)
         session.config = effectiveConfig(config)
         updateContext()
         warmUp()
     }
+
+    /** Zeigt die tägliche Nachricht sofort (Einstellungen: "Jetzt testen"). Liefert einen Hinweis für den Nutzer. */
+    fun testReminder(): String =
+        if (DailyReminder.show(getApplication())) "Nachricht gesendet." else "Benachrichtigungen sind nicht erlaubt (Berechtigung oder Systemeinstellung)."
 
     /** Modelldatei für die Ausführung auf dem Gerät übernehmen (URI aus dem Auswahldialog) und umschalten. */
     fun setLocalModel(uri: String, name: String) {
@@ -1474,6 +1480,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ) { call, spec -> askUser(call, spec) }
         restoreChat()
         showDailyUpdate()
+        DailyReminder.apply(getApplication(), config)
         mcpText = storage.mcpJson()
         secretNames = storage.secrets().keys.sorted()
         certNames = storage.certNames()

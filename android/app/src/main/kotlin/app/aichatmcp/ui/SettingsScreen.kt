@@ -39,7 +39,7 @@ private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
 @Composable
 fun SettingsScreen(
     vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit,
-    onPickPiper: () -> Unit, onPickWhisper: () -> Unit,
+    onPickPiper: () -> Unit, onPickWhisper: () -> Unit, onRequestNotifications: () -> Unit, onToast: (String) -> Unit,
 ) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
@@ -64,6 +64,8 @@ fun SettingsScreen(
     var speechEngine by remember { mutableStateOf(c.speechEngine) }
     var whisperModel by remember { mutableStateOf(c.whisperModel) }
     var whisperLanguage by remember { mutableStateOf(c.whisperLanguage) }
+    var dailyReminder by remember { mutableStateOf(c.dailyReminder) }
+    var dailyReminderTime by remember { mutableStateOf(c.dailyReminderTime) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
     var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
@@ -325,6 +327,19 @@ fun SettingsScreen(
         if (vm.piperNote.isNotEmpty()) Text(vm.piperNote, style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = onPickPiper, enabled = !vm.piperBusy) { Text(if (vm.piperBusy) "Kopiere…" else "Stimmenordner wählen…") }
 
+        SectionTitle("Tägliche Erinnerung (Push)")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Täglich an das Update erinnern", modifier = Modifier.weight(1f))
+            Switch(checked = dailyReminder, onCheckedChange = { dailyReminder = it; if (it) onRequestNotifications() })
+        }
+        TextSetting("Uhrzeit (z. B. 08:00)", dailyReminderTime, { dailyReminderTime = it })
+        Text(
+            "Die Nachricht nennt nur eine Kurzübersicht (Zahl der offenen Todos), nicht ihren Inhalt. Antippen öffnet den Chat. Der Alarm ist nicht " +
+                "sekundengenau: Im Ruhezustand des Handys kann die Nachricht einige Minuten später kommen. Er gilt erst nach „Speichern“.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(onClick = { onToast(vm.testReminder()) }) { Text("Nachricht jetzt testen") }
+
         SectionTitle("Werkzeuge")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Vor jedem Werkzeugaufruf nachfragen", modifier = Modifier.weight(1f))
@@ -357,7 +372,7 @@ fun SettingsScreen(
                     presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                     repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                     confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
-                    speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
+                    dailyReminder = dailyReminder, dailyReminderTime = dailyReminderTime.trim(), speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
                     speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                     piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
                     piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,
