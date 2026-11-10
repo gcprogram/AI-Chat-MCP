@@ -3,6 +3,8 @@ package app.aichatmcp.core
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 
 const val TOOL_MODE_MARKER = "marker"
@@ -106,6 +108,17 @@ data class Persona(
             }
         }
 
+        /**
+         * Wie [parse], verlangt aber ein Feld "name": Beliebiges JSON (z. B. mcp_servers.json aus demselben Ordner) wird sonst zu einem
+         * Companion voller Vorgaben. Für Importe gedacht.
+         */
+        fun parseCompanion(text: String, id: String = ""): Result<Persona> = runCatching {
+            val obj = AppJson.parseToJsonElement(text.dropWhile { it.code == 0xFEFF || it.isWhitespace() }) as? JsonObject
+                ?: error("keine JSON-Datei mit Feldern")
+            if (obj["name"] !is JsonPrimitive) error("Das Feld name fehlt: das ist keine Companion-Datei.")
+            parse(text, id).getOrThrow()
+        }
+
         /** Wie [parse], aber tolerant: bei einer kaputten Datei kommt der Standard-Companion (zum Laden eigener Dateien). */
         fun fromJson(text: String, id: String = ""): Persona = parse(text, id).getOrElse { Persona(id = id) }
 
@@ -128,6 +141,20 @@ class PersonaStore(private val dir: File) {
         }
     }
 
+    /**
+     * Importiert eine Companion-Datei aus einem Ordner: Die Kennung ist der Dateiname; gibt es sie schon, wird nichts überschrieben
+     * ([CompanionImport.Exists]). Dateien ohne Feld name oder mit kaputtem JSON werden gemeldet ([CompanionImport.Invalid]), nicht angelegt.
+     */
+    fun importFile(fileName: String, text: String): CompanionImport {
+        val id = Persona.slugify(fileName.removeSuffix(".json"))
+        if (File(dir, "$id.json").exists()) return CompanionImport.Exists(id)
+        val persona = Persona.parseCompanion(text, id).getOrElse {
+            return CompanionImport.Invalid(fileName, it.message?.lineSequence()?.firstOrNull() ?: "unlesbar")
+        }
+        save(persona)
+        return CompanionImport.Imported(id)
+    }
+
     fun uniqueId(name: String): String {
         val base = Persona.slugify(name)
         var candidate = base
@@ -146,5 +173,28 @@ class PersonaStore(private val dir: File) {
 
     fun delete(id: String) {
         File(dir, File(id).name + ".json").delete()
+    }
+}
+
+/** Ergebnis des Imports einer Companion-Datei aus einem Ordner. */
+sealed interface CompanionImport {
+    data class Imported(val id: String) : CompanionImport
+    data class Exists(val id: String) : CompanionImport
+    data class Invalid(val file: String, val reason: String) : CompanionImport
+
+    companion object {
+        /** Bericht für den Nutzer: was importiert, übersprungen oder abgelehnt wurde, dazu die Zahl der Avatar-Bilder. */
+        fun report(results: List<CompanionImport>, avatars: Int): String {
+            val imported = results.filterIsInstance<Imported>().map { it.id }
+            val exists = results.filterIsInstance<Exists>().map { it.id }
+            val invalid = results.filterIsInstance<Invalid>()
+            if (results.isEmpty()) return "Keine Companion-Dateien (.json) im Ordner gefunden."
+            val lines = mutableListOf<String>()
+            lines += if (imported.isEmpty()) "Kein neuer Companion importiert." else "${imported.size} Companion(s) importiert: ${imported.joinToString(", ")}."
+            if (exists.isNotEmpty()) lines += "Schon vorhanden, nicht überschrieben: ${exists.joinToString(", ")}."
+            if (invalid.isNotEmpty()) lines += "Übersprungen (keine Companion-Datei): ${invalid.joinToString("; ") { "${it.file} (${it.reason})" }}."
+            if (avatars > 0) lines += "$avatars Avatar-Bild(er) übernommen."
+            return lines.joinToString(" ")
+        }
     }
 }

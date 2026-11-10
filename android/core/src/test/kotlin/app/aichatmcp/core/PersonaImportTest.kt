@@ -28,6 +28,36 @@ class PersonaImportTest {
     }
 
     @Test
+    fun strictParseNeedsANameField() {
+        assertEquals("Fern", Persona.parseCompanion("""{"name": "Fern"}""", "fern").getOrThrow().name)
+        assertNotNull(Persona.parseCompanion("{}", "x").exceptionOrNull()) // leeres Objekt: kein Companion
+        assertNotNull(Persona.parseCompanion("""{"servers": {}, "aliases": {}}""", "mcp").exceptionOrNull()) // andere JSON-Datei
+        assertNotNull(Persona.parseCompanion("[1, 2]", "x").exceptionOrNull())
+        assertNotNull(Persona.parseCompanion("kein json", "x").exceptionOrNull())
+    }
+
+    @Test
+    fun folderImportCreatesNewSkipsExistingAndReportsInvalidFiles() {
+        val dir = kotlin.io.path.createTempDirectory("personas").toFile()
+        val store = PersonaStore(dir)
+        assertEquals(CompanionImport.Imported("secretary"), store.importFile("secretary.json", """{"name": "Selena", "language": "English"}"""))
+        assertEquals("Selena", store.load("secretary").name)
+        // zweiter Import derselben Datei überschreibt nicht
+        assertEquals(CompanionImport.Exists("secretary"), store.importFile("secretary.json", """{"name": "Anders"}"""))
+        assertEquals("Selena", store.load("secretary").name)
+        val bad = store.importFile("mcp_servers.json", """{"servers": {}}""")
+        assertTrue(bad is CompanionImport.Invalid && bad.file == "mcp_servers.json")
+        assertEquals(listOf("secretary"), store.list()) // die ungültige Datei wurde nicht angelegt
+        val report = CompanionImport.report(
+            listOf(CompanionImport.Imported("fern"), CompanionImport.Exists("secretary"), bad), avatars = 2,
+        )
+        assertTrue("1 Companion(s) importiert: fern" in report, report)
+        assertTrue("Schon vorhanden, nicht überschrieben: secretary" in report, report)
+        assertTrue("mcp_servers.json" in report && "2 Avatar-Bild(er)" in report, report)
+        assertEquals("Keine Companion-Dateien (.json) im Ordner gefunden.", CompanionImport.report(emptyList(), 0))
+    }
+
+    @Test
     fun brokenFilesAreReportedInsteadOfBecomingADefault() {
         assertNotNull(Persona.parse("das ist kein json", "x").exceptionOrNull())
         assertNotNull(Persona.parse("", "x").exceptionOrNull())

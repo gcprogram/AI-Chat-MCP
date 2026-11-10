@@ -1,7 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
@@ -33,20 +36,24 @@ private const val NEW_ENTRY = "(Neu)"
 
 @Composable
 fun CompanionsScreen(
-    vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit, onExport: (String) -> Unit, onImportAvatars: () -> Unit,
+    vm: ChatViewModel, onBack: () -> Unit, onImport: () -> Unit, onImportFolder: () -> Unit, onExport: (String) -> Unit, onImportAvatars: () -> Unit,
     onPickAvatar: (String) -> Unit,
 ) {
     var selected by remember { mutableStateOf(vm.persona.id) }
     ScreenFrame("Companions", onBack) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            DropdownField(
-                "Companion", vm.personaIds + NEW_ENTRY, if (selected.isEmpty()) NEW_ENTRY else selected,
-                { selected = if (it == NEW_ENTRY) "" else it }, Modifier.weight(1f),
-            )
-            OutlinedButton(onClick = onImport) { Text("Importieren") }
+        DropdownField("Companion", vm.personaIds + NEW_ENTRY, if (selected.isEmpty()) NEW_ENTRY else selected, { selected = if (it == NEW_ENTRY) "" else it })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onImport) { Text("Datei importieren") }
+            OutlinedButton(onClick = onImportFolder) { Text("Ordner importieren…") }
             OutlinedButton(onClick = { onExport(selected) }, enabled = selected.isNotEmpty()) { Text("Exportieren") }
+            OutlinedButton(onClick = onImportAvatars) { Text("Nur Avatare…") }
         }
-        OutlinedButton(onClick = onImportAvatars) { Text("Avatare aus Ordner holen…") }
+        Text(
+            "Datei importieren: ein Companion (.json). Ordner importieren: alle Companions eines Ordners samt Unterordner avatars (z. B. personas der PC-App). " +
+                "Nur Avatare: kopiert Bilder, legt keine Companions an.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+        )
+        if (vm.companionNote.isNotEmpty()) Text(vm.companionNote, style = MaterialTheme.typography.bodySmall)
         key(selected) {
             PersonaForm(
                 initial = if (selected.isEmpty()) Persona(name = "", description = "Du bist eine freundliche, neugierige Gesprächspartnerin.", greeting = "Hallo! Schön, dass du da bist.")

@@ -47,6 +47,7 @@ import app.aichatmcp.core.DocumentException
 import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
+import app.aichatmcp.core.CompanionImport
 import app.aichatmcp.core.DailyUpdate
 import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
@@ -963,6 +964,48 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * Übernimmt einen Stimmenordner aus dem Auswahldialog (Modell `*.onnx`, `tokens.txt`, optional `*.onnx.json`, dazu einmalig
      * `espeak-ng-data`) in den App-Speicher. Der Ordnername wird zum Namen der Stimme.
      */
+    var companionNote by mutableStateOf("")
+        private set
+
+    /**
+     * Liest einen ganzen Ordner mit Companions ein (z. B. den Ordner personas der PC-App): jede `.json` im obersten Ordner wird ein Companion,
+     * die Bilder aus dem Unterordner `avatars` kommen mit. Bestehende Companions werden nicht überschrieben, Dateien ohne Feld name
+     * (andere JSON-Dateien) werden gemeldet und übersprungen. Der Bericht steht in [companionNote].
+     */
+    fun importPersonaFolder(tree: Uri) {
+        companionNote = "Lese den Ordner…"
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val results = mutableListOf<CompanionImport>()
+                    var avatars = 0
+                    copyTree(
+                        tree, skipDir = { relative, name -> !(relative.isEmpty() && name == "avatars") },
+                        write = { path, input ->
+                            val ext = path.substringAfterLast('.', "").lowercase()
+                            if ('/' !in path && ext == "json") {
+                                val text = input.readBytes().toString(Charsets.UTF_8)
+                                results += storage.personas.importFile(path, text)
+                                true
+                            } else if (path.startsWith("avatars/") && path.count { it == '/' } == 1 && ext in setOf("png", "jpg", "jpeg", "webp", "gif")) {
+                                storage.importAvatar(path.substringAfter('/'), input)
+                                avatars++
+                                true
+                            } else false
+                        },
+                    )
+                    results to avatars
+                }
+            }
+            outcome.onSuccess { (results, avatars) ->
+                personaIds = storage.personas.list()
+                avatarVersion++
+                companionNote = CompanionImport.report(results, avatars)
+            }
+            outcome.onFailure { companionNote = "Import fehlgeschlagen: ${it.message}" }
+        }
+    }
+
     fun importPiperFolder(tree: Uri) {
         if (piperBusy) return
         piperBusy = true
@@ -1310,7 +1353,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Importiert einen Companion aus einer JSON-Datei und macht ihn zum aktiven Companion; null bei Erfolg, sonst der Fehlertext (es wird dann nichts angelegt). */
     fun importPersona(text: String, fileName: String): String? {
         val id = storage.personas.uniqueId(fileName.removeSuffix(".json").ifEmpty { "companion" })
-        val persona = Persona.parse(text, id).getOrElse { return "Kein gültiger Companion (JSON): ${it.message?.lineSequence()?.firstOrNull() ?: "unlesbar"}" }
+        val persona = Persona.parseCompanion(text, id).getOrElse { return "Kein gültiger Companion (JSON): ${it.message?.lineSequence()?.firstOrNull() ?: "unlesbar"}" }
         savePersona(persona)
         selectPersona(id) // der neue Companion wird gleich aktiv (sonst bliebe der alte gewählt, und der Import wirkt wirkungslos)
         return null

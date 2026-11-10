@@ -136,6 +136,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
     val importChat = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { vm.importChat(it)?.let(::toast) } ?: toast("Datei nicht lesbar") }
     }
+    val pickPersonaFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(vm::importPersonaFolder) }
     var exportPersonaId by remember { mutableStateOf("") }
     val exportPersona = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri?.let { u ->
@@ -168,6 +169,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
         )
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
+            onImportFolder = { pickPersonaFolder.launch(null) },
             onExport = { id -> exportPersonaId = id; exportPersona.launch("$id.json") },
             onImportAvatars = { avatarFolder.launch(null) },
             onPickAvatar = { id -> avatarTarget = id; avatarPick.launch(arrayOf("image/*")) },
