@@ -156,6 +156,7 @@ data class ToolSpec(
     val remember: Boolean = false, // Ergebnis bei show/discard dem Modell im Verlauf zeigen
     val keywords: List<Keyword> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
     val macro: List<MacroStep> = emptyList(), // Makro: mehrere Aufrufe nacheinander (dann ohne eigenen Server-Aufruf)
+    val buttons: List<String> = emptyList(), // Tastensatz einer Fernbedienung ("buttons": true): erlaubte Beschriftungen (Argument "button"), zuletzt "off"
 ) {
     val usage: String get() = "[[mcp:" + (listOf(alias) + params.map { "<${it.name}>" }).joinToString("|") + "]]"
 
@@ -203,11 +204,27 @@ data class ToolSpec(
         return arguments
     }
 
-    fun promptLine(): String {
+    /** Zeile im Prompt. [only]: bei einem Tastensatz die für diesen Companion erlaubten Tasten. */
+    fun promptLine(only: List<String>? = null): String {
         val desc = if (description.isNotEmpty()) description.trimEnd('.') + "." else ""
         val optional = params.filter { !it.required }.map { it.name }
-        val note = if (optional.isNotEmpty()) " Optional: ${optional.joinToString(", ")}." else ""
-        return "- $alias: $desc$note Example: ${example.ifEmpty { usage }}".replace("  ", " ")
+        var note = if (optional.isNotEmpty()) " Optional: ${optional.joinToString(", ")}." else ""
+        var sample = example.ifEmpty { usage }
+        if (buttons.isNotEmpty()) {
+            val labels = allowedButtons(only)
+            note = " Buttons: ${labels.joinToString(", ")}."
+            if (example.isEmpty() || exampleLabel() !in labels) sample = "[[mcp:$alias|${labels.firstOrNull() ?: "P1"}]]"
+        }
+        return "- $alias: $desc$note Example: $sample".replace("  ", " ")
+    }
+
+    private fun exampleLabel(): String = Regex("^\\[\\[mcp:[^|\\]]+\\|([^|\\]]+)").find(example)?.groupValues?.get(1)?.trim().orEmpty()
+
+    /** Die Tasten, die der Companion benutzen darf (leere/fehlende Auswahl = alle). */
+    fun allowedButtons(only: List<String>? = null): List<String> {
+        if (only.isNullOrEmpty()) return buttons
+        val wanted = only.map { it.trim().lowercase() }.toSet()
+        return buttons.filter { it.lowercase() in wanted }
     }
 }
 
@@ -271,6 +288,10 @@ class ToolRegistry {
     val remote = linkedMapOf<Pair<String, String>, ToolSpec>() // alle Werkzeuge der Server, auch unsichtbare
     val errors = mutableListOf<String>()
     private val buttons = mutableMapOf<String, Map<String, String>>() // Server -> Schlüssel (Beschriftung, Hex, Dezimal; klein) -> Code "0x11"
+    private val buttonLabels = mutableMapOf<String, List<String>>() // Server -> Beschriftungen in der Reihenfolge der Fernbedienung
+
+    /** Alle Aliase der Konfiguration, auch die gerade nicht verfügbaren (Server aus/nicht erreichbar). */
+    val declared = mutableListOf<String>()
 
     /** Pause in einem Makro (in Millisekunden); in Tests ersetzbar. */
     var sleeper: (Long) -> Unit = { Thread.sleep(it) }
@@ -311,6 +332,7 @@ class ToolRegistry {
         val added = mutableListOf<String>()
         val skipped = mutableSetOf<String>() // Aliase auf deaktivierte/ausgefallene Server: Makros, die sie aufrufen, entfallen still
         for ((rawName, entry) in aliases.orEmpty()) {
+            if (normalizeName(rawName) !in declared) declared += normalizeName(rawName)
             if (entry is JsonObject && entry.string("server") in skipServers) {
                 skipped += normalizeName(rawName)
                 continue
@@ -339,15 +361,44 @@ class ToolRegistry {
             null
         } ?: throw IllegalArgumentException("Tasten von '$server' nicht lesbar: ${text.take(80)}")
         val codes = linkedMapOf<String, String>()
+        val labels = mutableListOf<String>()
         for (item in items) {
             val o = item as? JsonObject ?: continue
             val number = (o["code"] as? JsonPrimitive)?.content?.toIntOrNull() ?: continue
             val code = "0x" + number.toString(16).padStart(2, '0')
+            labels += o.string("label")?.takeIf { it.isNotBlank() } ?: code
             for (key in listOf(o.string("label"), o.string("hex"), code, number.toString())) {
                 if (!key.isNullOrBlank()) codes.putIfAbsent(key.trim().lowercase(), code)
             }
         }
+        buttonLabels[server] = labels
         codes
+    }
+
+    /**
+     * Alias "buttons": true: EIN Werkzeug für alle Tasten der Fernbedienung, die Taste ist das Argument (wie der Ort beim Wetter).
+     * Die Beschriftungen kommen vom Server; die Taste "off" ruft dessen Werkzeug "off" auf.
+     */
+    private fun buildButtonSet(alias: String, entry: JsonObject): ToolSpec {
+        val server = entry.string("server").orEmpty()
+        require((server to "send") in remote) { "Werkzeug '$server/send' nicht gefunden (Server nicht gestartet?)" }
+        buttonCodes(server)
+        val labels = buttonLabels.getValue(server) + if ((server to "off") in remote) listOf("off") else emptyList()
+        val mode = entry.string("result") ?: RESULT_DISCARD
+        require(mode in RESULT_MODES) { "'result' muss ${RESULT_MODES.joinToString(", ")} sein" }
+        val confirmEl = entry["confirm"]
+        val confirm = when {
+            confirmEl == null || confirmEl is kotlinx.serialization.json.JsonNull -> null
+            confirmEl is JsonPrimitive && confirmEl.booleanOrNull != null -> confirmEl.booleanOrNull
+            else -> throw IllegalArgumentException("'confirm' muss true oder false sein")
+        }
+        return ToolSpec(
+            alias = alias, server = server, remoteName = "send",
+            description = entry.string("hint")?.takeIf { it.isNotEmpty() } ?: "Presses a button on the remote control",
+            params = listOf(Param("button", "string", true, "Label of the button")), example = entry.string("example").orEmpty(),
+            result = mode, status = entry.string("status").orEmpty(), confirm = confirm,
+            remember = (entry["remember"] as? JsonPrimitive)?.booleanOrNull ?: false, buttons = labels,
+        )
     }
 
     private fun buildMacro(alias: String, entry: JsonObject): ToolSpec {
@@ -403,6 +454,7 @@ class ToolRegistry {
     private fun buildAlias(alias: String, rawEntry: Any?): ToolSpec {
         require(rawEntry is JsonObject) { "Eintrag ist kein Objekt" }
         if ("macro" in rawEntry) return buildMacro(alias, rawEntry)
+        if ((rawEntry["buttons"] as? JsonPrimitive)?.booleanOrNull == true) return buildButtonSet(alias, rawEntry)
         val server = rawEntry.string("server").orEmpty()
         val button = rawEntry.string("button")?.trim().orEmpty()
         // Taste der Fernbedienung per Beschriftung: send mit dem Code, den "buttons" dazu meldet
@@ -518,7 +570,10 @@ class ToolRegistry {
 
     fun available(): List<String> = tools.keys.sorted()
 
-    fun promptSection(aliases: List<String>): String {
+    /** Alles, was ein Companion freischalten kann: verfügbare Werkzeuge plus die in der Konfiguration stehenden, deren Server gerade nicht läuft. */
+    fun selectable(): List<String> = (tools.keys + declared).toSortedSet().toList()
+
+    fun promptSection(aliases: List<String>, choices: Map<String, List<String>> = emptyMap()): String {
         val specs = aliases.map { normalizeName(it) }.distinct().mapNotNull { tools[it] }
         if (specs.isEmpty()) return ""
         return (listOf(
@@ -529,11 +584,13 @@ class ToolRegistry {
             "- Use a tool only when you really need it; otherwise just answer normally.",
             "- Separate several arguments with |. No quotation marks around arguments.",
             "Available tools:",
-        ) + specs.map { it.promptLine() }).joinToString("\n")
+        ) + specs.map { it.promptLine(choices[it.alias]) }).joinToString("\n")
     }
 
     /** Führt einen Aufruf aus. Fehler werden als Ergebnis (ok=false) zurückgegeben, damit das Modell sie sieht. */
-    fun run(call: ToolCall, allowed: List<String>, maxChars: Int = 2000, timeoutSec: Double = 60.0): ToolOutcome {
+    fun run(
+        call: ToolCall, allowed: List<String>, maxChars: Int = 2000, timeoutSec: Double = 60.0, choices: Map<String, List<String>> = emptyMap(),
+    ): ToolOutcome {
         val alias = normalizeName(call.name)
         val spec = tools[alias]
         if (spec == null || alias !in allowed) {
@@ -543,6 +600,7 @@ class ToolRegistry {
             )
         }
         if (spec.macro.isNotEmpty()) return runMacro(spec, maxChars, timeoutSec)
+        if (spec.buttons.isNotEmpty()) return runButton(spec, call, choices[spec.alias], maxChars, timeoutSec)
         val arguments = try {
             spec.resolve(call.args)
         } catch (e: ToolArgError) {
@@ -576,5 +634,29 @@ class ToolRegistry {
             }
         }
         return ToolOutcome(spec.alias, true, lines.joinToString("\n").take(maxChars), spec.result, spec.status.ifEmpty { "${spec.alias} ausgeführt" }, spec.remember)
+    }
+
+    /** Drückt eine Taste eines Tastensatzes: das Argument "button" (Beschriftung, Hex oder Dezimalcode) gegen die erlaubten Tasten prüfen. */
+    private fun runButton(spec: ToolSpec, call: ToolCall, only: List<String>?, maxChars: Int, timeoutSec: Double): ToolOutcome {
+        val asked = spec.bind(call.args)["button"]?.toString().orEmpty().trim()
+        val allowed = spec.allowedButtons(only)
+        if (asked.isEmpty()) {
+            return ToolOutcome(spec.alias, false, "Es fehlt: button. Richtiges Format: [[mcp:${spec.alias}|<button>]]. Erlaubt: ${allowed.joinToString(", ")}.")
+        }
+        val codes = buttonCodes(spec.server)
+        val label = allowed.firstOrNull { it.equals(asked, ignoreCase = true) }
+            ?: codes[asked.lowercase()]?.let { code -> allowed.firstOrNull { codes[it.lowercase()] == code } } // auch Hex/Dezimalcode einer erlaubten Taste
+            ?: return ToolOutcome(spec.alias, false, "Unbekannte Taste '$asked'. Erlaubt: ${allowed.joinToString(", ")}.")
+        val (rawText, isError) = try {
+            val client = servers.getValue(spec.server)
+            if (label.equals("off", ignoreCase = true) && (spec.server to "off") in remote) client.callTool("off", emptyMap(), timeoutSec)
+            else client.callTool("send", mapOf("code" to codes.getValue(label.lowercase())), timeoutSec)
+        } catch (e: McpException) {
+            return ToolOutcome(spec.alias, false, e.message.orEmpty())
+        }
+        var text = neutralize(rawText).ifEmpty { "(leeres Ergebnis)" }
+        if (text.length > maxChars) text = text.substring(0, maxChars).trimEnd() + " […gekürzt]"
+        if (isError) return ToolOutcome(spec.alias, false, text)
+        return ToolOutcome(spec.alias, true, text, spec.result, spec.status.ifEmpty { "${spec.alias}: $label" }, spec.remember)
     }
 }

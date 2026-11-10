@@ -28,6 +28,8 @@ data class Persona(
     val tools: List<String> = emptyList(),
     /** Davon vorab genehmigt: laufen ohne Rückfrage. */
     @SerialName("approved_tools") val approvedTools: List<String> = emptyList(),
+    /** Je Tastensatz-Werkzeug die erlaubten Tasten (fehlt = alle); nur diese sind für den Companion sichtbar. */
+    @SerialName("tool_choices") val toolChoices: Map<String, List<String>> = emptyMap(),
     @SerialName("tool_mode") val toolMode: String = TOOL_MODE_MARKER,
     /** Name der Stimme der Sprachausgabe (Android-Voice, z. B. "de-de-x-nfh-local"); leer = Standardstimme der Sprache. */
     val voice: String = "",

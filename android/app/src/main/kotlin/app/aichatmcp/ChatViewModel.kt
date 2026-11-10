@@ -132,7 +132,11 @@ class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: Strin
     }
 }
 
-data class ToolsState(val available: List<String> = emptyList(), val errors: List<String> = emptyList(), val loading: Boolean = true)
+data class ToolsState(
+    val available: List<String> = emptyList(), val errors: List<String> = emptyList(), val loading: Boolean = true,
+    val selectable: List<String> = emptyList(), // available plus configured aliases whose server is not running
+    val buttons: Map<String, List<String>> = emptyMap(), // button set alias -> its buttons
+)
 
 private const val RESULT_PREVIEW_CHARS = 160
 
@@ -884,7 +888,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         status = "Schlüsselwort „${hit.keyword}“ ($source): führe ${hit.alias} aus…"
         val outcome = withContext(Dispatchers.IO) {
             try {
-                session.registry.run(call, session.toolNames, config.toolResultChars, config.toolTimeout.toDouble())
+                session.registry.run(call, session.toolNames, config.toolResultChars, config.toolTimeout.toDouble(), persona.toolChoices)
             } catch (e: Exception) {
                 ToolOutcome(hit.alias, false, "Interner Fehler: ${e.message}")
             }
@@ -1381,7 +1385,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             registry = fresh
             session.registry = fresh
             withContext(Dispatchers.IO) { old.shutdown() }
-            tools = ToolsState(fresh.available(), fresh.errors.toList(), false)
+            tools = ToolsState(
+                fresh.available(), fresh.errors.toList(), false, fresh.selectable(),
+                fresh.tools.filterValues { it.buttons.isNotEmpty() }.mapValues { it.value.buttons },
+            )
             status = if (fresh.errors.isNotEmpty()) "Werkzeuge: " + fresh.errors.joinToString(" | ")
             else "Werkzeuge bereit: ${fresh.available().joinToString(", ").ifEmpty { "keine" }}"
             updateContext()

@@ -66,6 +66,67 @@ class ButtonsMacrosTest {
         assertTrue("P9" in message && "p1" in message && "wave" in message, message)
     }
 
+    private val tvAlias = """{"tv":{"server":"remote","buttons":true,"hint":"TV remote","example":"[[mcp:tv|P1]]"}}"""
+
+    @Test
+    fun oneAliasForAllButtonsWithTheButtonAsArgument() {
+        val (reg, fake, _) = registry(tvAlias)
+        assertEquals(emptyList(), reg.errors)
+        assertEquals(listOf("P1", "P2", "Wave", "0x11", "off"), reg.tools.getValue("tv").buttons)
+        for (text in listOf("[[mcp:tv|P2]]", "[[mcp:tv|wave]]", "[[mcp:tv|0x11]]", "[[mcp:tv|off]]", "[[mcp:tv|button=P1]]")) {
+            val out = reg.run(findCall(text)!!, listOf("tv"))
+            assertTrue(out.ok, "$text: ${out.text}")
+        }
+        assertEquals(listOf("send" to "0x02", "send" to "0x0b", "send" to "0x11", "off" to "", "send" to "0x01"), fake.sent)
+        assertEquals("tv: P2", reg.run(findCall("[[mcp:tv|P2]]")!!, listOf("tv")).status)
+    }
+
+    @Test
+    fun macroCanPressButtonsOfAButtonSet() {
+        val (reg, fake, _) = registry("""{"tv":{"server":"remote","buttons":true},"demo":{"macro":["tv|P1",2,"tv|off"]}}""")
+        assertEquals(emptyList(), reg.errors)
+        assertTrue(reg.run(findCall("[[mcp:demo]]")!!, listOf("demo")).ok)
+        assertEquals(listOf("send" to "0x01", "off" to ""), fake.sent)
+    }
+
+    @Test
+    fun unknownOrMissingButtonIsReportedWithTheAllowedOnes() {
+        val (reg, fake, _) = registry(tvAlias)
+        val out = reg.run(findCall("[[mcp:tv|P99]]")!!, listOf("tv"))
+        assertFalse(out.ok)
+        assertTrue("P99" in out.text && "P1, P2, Wave" in out.text, out.text)
+        assertTrue("Es fehlt: button" in reg.run(findCall("[[mcp:tv]]")!!, listOf("tv")).text)
+        assertEquals(emptyList(), fake.sent)
+    }
+
+    @Test
+    fun companionChoicesHideAndBlockButtons() {
+        val (reg, fake, _) = registry(tvAlias)
+        val choices = mapOf("tv" to listOf("p1", "OFF"))
+        val section = reg.promptSection(listOf("tv"), choices)
+        assertTrue("Buttons: P1, off." in section && "P2" !in section && "Example: [[mcp:tv|P1]]" in section, section)
+        assertFalse(reg.run(findCall("[[mcp:tv|P2]]")!!, listOf("tv"), choices = choices).ok)
+        assertTrue(reg.run(findCall("[[mcp:tv|OFF]]")!!, listOf("tv"), choices = choices).ok)
+        assertEquals(listOf("off" to ""), fake.sent)
+        assertTrue("Example: [[mcp:tv|off]]" in reg.promptSection(listOf("tv"), mapOf("tv" to listOf("off"))))
+        assertTrue(reg.promptSection(listOf("tv")).lines().size < 12) // ein Alias statt je Taste einer
+    }
+
+    @Test
+    fun aliasesOfAStoppedServerStaySelectable() {
+        val reg = ToolRegistry()
+        reg.addAliases(aliasJson("""{"tv":{"server":"aus","buttons":true},"weather":{"server":"wetter","tool":"forecast"}}"""), setOf("aus"))
+        assertEquals(emptyList(), reg.available())
+        assertEquals(listOf("tv", "weather"), reg.selectable())
+    }
+
+    @Test
+    fun personaKeepsToolChoicesInItsFile() {
+        val p = Persona(name = "A", tools = listOf("tv"), toolChoices = mapOf("tv" to listOf("P1", "off")), id = "a")
+        assertEquals(p, Persona.parse(p.toJson(), "a").getOrThrow())
+        assertTrue(Persona.parse("""{"name":"B"}""", "b").getOrThrow().toolChoices.isEmpty())
+    }
+
     @Test
     fun macroPlaysCallsAndWaits() {
         val (reg, fake, sleeps) = registry(
@@ -115,15 +176,15 @@ class ButtonsMacrosTest {
     }
 
     @Test
-    fun remoteGetsOneShortEntryPerButton() {
+    fun remoteGetsOneAliasForAllButtons() {
         val remote = FakeRemote()
         val (tools, buttons) = ServerImport.read(remote)
         val entries = ServerImport.aliasEntries("remote", tools, buttons, "tv-")
-        assertEquals(listOf("tv-p1", "tv-p2", "tv-wave", "tv-0x11", "tv-status", "tv-off"), entries.keys.toList())
-        assertEquals("""{"server":"remote","button":"P1","hint":"Press P1"}""", entries.getValue("tv-p1").toString())
-        assertEquals("0x11", entries.getValue("tv-0x11").string("button")) // Taste ohne Beschriftung: der Code
-        assertEquals(RESULT_DISCARD, entries.getValue("tv-off").string("result"))
-        assertEquals("Switches off.", entries.getValue("tv-off").string("hint"))
+        assertEquals(listOf("tv", "tv-status"), entries.keys.toList()) // send/buttons/off stecken im Alias "tv"
+        assertEquals(
+            """{"server":"remote","buttons":true,"hint":"Remote control remote: press a button","example":"[[mcp:tv|P1]]"}""",
+            entries.getValue("tv").toString(),
+        )
     }
 
     @Test
@@ -137,13 +198,13 @@ class ButtonsMacrosTest {
     fun mergeKeepsExistingAliasesAndHidesRawTools() {
         val remote = FakeRemote()
         val (tools, buttons) = ServerImport.read(remote)
-        val config = aliasJson("""{"servers":{"remote":{"url":"https://x/mcp"}},"aliases":{"tv-p1":{"server":"remote","tool":"send","args":{"code":"0x99"}}}}""")
+        val config = aliasJson("""{"servers":{"remote":{"url":"https://x/mcp"}},"aliases":{"tv":{"server":"remote","tool":"send","args":{"code":"0x99"}}}}""")
         val merged = ServerImport.merge(config, "remote", tools, buttons, "tv-")
-        assertEquals(listOf("tv-p1"), merged.skipped)
-        assertFalse("tv-p1" in merged.added)
-        assertEquals("0x99", merged.config.obj("aliases")!!.obj("tv-p1")!!.obj("args")!!.string("code")) // nicht überschrieben
+        assertEquals(listOf("tv"), merged.skipped)
+        assertFalse("tv" in merged.added)
+        assertEquals("0x99", merged.config.obj("aliases")!!.obj("tv")!!.obj("args")!!.string("code")) // nicht überschrieben
         assertEquals("false", merged.config.obj("servers")!!.obj("remote")!!["raw"].toString())
-        assertTrue("tv-wave" in merged.config.obj("aliases")!!)
+        assertTrue("tv-status" in merged.config.obj("aliases")!!)
     }
 
     @Test
@@ -155,6 +216,7 @@ class ButtonsMacrosTest {
         reg.addServer("remote", remote, exposeRaw = false)
         reg.addAliases(merged.config.obj("aliases"))
         assertEquals(emptyList(), reg.errors)
-        assertEquals(listOf("tv-0x11", "tv-off", "tv-p1", "tv-p2", "tv-status", "tv-wave"), reg.available())
+        assertEquals(listOf("tv", "tv-status"), reg.available())
+        assertEquals(listOf("P1", "P2", "Wave", "0x11", "off"), reg.tools.getValue("tv").buttons)
     }
 }

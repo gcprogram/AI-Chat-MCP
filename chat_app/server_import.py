@@ -31,26 +31,23 @@ def _first_sentence(text: str, limit: int = 120) -> str:
 
 
 def alias_entries(server: str, tools: list[dict], buttons: list[dict] | None, prefix: str) -> dict[str, dict[str, Any]]:
-    """Aliaseinträge für alle Werkzeuge des Servers. Mit Tastenliste (Werkzeuge "buttons" und "send"): ein kurzer Eintrag je Taste
-    (nur server + button + hint), "send"/"buttons" selbst entfallen. Sonst ein Eintrag je Werkzeug."""
+    """Aliaseinträge für alle Werkzeuge des Servers. Mit Tastenliste (Werkzeuge "buttons" und "send"): EIN Alias mit "buttons": true
+    (die Taste ist das Argument, die Beschriftungen kommen vom Server; "off" ist eingeschlossen), "send"/"buttons"/"off" selbst
+    entfallen. Sonst ein Eintrag je Werkzeug."""
     names = {t.get("name") for t in tools}
     out: dict[str, dict[str, Any]] = {}
     remote = buttons is not None and {"buttons", "send"} <= names
     if remote:
-        for item in buttons or []:
-            if not isinstance(item, dict) or not isinstance(item.get("code"), int):
-                continue
-            label = str(item.get("label") or "").strip()
-            shown = label or f"0x{item['code']:02x}"
-            out[normalize_name(prefix + slug(shown))] = {"server": server, "button": shown, "hint": f"Press {shown}"}
+        labels = [str(b.get("label") or f"0x{b['code']:02x}") for b in buttons or [] if isinstance(b, dict) and isinstance(b.get("code"), int)]
+        name = normalize_name(prefix.strip("-") or server)
+        out[name] = {"server": server, "buttons": True, "hint": f"Remote control {server}: press a button",
+                     "example": f"[[mcp:{name}|{labels[0] if labels else 'P1'}]]"}
     for tool in tools:
         name = str(tool.get("name") or "")
-        if not name or (remote and name in ("send", "buttons")):
+        if not name or (remote and name in ("send", "buttons", "off")):
             continue
-        entry: dict[str, Any] = {"server": server, "tool": name, "hint": _first_sentence(tool.get("description", "")) or name}
-        if remote and name == "off":
-            entry.update(result="discard", status="Off")
-        out[normalize_name(prefix + slug(name))] = entry
+        out[normalize_name(prefix + slug(name))] = {"server": server, "tool": name,
+                                                    "hint": _first_sentence(tool.get("description", "")) or name}
     return out
 
 

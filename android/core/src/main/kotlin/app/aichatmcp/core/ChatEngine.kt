@@ -129,7 +129,7 @@ class ChatEngine(
                 emit(ChatEvent.Status("Führe Werkzeug '${call.name}' aus…$note"))
                 withContext(Dispatchers.IO) {
                     try {
-                        session.registry.run(call, toolNames, config.toolResultChars, config.toolTimeout.toDouble())
+                        session.registry.run(call, toolNames, config.toolResultChars, config.toolTimeout.toDouble(), persona.toolChoices)
                     } catch (e: Exception) { // ein Werkzeugfehler darf die Oberfläche nie blockieren
                         ToolOutcome(call.name, false, "Interner Fehler: ${e.message}")
                     }

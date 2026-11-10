@@ -61,7 +61,9 @@ fun CompanionsScreen(
             PersonaForm(
                 initial = if (selected.isEmpty()) Persona(name = "", description = "Du bist eine freundliche, neugierige Gesprächspartnerin.", greeting = "Hallo! Schön, dass du da bist.")
                 else vm.loadPersona(selected),
-                available = vm.tools.available,
+                available = vm.tools.selectable.ifEmpty { vm.tools.available },
+                running = vm.tools.available.toSet(),
+                buttons = vm.tools.buttons,
                 avatarFile = vm.avatarFile(if (selected.isEmpty()) Persona() else vm.loadPersona(selected)).also { vm.avatarVersion },
                 personaId = selected,
                 onPickAvatar = { onPickAvatar(selected) },
@@ -79,7 +81,7 @@ fun CompanionsScreen(
 
 @Composable
 private fun PersonaForm(
-    initial: Persona, available: List<String>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
+    initial: Persona, available: List<String>, running: Set<String>, buttons: Map<String, List<String>>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
     onRemoveAvatar: () -> Unit, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit,
     loadVoices: (String, (List<SpeechOutput.VoiceOption>) -> Unit) -> Unit, onTestVoice: (String, String) -> Unit,
     piperVoices: List<app.aichatmcp.core.PiperVoice>,
@@ -91,6 +93,8 @@ private fun PersonaForm(
     var rules by remember { mutableStateOf(initial.rules.joinToString("\n")) }
     var tools by remember { mutableStateOf(initial.tools.map { normalizeName(it) }.toSet()) }
     var approved by remember { mutableStateOf(initial.approvedTools.map { normalizeName(it) }.toSet()) }
+    // Erlaubte Tasten je Tastensatz-Werkzeug (kommagetrennt, leer = alle)
+    var choices by remember { mutableStateOf(initial.toolChoices.mapValues { it.value.joinToString(", ") }) }
     var confirmDelete by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(initial.voice) }
     var voiceMale by remember { mutableStateOf(initial.voiceMale) }
@@ -191,9 +195,14 @@ private fun PersonaForm(
     available.forEach { alias ->
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = alias in tools, onCheckedChange = { on -> tools = if (on) tools + alias else tools - alias })
-            Text(alias, modifier = Modifier.weight(1f))
+            Text(if (alias in running) alias else "$alias (Server nicht erreichbar)", modifier = Modifier.weight(1f))
             Text("ohne Rückfrage", style = MaterialTheme.typography.bodySmall)
             Checkbox(checked = alias in approved, onCheckedChange = { on -> approved = if (on) approved + alias else approved - alias })
+        }
+        // Tastensatz: nur die ausgewählten Tasten sind für den Companion sichtbar
+        val all = buttons[alias]
+        if (all != null && alias in tools) {
+            TextSetting("Erlaubte Tasten (leer = alle): ${all.joinToString(", ")}", choices[alias].orEmpty(), { choices = choices + (alias to it) })
         }
     }
 
@@ -211,6 +220,11 @@ private fun PersonaForm(
                 initial.copy(
                     name = name.trim(), description = description.trim(), language = language.trim().ifEmpty { "Deutsch" },
                     voice = voice, voiceMale = voiceMale, voiceFemale = voiceFemale, dailyUpdate = dailyUpdate, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                    toolChoices = initial.toolChoices.filterKeys { it !in buttons } + buttons.mapNotNull { (alias, all) ->
+                        val wanted = choices[alias].orEmpty().split(',', ';').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+                        val valid = all.filter { it.lowercase() in wanted }
+                        if (alias in tools && valid.isNotEmpty() && valid.size < all.size) alias to valid else null
+                    }.toMap(),
                     tools = available.filter { it in tools } + hidden,
                     approvedTools = available.filter { it in approved && it in tools } + hiddenApproved,
                 ),

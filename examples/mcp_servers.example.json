@@ -85,26 +85,15 @@
             "result": "model",
             "confirm": false
         },
-        "tv-p1": {
+        "tv": {
             "server": "remote",
-            "button": "P1",
-            "hint": "Switch the TV to program 1"
-        },
-        "tv-p2": {
-            "server": "remote",
-            "button": "P2",
-            "hint": "Switch the TV to program 2"
+            "buttons": true,
+            "hint": "Remote control of the TV: switches the program (button P1 to P18) or turns it off",
+            "example": "[[mcp:tv|P1]]"
         },
         "tv-demo": {
-            "macro": ["tv-p1", 3, "tv-off"],
+            "macro": ["tv|P1", 3, "tv|off"],
             "hint": "Short TV demo: program 1, then off after 3 seconds"
-        },
-        "tv-off": {
-            "server": "remote",
-            "tool": "off",
-            "hint": "Switch the TV off",
-            "result": "discard",
-            "status": "TV: off"
         }
     }
 }

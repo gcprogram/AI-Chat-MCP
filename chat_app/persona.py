@@ -29,6 +29,7 @@ class Persona:
     avatar: str = ""  # Dateiname relativ zu personas/ (z. B. "avatars/mia.png") oder absoluter Pfad
     tools: list[str] = field(default_factory=list)  # freigeschaltete Werkzeuge (Aliase aus mcp_servers.json)
     approved_tools: list[str] = field(default_factory=list)  # davon vorab genehmigt: laufen ohne Rückfrage
+    tool_choices: dict[str, list[str]] = field(default_factory=dict)  # je Tastensatz-Werkzeug: erlaubte Tasten (fehlt = alle)
     tool_mode: str = "marker"  # "marker": Textmarker im Prompt | "native": Parameter 'tools' der Chat-API
     voice: str = ""  # Stimme der Sprachausgabe (nur Android-App); hier nur durchgereicht, damit Speichern sie nicht verliert
     voice_male: str = ""  # Stimme für männliche wörtliche Rede beim Vorlesen (nur Android-App, durchgereicht)
@@ -99,6 +100,8 @@ class Persona:
     def to_dict(self) -> dict:
         data = asdict(self)
         data.pop("id")
+        if not data.get("tool_choices"):
+            data.pop("tool_choices", None)  # nur schreiben, wenn eine Auswahl besteht
         return data
 
 
@@ -126,6 +129,8 @@ def load_persona(name: str, directory: Path = PERSONAS_DIR) -> Persona:
             persona.tools = []
         if not isinstance(persona.approved_tools, list):
             persona.approved_tools = []
+        persona.tool_choices = ({str(k): [str(x) for x in v] for k, v in persona.tool_choices.items() if isinstance(v, list)}
+                                if isinstance(persona.tool_choices, dict) else {})
         if persona.tool_mode not in TOOL_MODES:
             persona.tool_mode = "marker"
         persona.id = name

@@ -41,12 +41,13 @@ class ChatSession:
 
     @property
     def native_tools(self) -> list[dict]:
-        return self.registry.native_tools(self.tool_names) if self.native else []
+        return self.registry.native_tools(self.tool_names, self.persona.tool_choices) if self.native else []
 
     @property
     def system_prompt(self) -> str:
         names = self.tool_names
-        section = self.registry.native_prompt_section(names) if self.native else self.registry.prompt_section(names)
+        section = (self.registry.native_prompt_section(names) if self.native
+                   else self.registry.prompt_section(names, self.persona.tool_choices))
         return self.persona.system_prompt(self.config.user_name, section)
 
     @property

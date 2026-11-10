@@ -23,7 +23,7 @@ class ChatSession(var config: Config, var persona: Persona, var registry: ToolRe
         }
 
     val systemPrompt: String
-        get() = persona.systemPrompt(config.userName, registry.promptSection(toolNames))
+        get() = persona.systemPrompt(config.userName, registry.promptSection(toolNames, persona.toolChoices))
 
     val stopSequences: List<String> get() = persona.stopSequences(config.userName)
 

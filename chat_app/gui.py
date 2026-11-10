@@ -393,7 +393,7 @@ class ChatApp:
     def _run_tool(self, call: ToolCall, allowed: list[str], config: Config) -> None:
         try:
             outcome = self.registry.run(call, allowed, max_chars=config.tool_result_chars,
-                                        timeout=config.tool_timeout)
+                                        timeout=config.tool_timeout, choices=self.session.persona.tool_choices)
         except Exception as exc:  # ein Werkzeugfehler darf die GUI nie blockieren
             log.exception("Werkzeug '%s' fehlgeschlagen", call.name)
             outcome = ToolOutcome(call.name, False, f"Interner Fehler: {exc}")

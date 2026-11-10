@@ -27,27 +27,28 @@ object ServerImport {
     }
 
     /**
-     * Aliaseinträge für alle Werkzeuge des Servers. Mit Tastenliste (Werkzeuge "buttons" und "send"): ein kurzer Eintrag je Taste
-     * (nur server + button + hint), "send"/"buttons" selbst entfallen. Sonst ein Eintrag je Werkzeug.
+     * Aliaseinträge für alle Werkzeuge des Servers. Mit Tastenliste (Werkzeuge "buttons" und "send"): EIN Alias mit "buttons": true
+     * (die Taste ist das Argument, die Beschriftungen kommen vom Server; "off" ist eingeschlossen), "send"/"buttons"/"off" selbst
+     * entfallen. Sonst ein Eintrag je Werkzeug.
      */
     fun aliasEntries(server: String, tools: List<McpTool>, buttons: List<Pair<Int, String>>?, prefix: String): Map<String, JsonObject> {
         val names = tools.map { it.name }.toSet()
         val remote = buttons != null && names.containsAll(listOf("buttons", "send"))
         val out = linkedMapOf<String, JsonObject>()
         if (remote) {
-            for ((code, label) in buttons.orEmpty()) {
-                val shown = label.ifEmpty { "0x" + code.toString(16).padStart(2, '0') }
-                out[normalizeName(prefix + slug(shown))] = obj("server" to server, "button" to shown, "hint" to "Press $shown")
-            }
+            val first = buttons.orEmpty().firstOrNull()?.let { (code, label) -> label.ifEmpty { "0x" + code.toString(16).padStart(2, '0') } } ?: "P1"
+            val name = normalizeName(prefix.trim('-').ifEmpty { server })
+            out[name] = JsonObject(
+                mapOf(
+                    "server" to JsonPrimitive(server), "buttons" to JsonPrimitive(true),
+                    "hint" to JsonPrimitive("Remote control $server: press a button"), "example" to JsonPrimitive("[[mcp:$name|$first]]"),
+                ),
+            )
         }
         for (tool in tools) {
-            if (remote && tool.name in listOf("send", "buttons")) continue
-            val entry = linkedMapOf<String, String>("server" to server, "tool" to tool.name, "hint" to firstSentence(tool.description).ifEmpty { tool.name })
-            if (remote && tool.name == "off") {
-                entry["result"] = RESULT_DISCARD
-                entry["status"] = "Off"
-            }
-            out[normalizeName(prefix + slug(tool.name))] = obj(*entry.toList().toTypedArray())
+            if (remote && tool.name in listOf("send", "buttons", "off")) continue
+            out[normalizeName(prefix + slug(tool.name))] =
+                obj("server" to server, "tool" to tool.name, "hint" to firstSentence(tool.description).ifEmpty { tool.name })
         }
         return out
     }

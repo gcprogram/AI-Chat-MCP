@@ -1,6 +1,7 @@
 """Fenster zum Anlegen, Bearbeiten und Löschen von Companions (personas/*.json) inkl. Avatar und Werkzeug-Auswahl."""
 from __future__ import annotations
 
+import re
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -28,6 +29,8 @@ class PersonaEditor(tk.Toplevel):
         self.tool_vars: dict[str, tk.BooleanVar] = {}
         self.approve_vars: dict[str, tk.BooleanVar] = {}  # vorab genehmigt (ohne Rückfrage)
         self.hidden_approved: list[str] = []
+        self.choice_vars: dict[str, tk.StringVar] = {}  # Tastensatz-Werkzeug -> erlaubte Tasten (kommagetrennt, leer = alle)
+        self.hidden_choices: dict[str, list[str]] = {}
 
         top = ttk.Frame(self)
         top.grid(row=0, column=0, columnspan=2, sticky="we", padx=10, pady=8)
@@ -100,24 +103,38 @@ class PersonaEditor(tk.Toplevel):
         self.combo.set(select if select in ids else "")
         self.delete_btn.configure(state=tk.NORMAL if len(ids) > 1 else tk.DISABLED)  # einer muss übrig bleiben
 
-    def _build_tool_checks(self, enabled: list[str], approved: list[str]) -> None:
+    def _build_tool_checks(self, enabled: list[str], approved: list[str], choices: dict[str, list[str]] | None = None) -> None:
         for child in self.tools_frame.winfo_children():
             child.destroy()
-        available = self.app.registry.available()
+        choices = choices or {}
+        running = set(self.app.registry.available())
+        available = self.app.registry.selectable()  # auch Werkzeuge, deren Server gerade nicht läuft: der Companion lässt sich immer einrichten
         self.tool_vars = {a: tk.BooleanVar(value=a in enabled) for a in available}
         self.approve_vars = {a: tk.BooleanVar(value=a in approved) for a in available}
         self.hidden_tools = [t for t in enabled if t not in available]
         self.hidden_approved = [t for t in approved if t not in available]
+        self.choice_vars = {}
         if available:
             ttk.Label(self.tools_frame, foreground="#666666",
                       text="Freischalten  ·  ohne Rückfrage (vorab genehmigt)").grid(row=0, column=0, columnspan=2,
                                                                                        sticky="w")
-        for row, alias in enumerate(available, 1):
-            spec = self.app.registry.tools[alias]
-            ttk.Checkbutton(self.tools_frame, text=f"{alias} – {spec.description}", variable=self.tool_vars[alias]
-                            ).grid(row=row, column=0, sticky="w")
+        row = 0
+        for alias in available:
+            row += 1
+            spec = self.app.registry.tools.get(alias)
+            text = f"{alias} – {spec.description}" if spec else f"{alias} – (Server derzeit nicht erreichbar)"
+            ttk.Checkbutton(self.tools_frame, text=text, variable=self.tool_vars[alias]).grid(row=row, column=0, sticky="w")
             ttk.Checkbutton(self.tools_frame, text="ohne Rückfrage", variable=self.approve_vars[alias]
                             ).grid(row=row, column=1, sticky="w", padx=(12, 0))
+            if spec is not None and spec.buttons and alias in running:  # Tastensatz: nur ausgewählte Tasten sind für den Companion sichtbar
+                row += 1
+                self.choice_vars[alias] = tk.StringVar(value=", ".join(choices.get(alias, [])))
+                line = ttk.Frame(self.tools_frame)
+                line.grid(row=row, column=0, columnspan=2, sticky="we", padx=(24, 0))
+                ttk.Label(line, text="Erlaubte Tasten (leer = alle):", foreground="#666666").pack(side=tk.LEFT)
+                ttk.Entry(line, textvariable=self.choice_vars[alias], width=40).pack(side=tk.LEFT, padx=6)
+                ttk.Label(line, text=", ".join(spec.buttons), foreground="#999999").pack(side=tk.LEFT)
+        self.hidden_choices = {a: v for a, v in choices.items() if a not in self.choice_vars}
         if not available:
             ttk.Label(self.tools_frame, foreground="#666666",
                       text="Keine Werkzeuge verfügbar (mcp_servers.json anlegen, siehe README).").grid(row=0, column=0)
@@ -135,7 +152,7 @@ class PersonaEditor(tk.Toplevel):
                               (self.rules, "\n".join(persona.rules))):
             widget.delete("1.0", tk.END)
             widget.insert("1.0", value)
-        self._build_tool_checks(persona.tools, persona.approved_tools)
+        self._build_tool_checks(persona.tools, persona.approved_tools, persona.tool_choices)
         self.mode.set(MODE_LABELS.get(persona.tool_mode, MODE_LABELS["marker"]))
         self.avatar_view.show(persona, self.app.personas_dir)
 
@@ -150,8 +167,22 @@ class PersonaEditor(tk.Toplevel):
             tools=[a for a, var in self.tool_vars.items() if var.get()] + self.hidden_tools,
             approved_tools=[a for a, var in self.approve_vars.items() if var.get() and self.tool_vars[a].get()]
             + self.hidden_approved,
+            tool_choices=self._collect_choices(),
             tool_mode=next((k for k, v in MODE_LABELS.items() if v == self.mode.get()), "marker"),
             id=self.current_id)
+
+    def _collect_choices(self) -> dict[str, list[str]]:
+        """Erlaubte Tasten je freigeschaltetem Tastensatz; alle Tasten (oder keine Angabe) wird nicht gespeichert."""
+        result = dict(self.hidden_choices)
+        for alias, var in self.choice_vars.items():
+            spec = self.app.registry.tools.get(alias)
+            if spec is None or not self.tool_vars[alias].get():
+                continue
+            wanted = [w.strip() for w in re.split(r"[,;]", var.get()) if w.strip()]
+            valid = [b for b in spec.buttons if b.lower() in {w.lower() for w in wanted}]
+            if valid and len(valid) < len(spec.buttons):
+                result[alias] = valid
+        return result
 
     def _load(self, persona_id: str) -> None:
         self._fill(load_persona(persona_id, self.app.personas_dir))

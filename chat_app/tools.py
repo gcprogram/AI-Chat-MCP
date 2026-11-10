@@ -158,6 +158,8 @@ class ToolSpec:
     remember: bool = False  # Ergebnis bei show/discard dem Modell im Verlauf zeigen
     # Makro: Schritte ("call", Alias, Argumente) oder ("wait", Sekunden); dann gibt es keinen eigenen Server-Aufruf
     macro: list[tuple] = field(default_factory=list)
+    # Tastensatz einer Fernbedienung ("buttons": true): erlaubte Beschriftungen (Argument "button"), zuletzt "off"
+    buttons: list[str] = field(default_factory=list)
 
     @property
     def usage(self) -> str:
@@ -209,11 +211,29 @@ class ToolSpec:
         arguments.update(self.fixed)  # feste Argumente gewinnen immer
         return arguments
 
-    def prompt_line(self) -> str:
+    def prompt_line(self, only: list[str] | None = None) -> str:
+        """Zeile im Prompt. only: bei einem Tastensatz die für diesen Companion erlaubten Tasten."""
         description = self.description.rstrip(".") + "." if self.description else ""
         optional = [p.name for p in self.params if not p.required]
         note = f" Optional: {', '.join(optional)}." if optional else ""
-        return f"- {self.alias}: {description}{note} Example: {self.example or self.usage}".replace("  ", " ")
+        example = self.example or self.usage
+        if self.buttons:
+            labels = self.allowed_buttons(only)
+            note = f" Buttons: {', '.join(labels)}."
+            if not self.example or self.example_label() not in labels:
+                example = f"[[mcp:{self.alias}|{labels[0] if labels else 'P1'}]]"
+        return f"- {self.alias}: {description}{note} Example: {example}".replace("  ", " ")
+
+    def example_label(self) -> str:
+        match = re.match(r"^\[\[mcp:[^|\]]+\|([^|\]]+)", self.example)
+        return match[1].strip() if match else ""
+
+    def allowed_buttons(self, only: list[str] | None = None) -> list[str]:
+        """Die Tasten, die der Companion benutzen darf (leere/fehlende Auswahl = alle)."""
+        if not only:
+            return list(self.buttons)
+        wanted = {o.strip().lower() for o in only}
+        return [b for b in self.buttons if b.lower() in wanted]
 
 
 def _first_sentence(text: str, limit: int = 140) -> str:
@@ -265,6 +285,8 @@ class ToolRegistry:
         self.remote: dict[tuple[str, str], ToolSpec] = {}  # alle Werkzeuge der Server, auch unsichtbare
         self.errors: list[str] = []
         self._buttons: dict[str, dict[str, str]] = {}  # Server -> Schlüssel (Label, Hex, Dezimal; klein) -> Code "0x11"
+        self._button_labels: dict[str, list[str]] = {}  # Server -> Beschriftungen in der Reihenfolge der Fernbedienung
+        self.declared: list[str] = []  # alle Aliase der Konfiguration, auch die gerade nicht verfügbaren (Server aus/nicht erreichbar)
 
     # --- Aufbau --------------------------------------------------------------------------------
 
@@ -309,6 +331,8 @@ class ToolRegistry:
         added = []
         skipped: set[str] = set()  # Aliase auf deaktivierte/ausgefallene Server: Makros, die sie aufrufen, entfallen still
         for raw_name, entry in aliases.items():
+            if normalize_name(str(raw_name)) not in self.declared:
+                self.declared.append(normalize_name(str(raw_name)))
             if isinstance(entry, dict) and entry.get("server") in skip_servers:
                 skipped.add(normalize_name(str(raw_name)))
                 continue
@@ -335,15 +359,40 @@ class ToolRegistry:
             except ValueError:
                 raise ValueError(f"Tasten von '{server}' nicht lesbar: {text[:80]}") from None
             codes: dict[str, str] = {}
+            labels: list[str] = []
             for item in items:
                 if not isinstance(item, dict) or not isinstance(item.get("code"), int):
                     continue
                 code = f"0x{item['code']:02x}"
+                labels.append(str(item.get("label") or code))
                 for key in (item.get("label"), item.get("hex"), code, str(item["code"])):
                     if key not in (None, ""):
                         codes.setdefault(str(key).strip().lower(), code)
             self._buttons[server] = codes
+            self._button_labels[server] = labels
         return self._buttons[server]
+
+    def _build_button_set(self, alias: str, entry: dict) -> ToolSpec:
+        """Alias "buttons": true: EIN Werkzeug für alle Tasten der Fernbedienung, die Taste ist das Argument (wie der Ort beim Wetter).
+        Die Beschriftungen kommen vom Server; die Taste "off" ruft dessen Werkzeug "off" auf."""
+        server = str(entry.get("server") or "")
+        if (server, "send") not in self.remote:
+            raise ValueError(f"Werkzeug '{server}/send' nicht gefunden (Server nicht gestartet?)")
+        self.button_codes(server)
+        labels = list(self._button_labels[server])
+        if (server, "off") in self.remote:
+            labels.append("off")
+        mode = str(entry.get("result") or RESULT_DISCARD)
+        if mode not in RESULT_MODES:
+            raise ValueError(f"'result' muss {', '.join(RESULT_MODES)} sein")
+        confirm = entry.get("confirm")
+        if confirm is not None and not isinstance(confirm, bool):
+            raise ValueError("'confirm' muss true oder false sein")
+        return ToolSpec(
+            alias=alias, server=server, remote_name="send", description=str(entry.get("hint") or "Presses a button on the remote control"),
+            params=[Param("button", "string", True, "Label of the button")], example=str(entry.get("example") or ""),
+            result=mode, status=str(entry.get("status") or ""), confirm=confirm, remember=bool(entry.get("remember", False)),
+            buttons=labels)
 
     def _build_macro(self, alias: str, entry: dict) -> ToolSpec:
         raw = entry.get("macro")
@@ -402,6 +451,8 @@ class ToolRegistry:
             raise ValueError("Eintrag ist kein Objekt")
         if "macro" in entry:
             return self._build_macro(alias, entry)
+        if entry.get("buttons") is True:
+            return self._build_button_set(alias, entry)
         server, tool = str(entry.get("server") or ""), str(entry.get("tool") or "")
         button = str(entry["button"]).strip() if entry.get("button") not in (None, "") else ""
         if button:  # Taste der Fernbedienung per Beschriftung: send mit dem Code, den "buttons" dazu meldet
@@ -497,7 +548,13 @@ class ToolRegistry:
     def available(self) -> list[str]:
         return sorted(self.tools)
 
-    def prompt_section(self, aliases: list[str]) -> str:
+    def selectable(self) -> list[str]:
+        """Alles, was ein Companion freischalten kann: die verfügbaren Werkzeuge und die in der Konfiguration stehenden, deren Server
+        gerade nicht läuft (sie gelten, sobald der Server wieder da ist)."""
+        return sorted(set(self.tools) | set(self.declared))
+
+    def prompt_section(self, aliases: list[str], choices: dict[str, list[str]] | None = None) -> str:
+        choices = choices or {}
         specs = [self.tools[a] for a in dict.fromkeys(normalize_name(x) for x in aliases) if a in self.tools]
         if not specs:
             return ""
@@ -509,12 +566,12 @@ class ToolRegistry:
             "- Use a tool only when you really need it; otherwise just answer normally.",
             "- Separate several arguments with |. No quotation marks around arguments.",
             "Available tools:",
-            *(spec.prompt_line() for spec in specs),
+            *(spec.prompt_line(choices.get(spec.alias)) for spec in specs),
         ])
 
     # --- Natives Tool-Calling (Parameter "tools" der Chat-API) ------------------------------------
 
-    def native_tools(self, aliases: list[str]) -> list[dict]:
+    def native_tools(self, aliases: list[str], choices: dict[str, list[str]] | None = None) -> list[dict]:
         """Funktionsbeschreibungen im OpenAI-Format. Die Aliase machen sie klein: feste Argumente fehlen,
         meist bleibt höchstens ein Parameter."""
         tools = []
@@ -525,6 +582,8 @@ class ToolRegistry:
             properties = {p.name: {"type": p.type if p.type in ("string", "integer", "number", "boolean") else "string",
                                    **({"description": _first_sentence(p.description, 80)} if p.description else {})}
                           for p in spec.params}
+            if spec.buttons:
+                properties["button"]["enum"] = spec.allowed_buttons((choices or {}).get(spec.alias))
             parameters: dict[str, Any] = {"type": "object", "properties": properties}
             if any(p.required for p in spec.params):
                 parameters["required"] = [p.name for p in spec.params if p.required]
@@ -560,7 +619,8 @@ class ToolRegistry:
             values.append(f"{key}={text}" if gap else text)
         return "[[mcp:" + "|".join([normalize_name(name), *values]) + "]]", arguments
 
-    def run(self, call: ToolCall, allowed: list[str], *, max_chars: int = 2000, timeout: float = 60.0) -> ToolOutcome:
+    def run(self, call: ToolCall, allowed: list[str], *, max_chars: int = 2000, timeout: float = 60.0,
+            choices: dict[str, list[str]] | None = None) -> ToolOutcome:
         """Führt einen Aufruf aus. Fehler werden als Ergebnis (ok=False) zurückgegeben, damit das Modell sie sieht."""
         alias = normalize_name(call.name)
         spec = self.tools.get(alias)
@@ -569,6 +629,8 @@ class ToolRegistry:
                                f"Unbekanntes Werkzeug '{call.name}'. Verfügbar: {', '.join(allowed) or 'keine'}.")
         if spec.macro:
             return self._run_macro(spec, allowed, max_chars, timeout)
+        if spec.buttons:
+            return self._run_button(spec, call, (choices or {}).get(spec.alias), max_chars, timeout)
         try:
             arguments = spec.resolve(call.args, call.arguments)
         except ToolArgError as exc:
@@ -599,3 +661,30 @@ class ToolRegistry:
             lines.append(f"{step[1]}: {outcome.text}")
         return ToolOutcome(spec.alias, True, "\n".join(lines)[:max_chars], spec.result,
                            spec.status or f"{spec.alias} ausgeführt", spec.remember)
+
+    def _run_button(self, spec: ToolSpec, call: ToolCall, only: list[str] | None, max_chars: int, timeout: float) -> ToolOutcome:
+        """Drückt eine Taste eines Tastensatzes: das Argument "button" (Beschriftung, Hex oder Dezimalcode) gegen die erlaubten Tasten prüfen."""
+        value = spec.bind(call.args) if call.arguments is None else {k: _unquote(v) for k, v in call.arguments.items()}
+        asked = str(value.get("button") or "").strip()
+        allowed = spec.allowed_buttons(only)
+        if not asked:
+            return ToolOutcome(spec.alias, False, f"Es fehlt: button. Richtiges Format: [[mcp:{spec.alias}|<button>]]. Erlaubt: {', '.join(allowed)}.")
+        label = next((b for b in allowed if b.lower() == asked.lower()), None)
+        if label is None:  # auch Hex/Dezimalcode einer erlaubten Taste
+            code = self.button_codes(spec.server).get(asked.lower())
+            label = next((b for b in allowed if code and self.button_codes(spec.server).get(b.lower()) == code), None)
+        if label is None:
+            return ToolOutcome(spec.alias, False, f"Unbekannte Taste '{asked}'. Erlaubt: {', '.join(allowed)}.")
+        try:
+            if label.lower() == "off" and (spec.server, "off") in self.remote:
+                text, is_error = self.servers[spec.server].call_tool("off", {}, timeout)
+            else:
+                text, is_error = self.servers[spec.server].call_tool("send", {"code": self.button_codes(spec.server)[label.lower()]}, timeout)
+        except McpError as exc:
+            return ToolOutcome(spec.alias, False, str(exc))
+        text = neutralize(text) or "(leeres Ergebnis)"
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + " […gekürzt]"
+        if is_error:
+            return ToolOutcome(spec.alias, False, text)
+        return ToolOutcome(spec.alias, True, text, spec.result, spec.status or f"{spec.alias}: {label}", spec.remember)
