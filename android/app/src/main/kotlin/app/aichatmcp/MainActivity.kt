@@ -80,6 +80,13 @@ private fun Root(vm: ChatViewModel = viewModel()) {
     val importMcp = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u -> read(u)?.let { text -> vm.saveMcpJson(text)?.let(::toast) ?: toast("Werkzeuge werden neu geladen") } ?: toast("Datei nicht lesbar") }
     }
+    var exportMcpText by remember { mutableStateOf("") }
+    val exportMcp = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        uri?.let { u ->
+            runCatching { context.contentResolver.openOutputStream(u)?.use { it.write(exportMcpText.toByteArray(Charsets.UTF_8)) } }
+                .onSuccess { toast("Werkzeug-Konfiguration exportiert") }.onFailure { toast("Export fehlgeschlagen: ${it.message}") }
+        }
+    }
     val importCert = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { u ->
             val pem = read(u)
@@ -174,6 +181,6 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onImportAvatars = { avatarFolder.launch(null) },
             onPickAvatar = { id -> avatarTarget = id; avatarPick.launch(arrayOf("image/*")) },
         )
-        Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onImportCert = { importCert.launch("*/*") }, onImportKeywords = { pickKeywords.launch(arrayOf("*/*")) })
+        Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onExportMcp = { t -> exportMcpText = t; exportMcp.launch("mcp_servers_phone.json") }, onImportCert = { importCert.launch("*/*") }, onImportKeywords = { pickKeywords.launch(arrayOf("*/*")) })
     }
 }

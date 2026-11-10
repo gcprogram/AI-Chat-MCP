@@ -40,6 +40,9 @@ fun CompanionsScreen(
     onPickAvatar: (String) -> Unit,
 ) {
     var selected by remember { mutableStateOf(vm.persona.id) }
+    // Ein Import macht den neuen Companion aktiv (vm.persona): das Formular muss ihn zeigen, sonst bleibt der alte darin stehen
+    // (mit seinen Werkzeugen) und ein Speichern würde den alten überschreiben.
+    LaunchedEffect(vm.persona.id) { if (vm.persona.id.isNotEmpty()) selected = vm.persona.id }
     ScreenFrame("Companions", onBack) {
         DropdownField("Companion", vm.personaIds + NEW_ENTRY, if (selected.isEmpty()) NEW_ENTRY else selected, { selected = if (it == NEW_ENTRY) "" else it })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -99,8 +102,9 @@ private fun PersonaForm(
         loadVoices(language) { voiceOptions = it }
     }
     // Freigeschaltete, aber gerade nicht verfügbare Werkzeuge nicht verlieren (z. B. Server vorübergehend aus)
-    val hidden = initial.tools.filter { normalizeName(it) !in available }
-    val hiddenApproved = initial.approvedTools.filter { normalizeName(it) !in available }
+    var dropHidden by remember { mutableStateOf(false) } // "Nicht vorhandene entfernen" gedrückt
+    val hidden = if (dropHidden) emptyList() else initial.tools.filter { normalizeName(it) !in available }
+    val hiddenApproved = if (dropHidden) emptyList() else initial.approvedTools.filter { normalizeName(it) !in available }
 
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         AvatarView(avatarFile, name.ifBlank { "?" }, 72.dp)
@@ -191,6 +195,14 @@ private fun PersonaForm(
             Text("ohne Rückfrage", style = MaterialTheme.typography.bodySmall)
             Checkbox(checked = alias in approved, onCheckedChange = { on -> approved = if (on) approved + alias else approved - alias })
         }
+    }
+
+    if (hidden.isNotEmpty() && available.isNotEmpty()) {
+        Text(
+            "Freigeschaltet, aber in der Werkzeug-Konfiguration nicht (mehr) vorhanden: ${hidden.joinToString(", ")}",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+        )
+        OutlinedButton(onClick = { dropHidden = true }) { Text("Nicht vorhandene entfernen") }
     }
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

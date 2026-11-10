@@ -29,7 +29,9 @@ import app.aichatmcp.FetchedCert
 import kotlinx.coroutines.launch
 
 @Composable
-fun ToolsScreen(vm: ChatViewModel, onBack: () -> Unit, onImportMcp: () -> Unit, onImportCert: () -> Unit, onImportKeywords: () -> Unit) {
+fun ToolsScreen(
+    vm: ChatViewModel, onBack: () -> Unit, onImportMcp: () -> Unit, onExportMcp: (String) -> Unit, onImportCert: () -> Unit, onImportKeywords: () -> Unit,
+) {
     var text by remember { mutableStateOf(vm.mcpText) }
     LaunchedEffect(vm.mcpText) { text = vm.mcpText } // nach Import oder Zurücksetzen
     var jsonError by remember { mutableStateOf("") }
@@ -62,6 +64,7 @@ fun ToolsScreen(vm: ChatViewModel, onBack: () -> Unit, onImportMcp: () -> Unit, 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { jsonError = vm.saveMcpJson(text).orEmpty() }) { Text("Speichern & neu laden") }
             OutlinedButton(onClick = onImportMcp) { Text("Aus Datei") }
+            OutlinedButton(onClick = { onExportMcp(text) }) { Text("Exportieren") } // der Text im Feld, auch ungespeicherte Änderungen
             OutlinedButton(onClick = vm::resetMcpJson) { Text("Standard") }
         }
 
