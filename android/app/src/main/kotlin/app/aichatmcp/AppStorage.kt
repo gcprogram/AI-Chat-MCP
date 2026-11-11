@@ -5,6 +5,8 @@ import app.aichatmcp.core.ChatFileException
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.LoadedChat
+import app.aichatmcp.core.Persona
+import app.aichatmcp.core.EmbeddedAvatar
 import app.aichatmcp.core.PersonaStore
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.ReadMarks
@@ -56,7 +58,25 @@ class AppStorage(root: File, private val asset: (String) -> String?) {
 
     // --- Avatare (Bilder der Companions, relativ zum Companion-Ordner: "avatars/name.png") -------------------
 
-    /** Die Bilddatei eines Companions, falls vorhanden. Pfade außerhalb des Companion-Ordners werden ignoriert. */
+    private val avatarCacheDir = File(root, "avatar-cache")
+
+    /** Die Bilddatei eines Companions: das in der Companion-Datei eingebettete Bild (ausgepackt in den Zwischenspeicher), sonst die Datei aus "avatar". */
+    fun avatarFile(persona: Persona): File? {
+        if (persona.avatarData.isNotBlank()) {
+            val bytes = EmbeddedAvatar.decode(persona.avatarData)
+            if (bytes != null) {
+                val file = File(avatarCacheDir, EmbeddedAvatar.cacheName(bytes))
+                if (!file.isFile) {
+                    avatarCacheDir.mkdirs()
+                    file.writeBytes(bytes)
+                }
+                return file
+            }
+        }
+        return avatarFile(persona.avatar)
+    }
+
+    /** Die Bilddatei aus dem Feld "avatar" (älteres Format), falls vorhanden. Pfade außerhalb des Companion-Ordners werden ignoriert. */
     fun avatarFile(avatar: String): File? {
         if (avatar.isBlank()) return null
         val base = personasDir.canonicalFile

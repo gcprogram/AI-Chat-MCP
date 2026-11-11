@@ -82,6 +82,9 @@ Modellvergleich fuer Sekretariatsaufgaben gegen LM Studio: `set PYTHONPATH=. && 
   Erst beim Senden wandelt `ChatSession._wire_native` den Verlauf in `tool_calls`/`tool`-Nachrichten um (Aufruf ohne
   Ergebnis → Text; `tool_shown` → `tool`-Nachricht). Werkzeugbeschreibungen zählen in die Kontext-Schätzung. Nur der
   erste Aufruf pro Antwort. Ungeprüft: echtes Modell/LM Studio (nur Fake-Server-Tests).
+- **Avatar in der Companion-Datei** (`avatar_data` = Base64-JPEG 256x256, Python `avatar.encode_avatar`/`Persona.avatar_path` (packt in eine Cache-Datei im Temp-Ordner aus), Kotlin `EmbeddedAvatar` + `AvatarEncoder` + `AppStorage.avatarFile(persona)` (Cache `avatar-cache/`)):
+  hat Vorrang vor dem alten `avatar` (Dateipfad, laedt weiter). Ein im Editor gewaehltes Bild ersetzt das eingebettete; Entfernen leert beide Felder. `Persona.to_dict` schreibt `avatar_data` nur, wenn gesetzt. Export und Import der App tragen das Bild jetzt mit.
+  `tools/embed_avatars.py [--auto] [--assign Bild=kennung]` bettet vorhandene Bilder ein (Originale bleiben). Base64 wird strikt dekodiert (Zeilenumbrueche erlaubt, Muell nicht). Die Dateien in `personas/avatars/` werden von eingebetteten Companions nicht mehr gebraucht. Nyx hat ein selbst gezeichnetes Platzhalterbild (Pillow), kein KI-Bild.
 - Tests mit Tk: Variablen des Editors vorher im Hauptthread per `gc.collect` freigeben (sonst `Tcl_AsyncDelete`-Abbruch,
   wenn ein Streaming-Thread die GC auslöst).
 

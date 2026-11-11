@@ -4,6 +4,8 @@ Mit Pillow (optional) gehen alle gängigen Formate und das Bild wird quadratisch
 ohne Pillow kann Tk nur PNG und GIF."""
 from __future__ import annotations
 
+import base64
+import io
 import shutil
 import tkinter as tk
 from pathlib import Path
@@ -38,6 +40,29 @@ def store_avatar(source: Path | str, persona_id: str, personas_dir: Path) -> str
     if source.resolve() != target.resolve():
         shutil.copyfile(source, target)
     return f"{AVATAR_SUBDIR}/{target.name}"
+
+
+EMBED_SIZE = 256  # Kantenlänge des eingebetteten Bildes (Anzeige: 64 Pixel am PC, etwa 72 dp am Handy)
+
+
+def encode_avatar(source: Path | str, size: int = EMBED_SIZE, quality: int = 85) -> str:
+    """Bild für die Companion-Datei: quadratisch zugeschnitten, auf size x size verkleinert, als JPEG in Base64 (rund 20 bis 40 KB).
+    Braucht Pillow (steht in requirements.txt)."""
+    source = Path(source)
+    if not source.is_file():
+        raise AvatarError(f"Bild nicht gefunden: {source}")
+    if Image is None:
+        raise AvatarError("Zum Einbetten des Bildes wird Pillow gebraucht: pip install pillow")
+    try:
+        with Image.open(source) as img:
+            fitted = ImageOps.fit(img.convert("RGBA"), (size, size), Image.LANCZOS)
+            background = Image.new("RGB", fitted.size, (255, 255, 255))  # Transparenz auf Weiß, JPEG kennt sie nicht
+            background.paste(fitted, mask=fitted.split()[3])
+            buffer = io.BytesIO()
+            background.save(buffer, "JPEG", quality=quality, optimize=True)
+    except (OSError, ValueError) as exc:
+        raise AvatarError(f"Bild nicht lesbar: {exc}") from exc
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def load_photo(path: Path, size: int = AVATAR_SIZE) -> tk.PhotoImage:

@@ -5,9 +5,12 @@ Monologe und wird vom Chat bei jeder Anfrage als erste Nachricht mitgesendet, ab
 Ein Companion hat zusätzlich ein Avatar-Bild (personas/avatars/) und eine Auswahl freigeschalteter Werkzeuge."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import re
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -26,7 +29,8 @@ class Persona:
     language: str = "Deutsch"
     greeting: str = ""
     rules: list[str] = field(default_factory=list)  # zusätzliche, persönlichkeitsspezifische Regeln
-    avatar: str = ""  # Dateiname relativ zu personas/ (z. B. "avatars/mia.png") oder absoluter Pfad
+    avatar: str = ""  # Dateiname relativ zu personas/ (z. B. "avatars/mia.png") oder absoluter Pfad (älteres Format)
+    avatar_data: str = ""  # Bild in der Datei (Base64, kleines JPEG): Companion und Bild bleiben beisammen; hat Vorrang vor "avatar"
     tools: list[str] = field(default_factory=list)  # freigeschaltete Werkzeuge (Aliase aus mcp_servers.json)
     approved_tools: list[str] = field(default_factory=list)  # davon vorab genehmigt: laufen ohne Rückfrage
     tool_choices: dict[str, list[str]] = field(default_factory=dict)  # je Tastensatz-Werkzeug: erlaubte Tasten (fehlt = alle)
@@ -91,6 +95,14 @@ class Persona:
         return sorted({f"\n{user_name}:", f"\n{self.name}:", "\nUser:", "\nNutzer:"})
 
     def avatar_path(self, directory: Path = PERSONAS_DIR) -> Path | None:
+        """Datei mit dem Bild: das eingebettete (als Cache-Datei ausgepackt) oder sonst die Bilddatei aus "avatar"."""
+        if self.avatar_data:
+            embedded = embedded_avatar_file(self.avatar_data)
+            if embedded is not None:
+                return embedded
+        return self.legacy_avatar_path(directory)
+
+    def legacy_avatar_path(self, directory: Path = PERSONAS_DIR) -> Path | None:
         if not self.avatar:
             return None
         path = Path(self.avatar)
@@ -100,9 +112,29 @@ class Persona:
     def to_dict(self) -> dict:
         data = asdict(self)
         data.pop("id")
+        if not data.get("avatar_data"):
+            data.pop("avatar_data", None)  # nur schreiben, wenn ein Bild eingebettet ist
         if not data.get("tool_choices"):
             data.pop("tool_choices", None)  # nur schreiben, wenn eine Auswahl besteht
         return data
+
+
+def embedded_avatar_file(data: str) -> Path | None:
+    """Packt das eingebettete Bild (Base64) in eine Cache-Datei im Temp-Ordner aus (Tk lädt nur aus Dateien). None bei kaputten Daten."""
+    try:
+        raw = base64.b64decode("".join(data.split()), validate=True)  # Zeilenumbrüche in der Datei sind erlaubt, sonstiger Müll nicht
+    except (ValueError, TypeError):
+        return None
+    if not raw:
+        return None
+    path = Path(tempfile.gettempdir()) / "aichat_avatars" / f"{hashlib.sha1(raw).hexdigest()[:20]}.img"
+    try:
+        if not path.is_file():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(raw)
+    except OSError:
+        return None
+    return path
 
 
 def slugify(name: str) -> str:
@@ -129,6 +161,8 @@ def load_persona(name: str, directory: Path = PERSONAS_DIR) -> Persona:
             persona.tools = []
         if not isinstance(persona.approved_tools, list):
             persona.approved_tools = []
+        if not isinstance(persona.avatar_data, str):
+            persona.avatar_data = ""
         persona.tool_choices = ({str(k): [str(x) for x in v] for k, v in persona.tool_choices.items() if isinstance(v, list)}
                                 if isinstance(persona.tool_choices, dict) else {})
         if persona.tool_mode not in TOOL_MODES:
@@ -150,7 +184,7 @@ def save_persona(persona: Persona, directory: Path = PERSONAS_DIR) -> str:
 
 
 def remove_avatar_file(persona: Persona, directory: Path = PERSONAS_DIR) -> None:
-    avatar = persona.avatar_path(directory)
+    avatar = persona.legacy_avatar_path(directory)  # nur die Bilddatei des alten Formats, nie die Cache-Datei
     if avatar is not None and avatar.parent.resolve() == (directory / AVATAR_SUBDIR).resolve():  # nur eigene Kopien
         avatar.unlink(missing_ok=True)
 

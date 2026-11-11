@@ -114,12 +114,12 @@ private fun PersonaForm(
         AvatarView(avatarFile, name.ifBlank { "?" }, 72.dp)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedButton(onClick = onPickAvatar, enabled = personaId.isNotEmpty()) { Text("Bild wählen…") }
-            if (initial.avatar.isNotEmpty()) TextButton(onClick = onRemoveAvatar) { Text("Bild entfernen") }
+            if (initial.avatar.isNotEmpty() || initial.avatarData.isNotEmpty()) TextButton(onClick = onRemoveAvatar) { Text("Bild entfernen") }
         }
     }
     when {
         personaId.isEmpty() -> Text("Zum Wählen eines Bildes den Companion zuerst speichern.", style = MaterialTheme.typography.bodySmall)
-        initial.avatar.isNotEmpty() && avatarFile == null -> Text(
+        initial.avatar.isNotEmpty() && initial.avatarData.isEmpty() && avatarFile == null -> Text(
             "Das Bild '${initial.avatar}' fehlt: \"Avatare aus Ordner holen…\" oder ein Bild wählen.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
         )

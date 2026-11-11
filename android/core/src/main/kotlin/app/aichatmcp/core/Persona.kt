@@ -24,6 +24,8 @@ data class Persona(
     val rules: List<String> = emptyList(),
     /** Dateiname relativ zum Companion-Ordner (z. B. "avatars/mia.png"). */
     val avatar: String = "",
+    /** Das Bild in der Datei (Base64, kleines JPEG, siehe [EmbeddedAvatar]); hat Vorrang vor [avatar]. */
+    @SerialName("avatar_data") val avatarData: String = "",
     /** Freigeschaltete Werkzeuge (Aliase aus mcp_servers.json). */
     val tools: List<String> = emptyList(),
     /** Davon vorab genehmigt: laufen ohne Rückfrage. */

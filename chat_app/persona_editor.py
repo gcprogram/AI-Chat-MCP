@@ -6,7 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .avatar import FILE_TYPES, AvatarError, AvatarView, load_photo, store_avatar
+from .avatar import FILE_TYPES, AvatarError, AvatarView, encode_avatar, load_photo
 from .persona import (Persona, delete_persona, list_personas, load_persona, remove_avatar_file, save_persona,
                       unique_id)
 
@@ -24,7 +24,8 @@ class PersonaEditor(tk.Toplevel):
         self.columnconfigure(1, weight=1)
         self.current_id = ""  # leer = neuer, noch nicht gespeicherter Companion
         self.avatar_new: Path | None = None  # frisch gewähltes Bild (wird beim Speichern kopiert)
-        self.avatar_saved = ""  # bereits gespeicherter relativer Pfad
+        self.avatar_saved = ""  # bereits gespeicherter relativer Pfad (älteres Format)
+        self.avatar_data_saved = ""  # bereits eingebettetes Bild (Base64)
         self.hidden_tools: list[str] = []  # freigeschaltet, aber gerade nicht verfügbar - nicht verlieren
         self.tool_vars: dict[str, tk.BooleanVar] = {}
         self.approve_vars: dict[str, tk.BooleanVar] = {}  # vorab genehmigt (ohne Rückfrage)
@@ -143,6 +144,7 @@ class PersonaEditor(tk.Toplevel):
 
     def _fill(self, persona: Persona) -> None:
         self.current_id, self.avatar_new, self.avatar_saved = persona.id, None, persona.avatar
+        self.avatar_data_saved = persona.avatar_data
         self.name.delete(0, tk.END)
         self.name.insert(0, persona.name)
         # ein bereits gespeicherter freier Wert (z. B. "Plattdeutsch") bleibt auswählbar
@@ -163,7 +165,7 @@ class PersonaEditor(tk.Toplevel):
             language=self.language.get().strip() or "Deutsch",
             greeting=self.greeting.get("1.0", tk.END).strip(),
             rules=[r.strip() for r in self.rules.get("1.0", tk.END).splitlines() if r.strip()],
-            avatar=self.avatar_saved,
+            avatar=self.avatar_saved, avatar_data=self.avatar_data_saved,
             tools=[a for a, var in self.tool_vars.items() if var.get()] + self.hidden_tools,
             approved_tools=[a for a, var in self.approve_vars.items() if var.get() and self.tool_vars[a].get()]
             + self.hidden_approved,
@@ -212,7 +214,7 @@ class PersonaEditor(tk.Toplevel):
         return True
 
     def clear_avatar(self) -> None:
-        self.avatar_new, self.avatar_saved = None, ""
+        self.avatar_new, self.avatar_saved, self.avatar_data_saved = None, "", ""
         self.avatar_view.show_path(None, self.name.get())
 
     def save(self) -> str | None:
@@ -224,8 +226,11 @@ class PersonaEditor(tk.Toplevel):
         persona.id = persona.id or unique_id(persona.name, directory)
         try:
             old = load_persona(persona.id, directory) if self.current_id else None
-            if self.avatar_new is not None:
-                persona.avatar = store_avatar(self.avatar_new, persona.id, directory)
+            if self.avatar_new is not None:  # neues Bild: es kommt in die Companion-Datei (ersetzt das bisherige)
+                persona.avatar_data = encode_avatar(self.avatar_new)
+                persona.avatar = ""
+                if old is not None and old.avatar:
+                    remove_avatar_file(old, directory)  # eine alte Bilddatei in avatars/ wird nicht mehr gebraucht
             elif old is not None and old.avatar and not persona.avatar:
                 remove_avatar_file(old, directory)  # Avatar wurde entfernt
             save_persona(persona, directory)
@@ -233,6 +238,7 @@ class PersonaEditor(tk.Toplevel):
             messagebox.showerror("Speichern fehlgeschlagen", str(exc), parent=self)
             return None
         self.current_id, self.avatar_new, self.avatar_saved = persona.id, None, persona.avatar
+        self.avatar_data_saved = persona.avatar_data
         self._refresh_list(persona.id)
         self.app.on_personas_changed(saved=persona.id)
         return persona.id

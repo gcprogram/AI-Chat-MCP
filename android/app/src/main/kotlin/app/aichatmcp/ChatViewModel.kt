@@ -1314,10 +1314,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadPersona(id: String): Persona = storage.personas.load(id)
 
-    /** Der gespeicherte Companion als JSON (gleiches Format wie die Companion-Dateien der PC-App; das Avatar-Bild liegt nicht darin). */
+    /** Der gespeicherte Companion als JSON (gleiches Format wie die Companion-Dateien der PC-App, mit dem eingebetteten Avatar-Bild). */
     fun exportPersona(id: String): String = storage.personas.load(id).toJson() + "\n"
 
-    fun avatarFile(persona: Persona): File? = storage.avatarFile(persona.avatar)
+    fun avatarFile(persona: Persona): File? = storage.avatarFile(persona)
 
     /** Alle Bilder eines Ordners (aus dem Auswahldialog) in den Avatar-Ordner der App kopieren. Liefert die Anzahl. */
     suspend fun importAvatarFolder(tree: Uri): Int = withContext(Dispatchers.IO) {
@@ -1343,15 +1343,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Ein Bild als Avatar eines gespeicherten Companions übernehmen. */
     suspend fun setAvatar(personaId: String, uri: Uri, displayName: String): Boolean = withContext(Dispatchers.IO) {
-        val input = getApplication<Application>().contentResolver.openInputStream(uri) ?: return@withContext false
-        val relative = input.use { storage.importAvatar(displayName, it) }
-        savePersona(storage.personas.load(personaId).copy(avatar = relative))
+        // Das Bild kommt verkleinert in die Companion-Datei (avatar_data): Companion und Bild bleiben beisammen, ein neues ersetzt das alte.
+        val data = try {
+            AvatarEncoder.encode(getApplication<Application>().contentResolver, uri)
+        } catch (_: Exception) {
+            null
+        } ?: return@withContext false
+        savePersona(storage.personas.load(personaId).copy(avatar = "", avatarData = data))
         avatarVersion++
         true
     }
 
     fun removeAvatar(personaId: String) {
-        savePersona(storage.personas.load(personaId).copy(avatar = ""))
+        savePersona(storage.personas.load(personaId).copy(avatar = "", avatarData = ""))
         avatarVersion++
     }
 

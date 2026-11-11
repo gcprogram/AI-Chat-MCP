@@ -19,8 +19,12 @@ In den Einstellungen die Server-URL (z. B. `http://127.0.0.1:1234/v1`) und den A
 
 Jede Datei in `personas/*.json` ist ein Companion (`name`, `description`, `language`, `greeting`, `rules`, `avatar`,
 `tools`). Über **Companions…** werden sie im Programm angelegt, bearbeitet, gespeichert und gelöscht; das
-Auswahlfeld in der Werkzeugleiste wechselt den aktiven Companion. Das **Avatar-Bild** (PNG/GIF, mit Pillow auch
-JPG/WebP) wird nach `personas/avatars/` kopiert und oben rechts angezeigt; ohne Bild gibt es einen Platzhalter.
+Auswahlfeld in der Werkzeugleiste wechselt den aktiven Companion. Das **Avatar-Bild** (mit Pillow
+alle gängigen Formate) wird quadratisch zugeschnitten, auf 256 x 256 verkleinert und als JPEG in Base64 **in der Companion-Datei** gespeichert
+(Feld `avatar_data`, rund 20 bis 40 KB): Companion und Bild bleiben beisammen, auch beim Weitergeben und beim Export aus der App. Im Editor lässt
+sich jederzeit ein anderes Bild wählen (es ersetzt das alte) oder das Bild entfernen. Ältere Companions mit `avatar` (Datei in `personas/avatars/`)
+laden weiter; `python tools/embed_avatars.py --auto` bettet sie ein und ordnet lose Bilder im Ordner (`Zero.png` → `zero.json`) per Namen zu.
+Oben rechts wird das Bild angezeigt; ohne Bild gibt es einen Platzhalter.
 Aus den Feldern entsteht der System-Prompt (`chat_app/persona.py`): Er legt fest, wer „ich“ und wer „du“ ist,
 verbietet Protokollzeilen, Monologe und Floskeln und wird bei jeder Anfrage mitgesendet, aber nie angezeigt.
 

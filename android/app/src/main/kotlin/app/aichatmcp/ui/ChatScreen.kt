@@ -156,7 +156,7 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
     var moreMenu by remember { mutableStateOf(false) }
     var confirmNew by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        val avatar = remember(vm.persona.avatar, vm.avatarVersion) { vm.avatarFile(vm.persona) }
+        val avatar = remember(vm.persona.avatar, vm.persona.avatarData.hashCode(), vm.avatarVersion) { vm.avatarFile(vm.persona) }
         AvatarView(avatar, vm.persona.name)
         Spacer(Modifier.padding(start = 4.dp))
         Box {

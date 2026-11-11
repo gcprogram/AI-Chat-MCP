@@ -366,11 +366,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-def make_png(path: Path, width=100, height=80) -> None:
+def make_png(path: Path, width=100, height=80, color=(255, 64, 64)) -> None:
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
-    raw = b"".join(b"\x00" + b"\xff\x40\x40" * width for _ in range(height))
+    raw = b"".join(b"\x00" + bytes(color) * width for _ in range(height))
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
                      + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
@@ -546,8 +546,11 @@ class GuiToolsTest(unittest.TestCase):
         self.assertEqual(editor.save(), "tom")
         saved = load_persona("tom", self.personas)
         self.assertEqual((saved.rules, saved.tools, saved.greeting), (["Sei knapp.", "Sei nett."], ["zeit"], "Moin!"))
-        self.assertEqual(saved.avatar, "avatars/tom.png")
+        self.assertEqual(saved.avatar, "")  # das Bild steckt jetzt in der Companion-Datei, nicht mehr als Datei daneben
+        self.assertTrue(saved.avatar_data.startswith("/9j/"))  # Base64 eines JPEG
+        self.assertFalse((self.personas / "avatars" / "tom.png").exists())
         self.assertIsNotNone(saved.avatar_path(self.personas))
+        first_data = saved.avatar_data
         self.assertIn("tom", self.app.persona_combo.cget("values"))
 
         self.app.persona_combo.set("tom")
@@ -557,9 +560,16 @@ class GuiToolsTest(unittest.TestCase):
         self.assertEqual(self.app.config.persona, "tom")
         self.assertIn("Tom: Moin!", self.app.chat.get("1.0", "end"))
 
+        other = Path(self.tmp.name) / "other.png"
+        make_png(other, color=(40, 40, 200))
+        self.assertTrue(editor.set_avatar(other))  # einem Companion lässt sich später ein anderes Bild geben
+        self.assertEqual(editor.save(), "tom")
+        self.assertNotEqual(first_data, load_persona("tom", self.personas).avatar_data)
+
         editor.clear_avatar()
         self.assertEqual(editor.save(), "tom")
-        self.assertFalse((self.personas / "avatars" / "tom.png").exists())  # Bilddatei aufgeräumt
+        self.assertEqual(load_persona("tom", self.personas).avatar_data, "")  # Bild entfernt
+        self.assertNotIn("avatar_data", (self.personas / "tom.json").read_text(encoding="utf-8"))
         self.assertIsNone(self.app.avatar._photo)  # Platzhalter
 
         with mock.patch("chat_app.persona_editor.messagebox.askyesno", return_value=True):
