@@ -557,6 +557,9 @@ class GuiToolsTest(unittest.TestCase):
         self.app._persona_changed()
         self.assertEqual(self.app.session.persona.name, "Tom")
         self.assertIsNotNone(self.app.avatar._photo)  # Avatar in der Ecke angezeigt
+        self.assertTrue(self.app.avatar.show_full())  # Klick auf das Bild: größere Ansicht in eigenem Fenster
+        self.assertTrue(self.app.avatar._full.winfo_exists())
+        self.app.avatar._full.destroy()
         self.assertEqual(self.app.config.persona, "tom")
         self.assertIn("Tom: Moin!", self.app.chat.get("1.0", "end"))
 
@@ -571,6 +574,7 @@ class GuiToolsTest(unittest.TestCase):
         self.assertEqual(load_persona("tom", self.personas).avatar_data, "")  # Bild entfernt
         self.assertNotIn("avatar_data", (self.personas / "tom.json").read_text(encoding="utf-8"))
         self.assertIsNone(self.app.avatar._photo)  # Platzhalter
+        self.assertFalse(self.app.avatar.show_full())  # ohne Bild gibt es nichts zu vergrößern
 
         with mock.patch("chat_app.persona_editor.messagebox.askyesno", return_value=True):
             editor.delete()

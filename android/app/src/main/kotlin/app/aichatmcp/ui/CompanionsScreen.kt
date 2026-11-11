@@ -111,7 +111,9 @@ private fun PersonaForm(
     val hiddenApproved = if (dropHidden) emptyList() else initial.approvedTools.filter { normalizeName(it) !in available }
 
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        AvatarView(avatarFile, name.ifBlank { "?" }, 72.dp)
+        var avatarFull by remember { mutableStateOf(false) }
+        AvatarView(avatarFile, name.ifBlank { "?" }, 72.dp, onClick = { avatarFull = true })
+        if (avatarFull && avatarFile != null) AvatarFullscreen(avatarFile, name.ifBlank { "?" }) { avatarFull = false }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedButton(onClick = onPickAvatar, enabled = personaId.isNotEmpty()) { Text("Bild wählen…") }
             if (initial.avatar.isNotEmpty() || initial.avatarData.isNotEmpty()) TextButton(onClick = onRemoveAvatar) { Text("Bild entfernen") }

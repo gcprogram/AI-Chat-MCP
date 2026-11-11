@@ -157,7 +157,9 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
     var confirmNew by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         val avatar = remember(vm.persona.avatar, vm.persona.avatarData.hashCode(), vm.avatarVersion) { vm.avatarFile(vm.persona) }
-        AvatarView(avatar, vm.persona.name)
+        var avatarFull by remember { mutableStateOf(false) }
+        AvatarView(avatar, vm.persona.name, onClick = { avatarFull = true })
+        if (avatarFull && avatar != null) AvatarFullscreen(avatar, vm.persona.name) { avatarFull = false }
         Spacer(Modifier.padding(start = 4.dp))
         Box {
             TextButton(onClick = { personaMenu = true }, enabled = !vm.streaming) {

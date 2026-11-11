@@ -2,6 +2,9 @@ package app.aichatmcp.ui
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -107,19 +110,40 @@ fun DropdownField(label: String, options: List<String>, selected: String, onSele
     }
 }
 
-/** Das Bild eines Companions als Kreis; ohne Bild der Anfangsbuchstabe auf einer aus dem Namen abgeleiteten Farbe. */
+/** Das Bild eines Companions als Kreis; ohne Bild der Anfangsbuchstabe auf einer aus dem Namen abgeleiteten Farbe. [onClick]: nur mit Bild wirksam (Vollbild). */
 @Composable
-fun AvatarView(file: File?, name: String, size: Dp = 40.dp) {
+fun AvatarView(file: File?, name: String, size: Dp = 40.dp, onClick: (() -> Unit)? = null) {
     val bitmap by produceState<ImageBitmap?>(null, file?.path, file?.lastModified()) {
         value = file?.let { withContext(Dispatchers.IO) { decodeAvatar(it) } }
     }
     val image = bitmap
     if (image != null) {
-        Image(image, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+        val shape = Modifier.size(size).clip(CircleShape)
+        Image(
+            image, contentDescription = name, contentScale = ContentScale.Crop,
+            modifier = if (onClick != null) shape.clickable(onClick = onClick) else shape,
+        )
     } else {
         val hue = (name.fold(0) { acc, c -> acc * 31 + c.code }.mod(360)).toFloat()
         Box(Modifier.size(size).clip(CircleShape).background(Color.hsv(hue, 0.45f, 0.75f)), contentAlignment = Alignment.Center) {
             Text(name.take(1).uppercase(), color = Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/** Vollbildansicht des Companion-Bildes: schwarzer Grund, Bild eingepasst, Name darunter; ein Tippen irgendwo schließt. */
+@Composable
+fun AvatarFullscreen(file: File, name: String, onClose: () -> Unit) {
+    val bitmap by produceState<ImageBitmap?>(null, file.path, file.lastModified()) {
+        value = withContext(Dispatchers.IO) { decodeAvatar(file, target = 2048) } // das eingebettete Bild ist höchstens 768 Pixel: nie verkleinert
+    }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)) {
+        Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
+            bitmap?.let { Image(it, contentDescription = name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+            Text(
+                name, color = Color.White, style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
+            )
         }
     }
 }

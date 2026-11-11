@@ -28,14 +28,32 @@ class EmbeddedAvatarTest(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
 
-    def test_encoded_image_is_a_small_square_jpeg(self):
-        data = encode_avatar(picture(self.dir / "a.png"))
+    def test_encoded_image_is_a_square_jpeg_within_the_budget(self):
+        data = encode_avatar(picture(self.dir / "a.png", size=(1200, 900)))
         raw = base64.b64decode(data)
         self.assertEqual(b"\xff\xd8", raw[:2])
         import io
         with Image.open(io.BytesIO(raw)) as img:
-            self.assertEqual((256, 256), img.size)
-        self.assertLess(len(data), 20_000)
+            self.assertEqual((768, 768), img.size)  # glattes Bild: die größte Stufe passt ins Budget
+        self.assertLessEqual(len(data), 100 * 1024)
+
+    def test_detailed_image_gets_a_smaller_size_to_stay_within_100_kb(self):
+        import random
+        rnd = random.Random(1)
+        noisy = Image.new("RGB", (1200, 1200))
+        noisy.putdata([(rnd.randrange(256), rnd.randrange(256), rnd.randrange(256)) for _ in range(1200 * 1200)])
+        noisy.save(self.dir / "n.png")
+        data = encode_avatar(self.dir / "n.png", budget_kb=100)
+        import io
+        with Image.open(io.BytesIO(base64.b64decode(data))) as img:
+            self.assertLess(img.size[0], 768)  # Rauschen lässt sich nicht klein komprimieren: die Kantenlänge sinkt
+        self.assertLessEqual(len(encode_avatar(self.dir / "n.png", budget_kb=400)), 400 * 1024)
+
+    def test_small_images_are_not_scaled_up(self):
+        import io
+        data = encode_avatar(picture(self.dir / "k.png", size=(300, 200)))
+        with Image.open(io.BytesIO(base64.b64decode(data))) as img:
+            self.assertEqual((200, 200), img.size)
 
     def test_missing_or_broken_image_is_an_error(self):
         with self.assertRaises(AvatarError):
