@@ -16,7 +16,7 @@ Planung (gemeinsam mit dem Besitzer entschieden). Nur Android; die PC-App bleibt
 ## Phasen
 1. **Todos + Tagesupdate** (`todo-add|Text|Datum`, `todo-list`, `todo-done|Nr oder Text`; `Config.briefingDays`, `Persona.dailyUpdate`).
 2. Tägliche Push-Nachricht (**fertig**: `AlarmManager.setAndAllowWhileIdle`, Uhrzeit und Schalter in den Einstellungen, Berechtigung `POST_NOTIFICATIONS`, Neuplanung nach Neustart).
-3. Kalender (`cal-add|Titel|Datum|Uhrzeit`, `cal-list|Datum`), Tagesupdate um Termine erweitern.
+3. Kalender (**fertig**): `cal-add|Titel|Datum|Uhrzeit` (ohne Uhrzeit ganztägig; Länge nur über das Werkzeug `cal_add`, Standard 60 Min.), `cal-list|Datum`; Gerätekalender per `CalendarContract` (`DeviceCalendar`), Rückfrage vor dem Anlegen **mit Vorschau** (Wochentag und Datum aufgelöst, `McpClient.preview`), Termine im Tagesupdate und die Zahl der Termine in der Push-Nachricht. Berechtigung `READ_CALENDAR`/`WRITE_CALENDAR` in Einstellungen > Kalender.
 4. Wecker und Timer (`alarm|HH:mm|Name`, `timer|Minuten`, `AlarmClock`-Intents; niedrige Priorität).
 
 ## Grenzen

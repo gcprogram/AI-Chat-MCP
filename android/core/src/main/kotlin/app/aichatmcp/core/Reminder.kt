@@ -35,7 +35,7 @@ object Reminder {
      * Text der Push-Nachricht: Kurzübersicht der offenen Todos (kein Inhalt der Einträge, damit nichts Persönliches auf dem
      * Sperrbildschirm steht) und der Hinweis aufs Update.
      */
-    fun text(open: List<Todo>, today: LocalDate, german: Boolean): String {
+    fun text(open: List<Todo>, today: LocalDate, german: Boolean, appointments: Int = 0): String {
         val overdue = open.count { it.dueDate?.isBefore(today) == true }
         val dueToday = open.count { it.dueDate == today }
         val n = open.size
@@ -52,7 +52,12 @@ object Reminder {
                 else -> "$n open to-dos" + details(overdue, dueToday, false) + "."
             }
         }
-        return summary + if (german) " Zeit für dein Update." else " Time for your update."
+        val dates = when {
+            appointments <= 0 -> ""
+            german -> if (appointments == 1) " 1 Termin heute." else " $appointments Termine heute."
+            else -> if (appointments == 1) " 1 appointment today." else " $appointments appointments today."
+        }
+        return summary + dates + if (german) " Zeit für dein Update." else " Time for your update."
     }
 
     private fun details(overdue: Int, today: Int, german: Boolean): String {

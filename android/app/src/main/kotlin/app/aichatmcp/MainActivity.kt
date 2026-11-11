@@ -125,6 +125,10 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+    val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        vm.refreshCalendarPermission()
+        if (granted.values.any { !it }) toast("Ohne Kalender-Berechtigung bleiben Termine außen vor.")
+    }
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
             // Zugriff dauerhaft behalten, sonst ist die Datei nach einem Neustart nicht mehr lesbar
@@ -172,6 +176,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
             onPickPiper = { pickPiper.launch(null) },
             onPickWhisper = { pickWhisper.launch(null) },
             onRequestNotifications = ::requestNotifications,
+            onRequestCalendar = { calendarPermission.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
             onToast = ::toast,
         )
         Screen.COMPANIONS -> CompanionsScreen(

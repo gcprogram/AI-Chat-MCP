@@ -23,6 +23,9 @@ interface McpClient {
 
     /** Liefert (Text, ist_Fehler). */
     fun callTool(name: String, arguments: Map<String, Any?>, timeoutSec: Double = 60.0): Pair<String, Boolean>
+
+    /** Klartext dessen, was der Aufruf tun würde (mit aufgelösten Daten), für die Rückfrage an den Nutzer; null = keine Vorschau. */
+    fun preview(name: String, arguments: Map<String, Any?>): String? = null
 }
 
 /** Text aus dem Ergebnis von tools/call (content-Liste, sonst structuredContent). */

@@ -283,6 +283,30 @@
       "example": "[[mcp:todo-done|2]]",
       "result": "both",
       "confirm": false
+    },
+    "cal-add": {
+      "server": "organizer",
+      "tool": "cal_add",
+      "params": [
+        "title",
+        "date",
+        "time"
+      ],
+      "hint": "Adds an appointment to the user's calendar (date: today, tomorrow, monday, 2026-11-25; time: 14:30; no time = all day)",
+      "example": "[[mcp:cal-add|Dentist|tomorrow|14:00]]",
+      "result": "both",
+      "confirm": true
+    },
+    "cal-list": {
+      "server": "organizer",
+      "tool": "cal_list",
+      "params": [
+        "date"
+      ],
+      "hint": "Lists the user's appointments of a day (default today)",
+      "example": "[[mcp:cal-list|tomorrow]]",
+      "result": "both",
+      "confirm": false
     }
   }
 }

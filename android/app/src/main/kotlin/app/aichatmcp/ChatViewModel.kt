@@ -48,6 +48,7 @@ import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.CompanionImport
+import app.aichatmcp.calendar.DeviceCalendar
 import app.aichatmcp.core.DailyUpdate
 import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
@@ -126,7 +127,7 @@ enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, T
 
 data class UiMessage(val kind: UiKind, val text: String)
 
-class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: String, private val answer: CompletableDeferred<Boolean>) {
+class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: String, private val answer: CompletableDeferred<Boolean>, val preview: String? = null) {
     fun answer(ok: Boolean) {
         answer.complete(ok)
     }
@@ -169,6 +170,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var tools by mutableStateOf(ToolsState())
         private set
+
+    /** Gerätekalender für cal_add/cal_list und das Tagesupdate. */
+    private val deviceCalendar = DeviceCalendar(getApplication<Application>())
+
+    /** Darf die App den Kalender lesen und schreiben? (Einstellungen zeigen den Stand und fordern die Berechtigung an.) */
+    var calendarAllowed by mutableStateOf(deviceCalendar.hasRead() && deviceCalendar.hasWrite())
+        private set
+
+    fun refreshCalendarPermission() {
+        calendarAllowed = deviceCalendar.hasRead() && deviceCalendar.hasWrite()
+    }
     var listening by mutableStateOf(false)
         private set
     /** Whisper erkennt gerade (Aufnahme ist zu Ende): der Mikrofon-Knopf ist solange gesperrt. */
@@ -277,7 +289,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun askUser(call: ToolCall, spec: ToolSpec?): Boolean {
         val answer = CompletableDeferred<Boolean>()
-        pendingConfirm = PendingConfirm(call, spec, persona.name, answer)
+        val preview = withContext(Dispatchers.Default) { registry.preview(call) } // z. B. der Termin mit aufgelöstem Datum und Wochentag
+        pendingConfirm = PendingConfirm(call, spec, persona.name, answer, preview)
         try {
             return answer.await()
         } finally {
@@ -1283,7 +1296,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun showDailyUpdate(today: java.time.LocalDate = java.time.LocalDate.now()) {
         if (!persona.dailyUpdate || persona.id.isEmpty() || streaming) return
         if (DailyUpdate.alreadyShown(config.briefingDays, today)) return // heute schon von einem Companion gezeigt
-        val text = DailyUpdate.text(storage.todos.open(), today, persona.isGerman())
+        val events = if (deviceCalendar.canRead()) runCatching { deviceCalendar.events(today, 1) }.getOrNull() else null // ohne Berechtigung: keine Termine im Update
+        val text = DailyUpdate.text(storage.todos.open(), today, persona.isGerman(), events)
         session.addToolShown("daily-update", text)
         messages += UiMessage(UiKind.SHOWN, text)
         saveChat()
@@ -1380,6 +1394,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         secret = { storage.secrets()[it] },
                         certificate = { storage.certPem(it) },
                         todos = storage.todos,
+                        calendar = deviceCalendar,
                     ))
                 } catch (e: Exception) {
                     fresh.errors += "Werkzeuge konnten nicht geladen werden: ${e.message}"

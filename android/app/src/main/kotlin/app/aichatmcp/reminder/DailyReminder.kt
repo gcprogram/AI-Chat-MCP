@@ -14,6 +14,7 @@ import android.os.Build
 import android.util.Log
 import app.aichatmcp.AppStorage
 import app.aichatmcp.MainActivity
+import app.aichatmcp.calendar.DeviceCalendar
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.Reminder
 import java.time.LocalDate
@@ -63,7 +64,9 @@ object DailyReminder {
     fun content(context: Context, today: LocalDate = LocalDate.now()): Pair<String, String> {
         val storage = AppStorage(context.filesDir) { null }
         val german = storage.personas.load(storage.loadConfig().persona).isGerman()
-        return Reminder.title(german) to Reminder.text(storage.todos.open(), today, german)
+        val calendar = DeviceCalendar(context)
+        val appointments = if (calendar.canRead()) runCatching { calendar.events(today, 1).size }.getOrDefault(0) else 0
+        return Reminder.title(german) to Reminder.text(storage.todos.open(), today, german, appointments)
     }
 
     /** Zeigt die Nachricht. Liefert false, wenn sie nicht erlaubt ist (Berechtigung fehlt oder Benachrichtigungen sind aus). */

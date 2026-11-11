@@ -39,7 +39,7 @@ private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
 @Composable
 fun SettingsScreen(
     vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit,
-    onPickPiper: () -> Unit, onPickWhisper: () -> Unit, onRequestNotifications: () -> Unit, onToast: (String) -> Unit,
+    onPickPiper: () -> Unit, onPickWhisper: () -> Unit, onRequestNotifications: () -> Unit, onRequestCalendar: () -> Unit, onToast: (String) -> Unit,
 ) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
@@ -339,6 +339,15 @@ fun SettingsScreen(
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedButton(onClick = { onToast(vm.testReminder()) }) { Text("Nachricht jetzt testen") }
+
+        SectionTitle("Kalender")
+        Text(
+            if (vm.calendarAllowed) "Zugriff erlaubt: Das Tagesupdate und die Werkzeuge cal-add und cal-list nutzen den Kalender des Telefons. " +
+                "Neue Termine fragen vorher nach (mit Wochentag und Datum)."
+            else "Noch kein Zugriff. Ohne ihn zeigt das Tagesupdate keine Termine und cal-add/cal-list melden dem Companion einen Fehler.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (!vm.calendarAllowed) OutlinedButton(onClick = onRequestCalendar) { Text("Kalender-Zugriff erlauben") }
 
         SectionTitle("Werkzeuge")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

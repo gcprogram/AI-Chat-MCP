@@ -587,6 +587,14 @@ class ToolRegistry {
         ) + specs.map { it.promptLine(choices[it.alias]) }).joinToString("\n")
     }
 
+    /** Klartext-Vorschau eines Aufrufs für die Rückfrage (Server mit [McpClient.preview], z. B. Termin mit aufgelöstem Datum); sonst null. */
+    fun preview(call: ToolCall): String? {
+        val spec = tools[normalizeName(call.name)] ?: return null
+        if (spec.macro.isNotEmpty() || spec.buttons.isNotEmpty()) return null
+        val arguments = try { spec.resolve(call.args) } catch (_: ToolArgError) { return null }
+        return try { servers[spec.server]?.preview(spec.remoteName, arguments) } catch (_: Exception) { null }
+    }
+
     /** Führt einen Aufruf aus. Fehler werden als Ergebnis (ok=false) zurückgegeben, damit das Modell sie sieht. */
     fun run(
         call: ToolCall, allowed: List<String>, maxChars: Int = 2000, timeoutSec: Double = 60.0, choices: Map<String, List<String>> = emptyMap(),

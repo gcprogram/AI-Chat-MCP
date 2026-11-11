@@ -365,13 +365,15 @@ class DefaultServerFactory(
     private val http: OkHttpClient = OkHttpClient(),
     /** Speicher der Todos für den eingebauten Server "organizer". */
     private val todos: TodoStore? = null,
+    /** Gerätekalender für cal_add und cal_list im Server "organizer" (ohne ihn gibt es diese Werkzeuge nicht). */
+    private val calendar: CalendarBackend? = null,
 ) : ServerFactory {
     override fun create(name: String, entry: JsonObject): McpClient {
         val builtin = entry.string("builtin") ?: scriptBuiltin(entry)
         when (builtin) {
             "weather" -> return WeatherServer(name, fetcher)
             "websearch" -> return WebsearchServer(name, fetcher)
-            "organizer" -> return OrganizerServer(name, todos ?: throw McpException("Der Server 'organizer' braucht einen Speicher für die Todos."))
+            "organizer" -> return OrganizerServer(name, todos ?: throw McpException("Der Server 'organizer' braucht einen Speicher für die Todos."), calendar = calendar)
             null -> {}
             else -> throw McpException("Eingebauter Server '$builtin' unbekannt (weather, websearch, organizer).")
         }

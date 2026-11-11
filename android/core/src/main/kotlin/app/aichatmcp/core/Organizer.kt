@@ -5,6 +5,8 @@ import kotlinx.serialization.builtins.ListSerializer
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 /*
@@ -129,8 +131,17 @@ object DateWords {
         try { LocalDate.of(y, m, d) } catch (_: Exception) { throw ToolError("Date '$raw' does not exist.") }
 }
 
+private val HOUR = DateTimeFormatter.ofPattern("HH:mm")
+private val PREVIEW_DAY = DateTimeFormatter.ofPattern("EEEE, dd.MM.yyyy", java.util.Locale.GERMAN)
+
 /** MCP-Server `organizer`: Todos. Namen und Beschreibungen englisch (kleine Modelle folgen englischen Anweisungen besser). */
-class OrganizerServer(name: String, private val todos: TodoStore, private val today: () -> LocalDate = { LocalDate.now() }) : LocalServer(name) {
+class OrganizerServer(
+    name: String, private val todos: TodoStore,
+    /** Gerätekalender; ohne ihn gibt es die Werkzeuge cal_add und cal_list nicht. */
+    private val calendar: CalendarBackend? = null,
+    private val now: () -> LocalDateTime = { LocalDateTime.now() },
+    private val today: () -> LocalDate = { now().toLocalDate() }, // zuletzt, damit ein Lambda am Ende (Tests) das Datum setzt
+) : LocalServer(name) {
     override val tools = listOf(
         tool(
             "todo_add", "Adds a to-do to the user's list, optionally with a due date.",
@@ -146,8 +157,70 @@ class OrganizerServer(name: String, private val todos: TodoStore, private val to
             listOf(Triple("item", "string", "The number of the to-do, or a part of its text")),
             listOf("item"), readOnly = false,
         ),
+    ) + if (calendar == null) emptyList() else listOf(
+        tool(
+            "cal_add", "Adds an appointment to the user's calendar. Without a time it is an all-day appointment.",
+            listOf(
+                Triple("title", "string", "What the appointment is"),
+                Triple("date", "string", "today, tomorrow, a weekday (monday), 2026-11-25 or 25.11."),
+                Triple("time", "string", "Optional start time, e.g. 14:30 or 2pm"),
+                Triple("minutes", "integer", "Optional length in minutes, default 60"),
+            ),
+            listOf("title", "date"), readOnly = false,
+        ),
+        tool(
+            "cal_list", "Lists the appointments of a day (or the next days) from the user's calendar.",
+            listOf(
+                Triple("date", "string", "Optional first day, default today"),
+                Triple("days", "integer", "Optional number of days, default 1"),
+            ),
+            emptyList(),
+        ),
     )
-    override val handlers = mapOf<String, (Map<String, Any?>) -> String>("todo_add" to ::add, "todo_list" to ::list, "todo_done" to ::done)
+    override val handlers = mapOf<String, (Map<String, Any?>) -> String>("todo_add" to ::add, "todo_list" to ::list, "todo_done" to ::done) +
+        if (calendar == null) emptyMap() else mapOf("cal_add" to ::calAdd, "cal_list" to ::calList)
+
+    /** Eine geplante Eintragung mit aufgelösten Werten (Datum und Uhrzeit sind schon geprüft). */
+    private class Planned(val title: String, val start: LocalDateTime, val minutes: Int, val allDay: Boolean)
+
+    private fun plan(arguments: Map<String, Any?>): Planned {
+        val title = arguments["title"]?.toString().orEmpty().trim()
+        if (title.isEmpty()) throw ToolError("The title of the appointment is missing.")
+        val dateText = arguments["date"]?.toString().orEmpty()
+        if (dateText.isBlank()) throw ToolError("The date of the appointment is missing.")
+        val date = DateWords.parse(dateText, today())
+        val time = TimeWords.parseOptional(arguments["time"]?.toString())
+        val minutes = arguments["minutes"]?.toString()?.toDoubleOrNull()?.toInt()?.coerceIn(1, 24 * 60) ?: 60
+        val start = date.atTime(time ?: LocalTime.MIDNIGHT)
+        if (time != null && start.isBefore(now().minusMinutes(5))) {
+            throw ToolError("That time has already passed ($date ${time.format(HOUR)}). Check the date and ask the user.")
+        }
+        if (time == null && date.isBefore(today())) throw ToolError("That day has already passed ($date). Check the date and ask the user.")
+        return Planned(title, start, minutes, time == null)
+    }
+
+    /** Was cal_add täte, in Klartext mit Wochentag und Datum: damit der Nutzer ein falsch verstandenes "morgen" in der Rückfrage sieht. */
+    override fun preview(name: String, arguments: Map<String, Any?>): String? {
+        if (name != "cal_add" || calendar == null) return null
+        val p = try { plan(arguments) } catch (e: ToolError) { return e.message }
+        val day = p.start.toLocalDate().format(PREVIEW_DAY)
+        return if (p.allDay) "Termin: ${p.title}\n$day, ganztägig" else "Termin: ${p.title}\n$day, ${p.start.format(HOUR)} Uhr (${p.minutes} Min.)"
+    }
+
+    private fun calAdd(arguments: Map<String, Any?>): String {
+        val p = plan(arguments)
+        val name = calendar!!.add(p.title, p.start, p.minutes, p.allDay)
+        val when_ = if (p.allDay) "all day" else "at ${p.start.format(HOUR)} (${p.minutes} min)"
+        return "Added to the calendar '$name': ${p.title} on ${p.start.toLocalDate()} $when_."
+    }
+
+    private fun calList(arguments: Map<String, Any?>): String {
+        val from = DateWords.parseOptional(arguments["date"]?.toString(), today()) ?: today()
+        val days = arguments["days"]?.toString()?.toDoubleOrNull()?.toInt()?.coerceIn(1, 31) ?: 1
+        val events = calendar!!.events(from, days)
+        if (events.isEmpty()) return if (days == 1) "No appointments on $from." else "No appointments from $from for $days days."
+        return events.joinToString("\n") { CalendarText.line(it) }
+    }
 
     private fun add(arguments: Map<String, Any?>): String {
         val text = arguments["text"]?.toString().orEmpty().trim()
@@ -182,6 +255,7 @@ class OrganizerServer(name: String, private val todos: TodoStore, private val to
 
 /** Text des Tagesupdates (von der App zusammengestellt, ohne Modell). Sprache nach der Antwortsprache des Companions. */
 object DailyUpdate {
+    private val CLOCK = DateTimeFormatter.ofPattern("HH:mm")
     private const val MAX_LISTED = 8
 
     /** Wurde das Tagesupdate heute schon gezeigt (von irgendeinem Companion)? Dann zeigen es die anderen nicht noch einmal. */
@@ -189,11 +263,24 @@ object DailyUpdate {
     private val DE_DAYS = listOf("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
     private val EN_DAYS = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
-    fun text(open: List<Todo>, today: LocalDate, german: Boolean): String {
+    /** [events]: die heutigen Termine; null = Kalender nicht lesbar (dann steht nichts dazu im Update). */
+    fun text(open: List<Todo>, today: LocalDate, german: Boolean, events: List<CalendarEvent>? = null): String {
         val day = (if (german) DE_DAYS else EN_DAYS)[today.dayOfWeek.value - 1]
         val date = if (german) today.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) else today.toString()
         val sorted = open.sortedWith(compareBy({ it.dueDate ?: LocalDate.MAX }, { it.id }))
         val lines = mutableListOf(if (german) "Tagesupdate · $day, $date" else "Daily update · $day, $date")
+        if (events != null) {
+            if (events.isEmpty()) {
+                lines += if (german) "Keine Termine heute." else "No appointments today."
+            } else {
+                lines += if (german) "Termine heute (${events.size}):" else "Appointments today (${events.size}):"
+                events.take(MAX_LISTED).forEach { e ->
+                    val time = if (e.allDay) (if (german) "ganztägig" else "all day") else e.start.format(CLOCK)
+                    lines += "$time · ${e.title}"
+                }
+                if (events.size > MAX_LISTED) lines += if (german) "… und ${events.size - MAX_LISTED} weitere." else "… and ${events.size - MAX_LISTED} more."
+            }
+        }
         if (sorted.isEmpty()) {
             lines += if (german) "Keine offenen Todos." else "No open to-dos."
         } else {

@@ -12,13 +12,16 @@
         "todo-add",
         "todo-list",
         "todo-done",
-        "weather"
+        "weather",
+        "cal-add",
+        "cal-list"
     ],
     "approved_tools": [
         "todo-add",
         "todo-list",
         "todo-done",
-        "weather"
+        "weather",
+        "cal-list"
     ],
     "tool_mode": "marker",
     "daily_update": true,

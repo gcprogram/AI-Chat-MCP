@@ -141,6 +141,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
             text = {
                 Text(
                     "${pending.persona} möchte das Werkzeug '${pending.call.name}' ausführen.\n\n" +
+                        (pending.preview?.let { "$it\n\n" } ?: "") +
                         "Argumente: ${pending.call.args.ifEmpty { "(keine)" }}",
                 )
             },
