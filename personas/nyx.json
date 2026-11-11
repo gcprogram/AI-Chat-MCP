@@ -14,7 +14,9 @@
         "todo-done",
         "weather",
         "cal-add",
-        "cal-list"
+        "cal-list",
+        "alarm",
+        "timer"
     ],
     "approved_tools": [
         "todo-add",

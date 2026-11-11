@@ -255,9 +255,22 @@ data class ToolOutcome(
     val remember: Boolean = false,
 )
 
-/** Text der Nachricht, mit der das Werkzeugergebnis an das Modell zurückgegeben wird. */
-fun resultMessage(tool: String, text: String, ok: Boolean, userName: String): String =
-    if (ok) {
+/** Fehler, bei denen das Modell den Aufruf sofort korrigieren soll (falscher Name, fehlendes Argument), statt sich zu entschuldigen. */
+fun isRetryableError(text: String): Boolean = RETRYABLE_PREFIXES.any { text.startsWith(it) }
+
+private val RETRYABLE_PREFIXES = listOf("Unbekanntes Werkzeug", "Es fehlt:", "Unbekannte Taste")
+
+/**
+ * Text der Nachricht, mit der das Werkzeugergebnis an das Modell zurückgegeben wird. [toolLines]: die Zeilen der freigeschalteten Werkzeuge
+ * (wie im Prompt): Bei einem falschen Namen steht die Liste noch einmal ganz unten, wo das kleine Modell sie sieht. Es erfand sonst
+ * "todo-update" statt "todo-add" und entschuldigte sich dann, statt den Aufruf zu korrigieren.
+ */
+fun resultMessage(tool: String, text: String, ok: Boolean, userName: String, toolLines: List<String> = emptyList()): String =
+    if (!ok && toolLines.isNotEmpty() && isRetryableError(text)) {
+        "[Error from tool call $tool] $text\n" +
+            "Tools you can call (use exactly one of these names):\n" + toolLines.joinToString("\n") + "\n" +
+            "Write the corrected call now as one line [[mcp:NAME|ARGUMENT]]. Do not apologize and do not explain."
+    } else if (ok) {
         "[Ergebnis von $tool]\n$text\n[Ende des Ergebnisses]\n" +
             "Antworte $userName jetzt kurz und in deinen eigenen Worten anhand dieses Ergebnisses. " +
             "Schreibe keinen neuen Werkzeugaufruf, außer dir fehlt noch eine Information."
@@ -572,6 +585,10 @@ class ToolRegistry {
 
     /** Alles, was ein Companion freischalten kann: verfügbare Werkzeuge plus die in der Konfiguration stehenden, deren Server gerade nicht läuft. */
     fun selectable(): List<String> = (tools.keys + declared).toSortedSet().toList()
+
+    /** Die Zeilen der Werkzeuge wie im Prompt (Name, Beschreibung, Beispiel). */
+    fun promptLines(aliases: List<String>, choices: Map<String, List<String>> = emptyMap()): List<String> =
+        aliases.map { normalizeName(it) }.distinct().mapNotNull { tools[it] }.map { it.promptLine(choices[it.alias]) }
 
     fun promptSection(aliases: List<String>, choices: Map<String, List<String>> = emptyMap()): String {
         val specs = aliases.map { normalizeName(it) }.distinct().mapNotNull { tools[it] }

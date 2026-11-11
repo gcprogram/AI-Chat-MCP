@@ -266,8 +266,21 @@ class ToolOutcome:
     remember: bool = False
 
 
-def result_message(tool: str, text: str, ok: bool, user_name: str) -> str:
-    """Text der Nachricht, mit der das Werkzeugergebnis an das Modell zurückgegeben wird."""
+RETRYABLE_PREFIXES = ("Unbekanntes Werkzeug", "Es fehlt:", "Unbekannte Taste")
+
+
+def is_retryable_error(text: str) -> bool:
+    """Fehler, bei denen das Modell den Aufruf sofort korrigieren soll (falscher Name, fehlendes Argument), statt sich zu entschuldigen."""
+    return text.startswith(RETRYABLE_PREFIXES)
+
+
+def result_message(tool: str, text: str, ok: bool, user_name: str, tool_lines: list[str] | None = None) -> str:
+    """Text der Nachricht, mit der das Werkzeugergebnis an das Modell zurückgegeben wird. tool_lines: die Zeilen der freigeschalteten
+    Werkzeuge (wie im Prompt): Bei einem falschen Namen steht die Liste noch einmal ganz unten, wo das kleine Modell sie sieht."""
+    if not ok and tool_lines and is_retryable_error(text):
+        return (f"[Error from tool call {tool}] {text}\n"
+                "Tools you can call (use exactly one of these names):\n" + "\n".join(tool_lines) + "\n"
+                "Write the corrected call now as one line [[mcp:NAME|ARGUMENT]]. Do not apologize and do not explain.")
     if ok:
         return (f"[Ergebnis von {tool}]\n{text}\n[Ende des Ergebnisses]\n"
                 f"Antworte {user_name} jetzt kurz und in deinen eigenen Worten anhand dieses Ergebnisses. "
@@ -552,6 +565,11 @@ class ToolRegistry:
         """Alles, was ein Companion freischalten kann: die verfügbaren Werkzeuge und die in der Konfiguration stehenden, deren Server
         gerade nicht läuft (sie gelten, sobald der Server wieder da ist)."""
         return sorted(set(self.tools) | set(self.declared))
+
+    def prompt_lines(self, aliases: list[str], choices: dict[str, list[str]] | None = None) -> list[str]:
+        """Die Zeilen der Werkzeuge wie im Prompt (Name, Beschreibung, Beispiel)."""
+        choices = choices or {}
+        return [self.tools[a].prompt_line(choices.get(a)) for a in dict.fromkeys(normalize_name(x) for x in aliases) if a in self.tools]
 
     def prompt_section(self, aliases: list[str], choices: dict[str, list[str]] | None = None) -> str:
         choices = choices or {}

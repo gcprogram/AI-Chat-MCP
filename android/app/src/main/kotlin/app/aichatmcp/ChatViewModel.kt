@@ -49,6 +49,7 @@ import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
 import app.aichatmcp.core.CompanionImport
 import app.aichatmcp.calendar.DeviceCalendar
+import app.aichatmcp.clock.DeviceClock
 import app.aichatmcp.core.DailyUpdate
 import app.aichatmcp.core.DefaultServerFactory
 import app.aichatmcp.core.Message
@@ -173,6 +174,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Gerätekalender für cal_add/cal_list und das Tagesupdate. */
     private val deviceCalendar = DeviceCalendar(getApplication<Application>())
+
+    /** Uhr-App des Geräts für alarm_set/timer_set. */
+    private val deviceClock = DeviceClock(getApplication<Application>())
 
     /** Darf die App den Kalender lesen und schreiben? (Einstellungen zeigen den Stand und fordern die Berechtigung an.) */
     var calendarAllowed by mutableStateOf(deviceCalendar.hasRead() && deviceCalendar.hasWrite())
@@ -1395,6 +1399,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         certificate = { storage.certPem(it) },
                         todos = storage.todos,
                         calendar = deviceCalendar,
+                        clock = deviceClock,
                     ))
                 } catch (e: Exception) {
                     fresh.errors += "Werkzeuge konnten nicht geladen werden: ${e.message}"

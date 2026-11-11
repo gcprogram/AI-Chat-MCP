@@ -10,7 +10,7 @@ from .config import Config
 from .context import CHAT, TOOL_ERROR, TOOL_RESULT, TOOL_SHOWN, ContextManager, Message
 from .persona import Persona
 from .reply import HISTORY_REPLIES
-from .tools import ToolRegistry, find_call, normalize_name, result_message
+from .tools import ToolRegistry, find_call, is_retryable_error, normalize_name, result_message
 
 OLD_RESULT_CHARS = 300  # Werkzeugergebnisse früherer Runden werden gekürzt gesendet (kleiner Kontext)
 
@@ -116,7 +116,9 @@ class ChatSession:
                     shown.append(f"[Ergebnis von {m.tool}, {self.config.user_name} schon angezeigt]\n{text}\n"
                                  "[Ende des Ergebnisses]")
                     continue
-                m = replace(m, content=result_message(m.tool, text, m.kind == TOOL_RESULT, self.config.user_name))
+                lines = (self.registry.prompt_lines(self.tool_names, self.persona.tool_choices)
+                         if m.kind != TOOL_RESULT and i > last_question and is_retryable_error(text) else None)
+                m = replace(m, content=result_message(m.tool, text, m.kind == TOOL_RESULT, self.config.user_name, lines))
             elif shown:
                 if m.role == "user":
                     m = replace(m, content="\n".join(shown) + "\n\n" + m.content)

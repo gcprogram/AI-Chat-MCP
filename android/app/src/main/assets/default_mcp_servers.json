@@ -259,7 +259,7 @@
         "text",
         "due"
       ],
-      "hint": "Adds a to-do to the user's list (optional due date: today, tomorrow, monday, 2026-11-25)",
+      "hint": "Adds a to-do to the user's list (also: note, remember, 'füge hinzu', 'auf die Liste'; optional due date: today, tomorrow, monday, 2026-11-25)",
       "example": "[[mcp:todo-add|Buy milk|tomorrow]]",
       "result": "both",
       "confirm": false
@@ -268,7 +268,7 @@
       "server": "organizer",
       "tool": "todo_list",
       "params": [],
-      "hint": "Lists the user's open to-dos",
+      "hint": "Lists the user's open to-dos (also: 'was steht an', 'zeig die Liste')",
       "example": "[[mcp:todo-list]]",
       "result": "both",
       "confirm": false
@@ -279,7 +279,7 @@
       "params": [
         "item"
       ],
-      "hint": "Marks a to-do as done (its number or part of its text)",
+      "hint": "Marks a to-do as done (also: 'erledigt', 'abhaken', 'streichen'; its number or part of its text)",
       "example": "[[mcp:todo-done|2]]",
       "result": "both",
       "confirm": false
@@ -292,7 +292,7 @@
         "date",
         "time"
       ],
-      "hint": "Adds an appointment to the user's calendar (date: today, tomorrow, monday, 2026-11-25; time: 14:30; no time = all day)",
+      "hint": "Adds an appointment to the user's calendar (also: 'Termin eintragen'; date: today, tomorrow, monday, 2026-11-25; time: 14:30; no time = all day)",
       "example": "[[mcp:cal-add|Dentist|tomorrow|14:00]]",
       "result": "both",
       "confirm": true
@@ -303,10 +303,34 @@
       "params": [
         "date"
       ],
-      "hint": "Lists the user's appointments of a day (default today)",
+      "hint": "Lists the user's appointments of a day (also: 'welche Termine'; default today)",
       "example": "[[mcp:cal-list|tomorrow]]",
       "result": "both",
       "confirm": false
+    },
+    "alarm": {
+      "server": "organizer",
+      "tool": "alarm_set",
+      "params": [
+        "time",
+        "label"
+      ],
+      "hint": "Sets an alarm clock on the phone (also: 'Wecker', 'weck mich'; time: 7:30 or 6pm; label optional)",
+      "example": "[[mcp:alarm|7:30|Wake up]]",
+      "result": "both",
+      "confirm": true
+    },
+    "timer": {
+      "server": "organizer",
+      "tool": "timer_set",
+      "params": [
+        "duration",
+        "label"
+      ],
+      "hint": "Starts a countdown timer on the phone (also: 'Timer', 'Eieruhr'; duration: 10 = minutes, 45 s, 1h30; label optional)",
+      "example": "[[mcp:timer|10 min|Pasta]]",
+      "result": "both",
+      "confirm": true
     }
   }
 }

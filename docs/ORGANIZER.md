@@ -17,7 +17,7 @@ Planung (gemeinsam mit dem Besitzer entschieden). Nur Android; die PC-App bleibt
 1. **Todos + Tagesupdate** (`todo-add|Text|Datum`, `todo-list`, `todo-done|Nr oder Text`; `Config.briefingDays`, `Persona.dailyUpdate`).
 2. Tägliche Push-Nachricht (**fertig**: `AlarmManager.setAndAllowWhileIdle`, Uhrzeit und Schalter in den Einstellungen, Berechtigung `POST_NOTIFICATIONS`, Neuplanung nach Neustart).
 3. Kalender (**fertig**): `cal-add|Titel|Datum|Uhrzeit` (ohne Uhrzeit ganztägig; Länge nur über das Werkzeug `cal_add`, Standard 60 Min.), `cal-list|Datum`; Gerätekalender per `CalendarContract` (`DeviceCalendar`), Rückfrage vor dem Anlegen **mit Vorschau** (Wochentag und Datum aufgelöst, `McpClient.preview`), Termine im Tagesupdate und die Zahl der Termine in der Push-Nachricht. Berechtigung `READ_CALENDAR`/`WRITE_CALENDAR` in Einstellungen > Kalender.
-4. Wecker und Timer (`alarm|HH:mm|Name`, `timer|Minuten`, `AlarmClock`-Intents; niedrige Priorität).
+4. Wecker und Timer (**fertig**): Aliase `alarm|Uhrzeit|Name` und `timer|Dauer|Name` (Werkzeuge `alarm_set`/`timer_set`, immer mit Rückfrage und Vorschau), gestellt über die Uhr-App des Telefons per `AlarmClock`-Intents mit `EXTRA_SKIP_UI` (`DeviceClock`, Berechtigung `SET_ALARM` ohne Dialog, `<queries>` für die Sichtbarkeit). Ein Wecker klingelt zur nächsten Uhrzeit (heute, sonst morgen); Dauer `10` = Minuten, `45 s`, `1h30`, `1:30`. Grenze: nur im Vordergrund (Android blockiert den Start der Uhr-App aus dem Hintergrund still); die App verwaltet und löscht keine Wecker.
 
 ## Grenzen
 - Wie zuverlässig das 4B-Modell die Marker schreibt, ist erst am echten Modell zu sehen (Fake-Server-Tests ersetzen das nicht).

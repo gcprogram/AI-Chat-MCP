@@ -139,6 +139,8 @@ class OrganizerServer(
     name: String, private val todos: TodoStore,
     /** Gerätekalender; ohne ihn gibt es die Werkzeuge cal_add und cal_list nicht. */
     private val calendar: CalendarBackend? = null,
+    /** Uhr-App des Geräts; ohne sie gibt es die Werkzeuge alarm_set und timer_set nicht. */
+    private val clock: ClockBackend? = null,
     private val now: () -> LocalDateTime = { LocalDateTime.now() },
     private val today: () -> LocalDate = { now().toLocalDate() }, // zuletzt, damit ein Lambda am Ende (Tests) das Datum setzt
 ) : LocalServer(name) {
@@ -157,7 +159,7 @@ class OrganizerServer(
             listOf(Triple("item", "string", "The number of the to-do, or a part of its text")),
             listOf("item"), readOnly = false,
         ),
-    ) + if (calendar == null) emptyList() else listOf(
+    ) + (if (calendar == null) emptyList() else listOf(
         tool(
             "cal_add", "Adds an appointment to the user's calendar. Without a time it is an all-day appointment.",
             listOf(
@@ -176,9 +178,57 @@ class OrganizerServer(
             ),
             emptyList(),
         ),
-    )
+    )) + (if (clock == null) emptyList() else listOf(
+        tool(
+            "alarm_set", "Sets an alarm clock on the user's phone for the next time it is that time (today, or tomorrow if it has passed).",
+            listOf(
+                Triple("time", "string", "When it should ring, e.g. 7:30 or 6pm"),
+                Triple("label", "string", "Optional name of the alarm"),
+            ),
+            listOf("time"), readOnly = false,
+        ),
+        tool(
+            "timer_set", "Starts a countdown timer on the user's phone.",
+            listOf(
+                Triple("duration", "string", "How long, e.g. 10 (minutes), 10 min, 45 s, 1h30"),
+                Triple("label", "string", "Optional name of the timer"),
+            ),
+            listOf("duration"), readOnly = false,
+        ),
+    ))
     override val handlers = mapOf<String, (Map<String, Any?>) -> String>("todo_add" to ::add, "todo_list" to ::list, "todo_done" to ::done) +
-        if (calendar == null) emptyMap() else mapOf("cal_add" to ::calAdd, "cal_list" to ::calList)
+        (if (calendar == null) emptyMap() else mapOf("cal_add" to ::calAdd, "cal_list" to ::calList)) +
+        (if (clock == null) emptyMap() else mapOf("alarm_set" to ::alarmSet, "timer_set" to ::timerSet))
+
+    /** Der Tag, an dem ein Wecker auf [time] das nächste Mal klingelt: heute, wenn die Zeit noch kommt, sonst morgen. */
+    private fun alarmDay(time: LocalTime): LocalDate {
+        val n = now()
+        return if (n.toLocalDate().atTime(time).isAfter(n)) n.toLocalDate() else n.toLocalDate().plusDays(1)
+    }
+
+    private fun label(arguments: Map<String, Any?>) = arguments["label"]?.toString().orEmpty().trim().take(60)
+
+    private fun alarmTime(arguments: Map<String, Any?>): LocalTime {
+        if (arguments["time"]?.toString().isNullOrBlank()) throw ToolError("The time of the alarm is missing.")
+        return TimeWords.parse(arguments["time"]?.toString())
+    }
+
+    private fun alarmSet(arguments: Map<String, Any?>): String {
+        val time = alarmTime(arguments)
+        val label = label(arguments)
+        clock!!.setAlarm(time, label)
+        val day = alarmDay(time)
+        val word = if (day == now().toLocalDate()) "today" else "tomorrow"
+        return "Alarm set for ${time.format(HOUR)} $word ($day)" + (if (label.isNotEmpty()) ", named '$label'" else "") + "."
+    }
+
+    private fun timerSet(arguments: Map<String, Any?>): String {
+        if (arguments["duration"]?.toString().isNullOrBlank()) throw ToolError("The length of the timer is missing.")
+        val seconds = DurationWords.parse(arguments["duration"]?.toString())
+        val label = label(arguments)
+        clock!!.setTimer(seconds, label)
+        return "Timer set for ${DurationWords.describe(seconds)}" + (if (label.isNotEmpty()) ", named '$label'" else "") + "."
+    }
 
     /** Eine geplante Eintragung mit aufgelösten Werten (Datum und Uhrzeit sind schon geprüft). */
     private class Planned(val title: String, val start: LocalDateTime, val minutes: Int, val allDay: Boolean)
@@ -201,6 +251,17 @@ class OrganizerServer(
 
     /** Was cal_add täte, in Klartext mit Wochentag und Datum: damit der Nutzer ein falsch verstandenes "morgen" in der Rückfrage sieht. */
     override fun preview(name: String, arguments: Map<String, Any?>): String? {
+        if (clock != null && name == "alarm_set") {
+            val time = try { alarmTime(arguments) } catch (e: ToolError) { return e.message }
+            val day = alarmDay(time)
+            val word = if (day == now().toLocalDate()) "heute" else "morgen"
+            return "Wecker: ${time.format(HOUR)} Uhr, $word (${day.format(PREVIEW_DAY)})" + label(arguments).let { if (it.isEmpty()) "" else "\nName: $it" }
+        }
+        if (clock != null && name == "timer_set") {
+            val seconds = try { DurationWords.parse(arguments["duration"]?.toString()) } catch (e: ToolError) { return e.message }
+            val ends = now().plusSeconds(seconds.toLong())
+            return "Timer: ${DurationWords.describe(seconds)} (läuft ab um ${ends.format(HOUR)} Uhr)" + label(arguments).let { if (it.isEmpty()) "" else "\nName: $it" }
+        }
         if (name != "cal_add" || calendar == null) return null
         val p = try { plan(arguments) } catch (e: ToolError) { return e.message }
         val day = p.start.toLocalDate().format(PREVIEW_DAY)

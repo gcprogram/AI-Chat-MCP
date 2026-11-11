@@ -33,7 +33,7 @@ class CalendarTest {
 
     private fun server(calendar: CalendarBackend? = FakeCalendar()): OrganizerServer {
         val store = TodoStore(File(kotlin.io.path.createTempDirectory("todos").toFile(), "todos.json"))
-        return OrganizerServer("organizer", store, calendar, { now }, { today })
+        return OrganizerServer("organizer", store, calendar, now = { now }, today = { today })
     }
 
     private fun call(s: OrganizerServer, tool: String, vararg args: Pair<String, String>) = s.callTool(tool, args.toMap(), 5.0)

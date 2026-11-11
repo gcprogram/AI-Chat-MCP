@@ -93,7 +93,9 @@ class ChatSession(var config: Config, var persona: Persona, var registry: ToolRe
                     shown +="[Ergebnis von ${m.tool}, ${config.userName} schon angezeigt]\n$text\n[Ende des Ergebnisses]"
                     return@forEachIndexed
                 }
-                m = m.copy(content = resultMessage(m.tool, text, m.kind == TOOL_RESULT, config.userName))
+                val lines = if (m.kind != TOOL_RESULT && i > lastQuestion && isRetryableError(text)) // nur in der laufenden Runde: ältere Fehler blähen den Kontext nicht auf
+                     registry.promptLines(toolNames, persona.toolChoices) else emptyList()
+                m = m.copy(content = resultMessage(m.tool, text, m.kind == TOOL_RESULT, config.userName, lines))
             } else if (shown.isNotEmpty()) {
                 if (m.role == "user") m = m.copy(content = shown.joinToString("\n") + "\n\n" + m.content)
                 shown.clear()
