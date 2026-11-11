@@ -4,6 +4,10 @@ Offline-Chat-Client mit „Persönlichkeit“ (Companion) für lokale Modelle ü
 OpenAI-kompatiblen Endpunkt (die Server-URL ist frei einstellbar, daher auch Online-Dienste).
 Der Android Client läuft komplett lokal auf dem Phone. Nur lokale Modelle nehmen, die klein genug sind.
 
+![Android-App: Chat mit Tagesupdate (Nyx), Vollbild-Ansicht der Companion-Bilder (Oma Gerda, Rhett Noir) und der Companion-Editor](docs/img/android-app.jpg)
+
+*Die Android-App: Chat mit Tagesupdate, ein Tipp auf das Profilbild öffnet es im Vollbild, rechts der Companion-Editor.*
+
 ## Start
 
 ```bash
