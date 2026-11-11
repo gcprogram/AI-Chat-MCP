@@ -2,6 +2,7 @@
 
 Offline-Chat-Client mit „Persönlichkeit“ (Companion) für lokale Modelle über LM Studio – oder jeden
 OpenAI-kompatiblen Endpunkt (die Server-URL ist frei einstellbar, daher auch Online-Dienste).
+Der Android Client läuft komplett lokal auf dem Phone. Nur lokale Modelle nehmen, die klein genug sind.
 
 ## Start
 
