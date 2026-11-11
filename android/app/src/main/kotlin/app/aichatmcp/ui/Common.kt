@@ -142,7 +142,7 @@ fun AvatarFullscreen(file: File, name: String, onClose: () -> Unit) {
             bitmap?.let { Image(it, contentDescription = name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
             Text(
                 name, color = Color.White, style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 24.dp, end = 24.dp, bottom = 76.dp), // das Dialogfenster reicht unter die Navigationsleiste (Dialoge bekommen keine Insets)
             )
         }
     }
