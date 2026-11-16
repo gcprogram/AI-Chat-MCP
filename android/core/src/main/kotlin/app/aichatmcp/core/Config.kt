@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 
 const val BACKEND_SERVER = "server"
 const val BACKEND_LOCAL = "local"
+const val LANGUAGE_EN = "en"
+const val LANGUAGE_DE = "de"
 
 /** Konfiguration (gleiche JSON-Schlüssel wie config.json der Python-App). Defekte Daten führen zu Defaults. */
 @Serializable
@@ -67,6 +69,12 @@ data class Config(
     /** Tägliche Push-Nachricht (Kurzübersicht der Todos) zur Uhrzeit [dailyReminderTime] ("HH:mm"). */
     @SerialName("daily_reminder") val dailyReminder: Boolean = false,
     @SerialName("daily_reminder_time") val dailyReminderTime: String = Reminder.DEFAULT_TIME,
+    /** Sprache der Oberfläche: "en" (Standard) oder "de". Die Antwortsprache legt der Companion fest, nicht diese Einstellung. */
+    @SerialName("ui_language") val uiLanguage: String = LANGUAGE_EN,
+    /** Die Einführung beim Erststart wurde durchlaufen (oder übersprungen); bestehende Installationen gelten als eingeführt. */
+    @SerialName("onboarding_done") val onboardingDone: Boolean = false,
+    /** Gewählter Anbieter für das Chat-Modell im Netz (siehe [Providers]); leer = aus der Server-Adresse erkannt. */
+    val provider: String = "",
 ) {
     fun sanitize(): Config = copy(
         baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { "http://127.0.0.1:1234/v1" },
@@ -86,6 +94,7 @@ data class Config(
         toolResultChars = toolResultChars.coerceIn(200, 20000),
         toolTimeout = toolTimeout.coerceIn(5, 600),
         backend = if (backend == BACKEND_LOCAL) BACKEND_LOCAL else BACKEND_SERVER,
+        uiLanguage = if (uiLanguage == LANGUAGE_DE) LANGUAGE_DE else LANGUAGE_EN,
         localThreads = localThreads.coerceIn(1, 16),
     )
 
@@ -103,7 +112,10 @@ data class Config(
         fun fromJson(text: String?): Config {
             if (text.isNullOrBlank()) return Config()
             return try {
-                AppJson.decodeFromString(serializer(), text).sanitize()
+                val config = AppJson.decodeFromString(serializer(), text).sanitize()
+                // Eine Konfiguration aus einer Version ohne Einführung gehört einer bestehenden Installation: nicht noch einmal einführen
+                val hasFlag = (AppJson.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject)?.containsKey("onboarding_done") == true
+                if (hasFlag) config else config.copy(onboardingDone = true)
             } catch (_: Exception) {
                 Config()
             }

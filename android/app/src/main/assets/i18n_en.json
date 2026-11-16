@@ -1,0 +1,826 @@
+{
+ "exact": {
+  "Neuer Chat": "New chat",
+  "Nachricht": "Message",
+  "Senden": "Send",
+  "Stopp": "Stop",
+  "Einstellungen": "Settings",
+  "Companions": "Companions",
+  "Werkzeuge": "Tools",
+  "Chat exportieren…": "Export chat…",
+  "Chat laden…": "Load chat…",
+  "Abbrechen": "Cancel",
+  "Ablehnen": "Decline",
+  "Ausführen": "Run",
+  "Werkzeug ausführen?": "Run tool?",
+  "Aktuellen Chat verwerfen?": "Discard the current chat?",
+  "Verwerfen": "Discard",
+  "Beschreiben": "Describe",
+  "Bereit": "Ready",
+  "Fehler": "Error",
+  "Speichern": "Save",
+  "Speichern & neu laden": "Save & reload",
+  "Löschen": "Delete",
+  "Übernehmen": "Apply",
+  "‹ Zurück": "‹ Back",
+  "zurück": "back",
+  "Aktualisieren": "Refresh",
+  "Laden": "Download",
+  "Anhören": "Listen",
+  "Datei": "File",
+  "Name": "Name",
+  "Standard": "Default",
+  "Test": "Test",
+  "Liste": "List",
+  "Eingabe": "Input",
+  "Antwort": "Reply",
+  "Ergebnis": "Result",
+  "Vorlesen": "Read aloud",
+  "Weiterlesen": "Continue reading",
+  "Warte": "Wait",
+  "Unbekannt": "Unknown",
+  "1 · Als Eingabe einlesen": "1 · Use as input",
+  "2 · Vorlesen": "2 · Read aloud",
+  "2 · Weiterlesen": "2 · Continue reading",
+  "3 · Zusammenfassen": "3 · Summarize",
+  "Trotzdem vorlesen": "Read aloud anyway",
+  "Stimme fehlt": "Voice missing",
+  "Von vorn vorlesen": "Read from the start",
+  "Seite zurück/vor": "Page back/forward",
+  "<< und >> springen 10 Abschnitte, < und > einen.": "<< and >> jump 10 sections, < and > one.",
+  "<< und >> springen eine Seite, < und > einen Abschnitt.": "<< and >> jump one page, < and > one section.",
+  "Denkt nach…\n": "Thinking…\n",
+  "Was soll ich damit machen?": "What should I do with it?",
+  "Beschreibe das Bild…": "Describing the picture…",
+  "Beschreibe das Bild… (das Bildmodell wird geladen)": "Describing the picture… (loading the image model)",
+  "Bild beschrieben.": "Picture described.",
+  "Bildbeschreibung": "Picture description",
+  "Bild konnte nicht beschrieben werden": "The picture could not be described",
+  "Keine Beschreibung erhalten.": "No description received.",
+  "Bild nicht ladbar": "Picture could not be loaded",
+  "Bild nicht lesbar": "Picture not readable",
+  "Das Bild lässt sich nicht lesen.": "The picture cannot be read.",
+  "Datei nicht lesbar": "File not readable",
+  "Lese Datei…": "Reading file…",
+  "Lese den Ordner…": "Reading the folder…",
+  "Dafür fehlt ein Bildmodell: Einstellungen → Bildmodell (ein kleines Modell wie SmolVLM, GGUF und mmproj-Datei).": "That",
+  "Für Bilder fehlt das Bildmodell (Einstellungen → Bildmodell).": "The image model is missing (Settings → Image model).",
+  "Bilder werden vom Bildmodell beschrieben, nicht als Text gelesen.": "Pictures are described by the image model, not read as text.",
+  "Eingelesen, aber auf den Anfang gekürzt (Kontext reicht nicht für alles). Frage dahinter schreiben.": "Read in, but cut to the beginning (the context is too small for everything). Write your question below.",
+  "Eingelesen. Frage dahinter schreiben und senden.": "Read in. Write your question below and send.",
+  "Es gibt nichts zum Vorlesen.": "There is nothing to read aloud.",
+  "Vorlesen beendet.": "Finished reading aloud.",
+  "Während der Antwort nicht möglich.": "Not possible while a reply is running.",
+  "Vorlesen pausiert (Anruf oder anderer Ton), es geht danach weiter.": "Reading paused (call or other sound); it continues afterwards.",
+  "Vorlesen pausiert (eine andere App spielt Ton).": "Reading paused (another app is playing sound).",
+  "Der Ton ist gerade belegt (Anruf?). Bitte später noch einmal Play drücken.": "The audio is busy (call?). Please press Play again later.",
+  "Der Ton ist gerade belegt (Anruf?); das Vorlesen startet, sobald er frei ist.": "The audio is busy (call?); reading starts as soon as it is free.",
+  "Die Sprachausgabe ist beim Vorlesen ausgefallen.": "The speech output failed while reading aloud.",
+  "Dieses Dateiformat wird nicht unterstützt (möglich: PDF, TXT, MD, DOCX, EPUB, HTML, Bilder).": "This file format is not supported (possible: PDF, TXT, MD, DOCX, EPUB, HTML, pictures).",
+  "Das ist kein Text.": "This is not text.",
+  "Die Datei enthält keinen Text.": "The file contains no text.",
+  "Das ist keine gültige DOCX-Datei (word/document.xml fehlt).": "This is not a valid DOCX file (word/document.xml is missing).",
+  "Die DOCX-Datei ist zu groß.": "The DOCX file is too large.",
+  "Das ist keine gültige EPUB-Datei (META-INF/container.xml fehlt).": "This is not a valid EPUB file (META-INF/container.xml is missing).",
+  "Die EPUB-Datei enthält keine Kapitel.": "The EPUB file contains no chapters.",
+  "Die EPUB-Datei enthält keinen Text.": "The EPUB file contains no text.",
+  "Die EPUB-Datei nennt keine Paketdatei (OPF).": "The EPUB file names no package file (OPF).",
+  "Die PDF-Datei ist verschlüsselt.": "The PDF file is encrypted.",
+  "In der PDF-Datei steht kein auslesbarer Text (vielleicht ein Scan ohne Texterkennung).": "The PDF contains no readable text (maybe a scan without text recognition).",
+  "Die Datei lässt sich nicht speichern.": "The file cannot be saved.",
+  "Die Datei lässt sich nicht öffnen.": "The file cannot be opened.",
+  "Die Datei enthält keinen Chat (Feld 'messages' fehlt).": "The file contains no chat (field 'messages' is missing).",
+  "Ungültige Nachricht (role/content) in der Datei.": "Invalid message (role/content) in the file.",
+  "Ungültiger Eintrag in 'messages'.": "Invalid entry in 'messages'.",
+  "Chat geladen": "Chat loaded",
+  "Chat gespeichert": "Chat saved",
+  "Companion": "Companion",
+  "Companion löschen": "Delete companion",
+  "Begrüßung": "Greeting",
+  "Beschreibung": "Description",
+  "Regeln (eine pro Zeile)": "Rules (one per line)",
+  "Bild wählen…": "Choose picture…",
+  "Bild entfernen": "Remove picture",
+  "Datei importieren": "Import file",
+  "Ordner importieren…": "Import folder…",
+  "Exportieren": "Export",
+  "Nur Avatare…": "Avatars only…",
+  "Stimme": "Voice",
+  "Stimme für männliche Rede": "Voice for male speech",
+  "Stimme für weibliche Rede": "Voice for female speech",
+  "(wie Erzähler)": "(like narrator)",
+  "(nicht verfügbar: Erzähler)": "(not available: narrator)",
+  "(nicht verfügbar: Standardstimme)": "(not available: default voice)",
+  "Sprache (Antworten, Erkennung, Vorlesen)": "Language (replies, recognition, reading aloud)",
+  "Tagesupdate beim Start": "Daily update on start",
+  "Einmal am Tag zeigt der Companion beim Öffnen seine offenen Todos (von der App zusammengestellt, ohne Modell).": "Once a day the companion shows its open to-dos when opened (composed by the app, without a model).",
+  "Nicht vorhandene entfernen": "Remove missing ones",
+  "Freischalten  ·  ohne Rückfrage (vorab genehmigt)": "Enable  ·  without asking (pre-approved)",
+  "ohne Rückfrage": "without asking",
+  "Keine Werkzeuge verfügbar (siehe Werkzeuge im Menü).": "No tools available (see Tools in the menu).",
+  "Zum Wählen eines Bildes den Companion zuerst speichern.": "Save the companion first to choose a picture.",
+  "Datei importieren: ein Companion (.json). Ordner importieren: alle Companions eines Ordners samt Unterordner avatars (z. B. personas der PC-App). Nur Avatare: kopiert Bilder, legt keine Companions an.": "Import file: one companion (.json). Import folder: all companions of a folder including the subfolder avatars (e.g. personas of the PC app). Avatars only: copies pictures, creates no companions.",
+  "Hallo! Schön, dass du da bist.": "Hello! Nice that you are here.",
+  "Du bist eine freundliche, neugierige Gesprächspartnerin.": "You are a friendly, curious conversation partner.",
+  "Companion importiert": "Companion imported",
+  "Companion exportiert": "Companion exported",
+  "Avatar gesetzt": "Avatar set",
+  "Plattdeutsch": "Low German",
+  "Deutsch": "German",
+  "Französisch": "French",
+  "Italienisch": "Italian",
+  "Spanisch": "Spanish",
+  "Japanisch (日本語)": "Japanese (日本語)",
+  "Keine Bilder im gewählten Ordner (bitte den Ordner avatars wählen)": "No pictures in the chosen folder (please choose the avatars folder)",
+  "Modell": "Model",
+  "Chat": "Chat",
+  "Sprache": "Language",
+  "Kalender": "Calendar",
+  "Ausführung": "Run on",
+  "Server (LM Studio, OpenAI, …)": "Server (LM Studio, OpenAI, …)",
+  "Auf dem Gerät (llama.cpp)": "On the device (llama.cpp)",
+  "Server-URL (inkl. /v1)": "Server URL (incl. /v1)",
+  "API-Schlüssel": "API key",
+  "Modelle laden": "Load models",
+  "Lade Modelle…": "Loading models…",
+  "Modelldatei (GGUF) wählen…": "Choose model file (GGUF)…",
+  "Noch keine Modelldatei gewählt.": "No model file chosen yet.",
+  "Threads (Rechenkerne)": "Threads (CPU cores)",
+  "Dein Name": "Your name",
+  "Temperatur": "Temperature",
+  "Max. Antwort-Tokens": "Max. reply tokens",
+  "Kontext-Tokens (Fenster des Modells)": "Context tokens (model window)",
+  "Gegen Wiederholungen (kleine Modelle)": "Against repetition (small models)",
+  "Repeat-Penalty (0 = nicht senden, nur LM Studio)": "Repeat penalty (0 = do not send, LM Studio only)",
+  "Top-P": "Top-P",
+  "Frequency-Penalty": "Frequency penalty",
+  "Presence-Penalty": "Presence penalty",
+  "Antworten vorlesen": "Read replies aloud",
+  "Sprechgeschwindigkeit (1.0 = normal, Deutsch gern 1.2)": "Speech rate (1.0 = normal, German likes 1.2)",
+  "Nach Spracheingabe sofort senden": "Send right after voice input",
+  "Online-Erkennung erlauben, wenn das Offline-Sprachpaket fehlt": "Allow online recognition if the offline language pack is missing",
+  "Erkennung und Stimme sind die von Google (Spracherkennung und -synthese von Google), die Sprache folgt der Antwortsprache des Companions. Es wird zuerst offline erkannt (Audio bleibt auf dem Handy). Fehlt das Sprachpaket (Google-Einstellungen → Sprache → Offline-Spracherkennung), geht das Audio bei erlaubter Online-Erkennung an Google.": "Recognition and voice are Google's (speech recognition and synthesis); the language follows the companion's reply language. Recognition is offline first (audio stays on the phone). If the language pack is missing (Google settings → Language → Offline speech recognition), audio goes to Google when online recognition is allowed.",
+  "Spracheingabe mit Whisper (offline)": "Voice input with Whisper (offline)",
+  "Whisper statt Google für das Mikrofon": "Whisper instead of Google for the microphone",
+  "Whisper läuft komplett auf dem Gerät, ohne Google und ohne Netz, und erkennt viele Sprachen. Es erkennt erst nach dem Sprechen (kein Mitlesen), die Aufnahme endet nach einer Pause oder beim erneuten Tippen auf das Mikrofon. Größere Modelle erkennen besser, brauchen aber länger: „small“ ist ein guter Anfang, „medium“ ist auf dem Handy meist zu langsam. Modellpakete: sherpa-onnx (Pakete „sherpa-onnx-whisper-…“, Ordner mit Encoder, Decoder und tokens.txt).": "Whisper runs entirely on the device, without Google and without network, and understands many languages. It recognizes after you stop speaking (no live text); recording ends after a pause or when you tap the microphone again. Larger models are more accurate but slower: \"small\" is a good start, \"medium\" is usually too slow on a phone.",
+  "Sprache für Whisper (leer = Sprache des Companions, auto = erkennen, sonst z. B. de)": "Language for Whisper (empty = companion's language, auto = detect, else e.g. de)",
+  "Das Feld legt fest, in welcher Sprache Whisper schreibt. Leer: in der Antwortsprache des Companions; sprichst du Deutsch zu einem englischen Companion, kommt der Text schon auf Englisch heraus (Whisper übersetzt). „auto“ schreibt in der gesprochenen Sprache, ein Code wie „de“ immer in dieser Sprache.": "This field sets the language Whisper writes in. Empty: the companion's reply language; if you speak German to an English companion the text already comes out in English (Whisper translates). \"auto\" writes in the spoken language, a code like \"de\" always in that language.",
+  "Noch kein Whisper-Modell installiert.": "No Whisper model installed yet.",
+  "Whisper-Ordner wählen…": "Choose Whisper folder…",
+  "Offline-Sprachpakete (Spracherkennung)": "Offline language packs (speech recognition)",
+  "Das Verwalten der Sprachpakete braucht Android 13 oder neuer.": "Managing language packs needs Android 13 or newer.",
+  "offline installiert": "installed offline",
+  "nicht installiert (es wird online erkannt)": "not installed (recognized online)",
+  "für Offline-Erkennung nicht angeboten": "not offered for offline recognition",
+  "Bildmodell (Bilder beschreiben)": "Image model (describe pictures)",
+  "Bildmodell entfernen": "Remove image model",
+  "Bildmodell entfernt.": "Image model removed.",
+  "Das Chat-Modell sieht keine Bilder. Ein kleines Bildmodell (z. B. SmolVLM-256M, GGUF) beschreibt ein hochgeladenes Bild als Text; die Beschreibung geht dann an den Companion. Dazu gehören zwei Dateien: das Modell und die passende mmproj-Datei. Beide werden in den App-Speicher kopiert, geladen wird nur während einer Beschreibung.": "The chat model cannot see pictures. A small image model (e.g. SmolVLM, GGUF) describes an uploaded picture as text; the description then goes to the companion. Two files belong to it: the model and the matching mmproj file. Both are copied into the app storage and loaded only while describing.",
+  "Modell wählen…": "Choose model…",
+  "mmproj wählen…": "Choose mmproj…",
+  "Stimmen (Sprachausgabe)": "Voices (speech output)",
+  "Vorgelesen wird, wenn oben „Antworten vorlesen“ an ist. Die Stimme wählst du je Companion im Companion-Editor: entweder eine Systemstimme (Google-Sprachausgabe, braucht installierte Stimmen) oder eine Piper-Stimme (läuft ohne Google auf dem Gerät, siehe unten). Ohne Auswahl gilt die Systemstimme der Sprache.": "Reading aloud happens when \"Read replies aloud\" is on above. You choose the voice per companion in the companion editor: either a system voice (Google speech output, needs installed voices) or a Piper voice (runs on the device without Google, see below). Without a choice the system voice of the language is used.",
+  "Stimmen laden…": "Download voices…",
+  "Systemstimmen laden…": "Download system voices…",
+  "Stimmen in der Google-Sprachausgabe laden, danach hier „Status aktualisieren“.": "Download voices in the Google speech output, then press \"Refresh\" here.",
+  "Unklare wörtliche Rede vom Server zuordnen lassen (KI)": "Let the server assign unclear dialogue (AI)",
+  "Gilt beim Vorlesen mit Stimmen für männliche und weibliche Rede (Companion-Editor). Die Regeln erkennen den Sprecher am Begleitsatz, an Vornamen und am Absatzwechsel. Für den Rest fragt die App den Server (Chat-Modell, z. B. LM Studio) im Hintergrund, während schon gelesen wird; bis die Antwort da ist, spricht der Erzähler. Dabei gehen kurze Textausschnitte (etwa 300 Zeichen je Rede) an den Server. Nur bei Server-Betrieb, nicht mit dem Modell auf dem Handy. Standard: aus.": "Applies when reading aloud with voices for male and female speech (companion editor). The rules recognize the speaker from the speech tag, first names and paragraph changes. For the rest the app asks the server (chat model, e.g. LM Studio) in the background while it is already reading; until the answer arrives the narrator speaks. Short text excerpts (about 300 characters per quote) go to the server. Only in server mode, not with the model on the phone. Default: off.",
+  "Wörtliche Rede beim Vorlesen von Dokumenten: Der Erzähler spricht mit der Stimme oben (muss eine Piper-Stimme sein), Reden von Männern und Frauen mit diesen Stimmen. Wer spricht, erkennt die App am Begleitsatz („sagte sie“), an Vornamen und am Absatzwechsel; wo das nicht klappt, spricht der Erzähler.": "Dialogue when reading documents: the narrator speaks with the voice above (must be a Piper voice), quotes of men and women with these voices. The app recognizes who is speaking from the speech tag and first names.",
+  "Piper-Stimmen (offline, auch eigene)": "Piper voices (offline, also your own)",
+  "Schwankung der Stimme (0.667 = Vorgabe, höher = lebendiger)": "Voice variation (0.667 = default, higher = livelier)",
+  "Schwankung der Betonung/Rhythmik (0.8 = Vorgabe, höher = abwechslungsreicher)": "Stress/rhythm variation (0.8 = default, higher = more varied)",
+  "Gilt nach dem Speichern (die Stimmen werden neu geladen). Zum Probieren z. B. 0.9 und 1.1 eintragen, speichern und eine Stimme anhören; zu hohe Werte lassen sie stolpern oder rauschen (zurück auf 0.667 und 0.8).": "Applies after saving (the voices are reloaded). To try, enter e.g. 0.9 and 1.1, save and listen to a voice; values that are too high make it stumble or hiss (back to 0.667 and 0.8).",
+  "Piper-Stimmen sprechen komplett auf dem Gerät, auch ohne Google-Sprachausgabe. „Stimmenordner wählen…“ übernimmt einen Ordner im Format der sherpa-onnx-Pakete (vits-piper-…: .onnx, tokens.txt, einmalig espeak-ng-data). Eine eigene Stimme entsteht durch Training am PC, Anleitung: docs/EIGENE_STIMME.md. Gewählt wird die Stimme im Companion-Editor unter „Stimme“; dort erscheinen nur Stimmen der Sprache des Companions. Qualität low/medium läuft flüssig, high ist auf älteren Handys zu langsam.": "Piper voices speak entirely on the device, even without Google speech output. \"Choose voice folder…\" takes a folder in the sherpa-onnx package format (vits-piper-…: .onnx, tokens.txt, espeak-ng-data once). A custom voice comes from training on a PC, see docs/EIGENE_STIMME.md. You choose the voice in the companion editor under \"Voice\"; only voices of the companion's language appear there. Quality low/medium runs smoothly, high is too slow on older phones.",
+  "Mehrere Sprecher/Stimmungen, im Companion-Editor einzeln wählbar. Anhören:": "Several speakers/moods, selectable individually in the companion editor. Listen:",
+  "Noch keine Piper-Stimme installiert.": "No Piper voice installed yet.",
+  "Stimmenordner wählen…": "Choose voice folder…",
+  "Kopiere…": "Copying…",
+  "Kopiere die Stimme…": "Copying the voice…",
+  "Kopiere das Modell (das kann bei großen Modellen etwas dauern)…": "Copying the model (this can take a while for large models)…",
+  "Tägliche Erinnerung (Push)": "Daily reminder (push)",
+  "Täglich an das Update erinnern": "Remind me of the update every day",
+  "Uhrzeit (z. B. 08:00)": "Time (e.g. 08:00)",
+  "Die Nachricht nennt nur eine Kurzübersicht (Zahl der offenen Todos), nicht ihren Inhalt. Antippen öffnet den Chat. Der Alarm ist nicht sekundengenau: Im Ruhezustand des Handys kann die Nachricht einige Minuten später kommen. Er gilt erst nach „Speichern“.": "The message only gives a short summary (number of open to-dos), not their content. Tapping it opens the chat. The alarm is not exact to the second: while the phone is idle the message can come a few minutes late. It only applies after \"Save\".",
+  "Nachricht jetzt testen": "Test message now",
+  "Zugriff erlaubt: Das Tagesupdate und die Werkzeuge cal-add und cal-list nutzen den Kalender des Telefons. Neue Termine fragen vorher nach (mit Wochentag und Datum).": "Access granted: the daily update and the tools cal-add and cal-list use the phone's calendar. New appointments ask first (with weekday and date).",
+  "Noch kein Zugriff. Ohne ihn zeigt das Tagesupdate keine Termine und cal-add/cal-list melden dem Companion einen Fehler.": "No access yet. Without it the daily update shows no appointments and cal-add/cal-list report an error to the companion.",
+  "Kalender-Zugriff erlauben": "Allow calendar access",
+  "Vor jedem Werkzeugaufruf nachfragen": "Ask before every tool call",
+  "Schlüsselwörter lösen Werkzeuge aus": "Keywords trigger tools",
+  "In mcp_servers.json kann ein Alias \"keywords\": [\"regulärer Ausdruck\", …] haben. Kommt ein Ausdruck in deiner Eingabe, in der Antwort des Modells, im vorgelesenen Text oder in einer Bildbeschreibung vor, läuft das Werkzeug ohne das Modell. Eine Eingabe mit Treffer geht nicht an das Modell. Es gelten die Freigaben des Companions und die Rückfrage vor Werkzeugaufrufen. Vorsicht: Auch fremde Texte (Dateien, Bilder) können so Werkzeuge auslösen. Standard: aus.": "In mcp_servers.json an alias can have \"keywords\": [\"regular expression\", …]. If an expression occurs in your input, in the model's reply, in the text being read aloud or in a picture description, the tool runs without the model. An input with a match does not go to the model. The companion's approvals and the confirmation before tool calls apply. Caution: foreign texts (files, pictures) can also trigger tools this way. Default: off.",
+  "Max. Werkzeugaufrufe pro Nachricht (0 = aus)": "Max. tool calls per message (0 = off)",
+  "Ergebnis kürzen auf (Zeichen)": "Shorten result to (characters)",
+  "Werkzeug-Zeitlimit (Sekunden)": "Tool time limit (seconds)",
+  "Ohne Berechtigung für Benachrichtigungen kommt keine Erinnerung.": "Without permission",
+  "Ohne Kalender-Berechtigung bleiben Termine außen vor.": "Without calendar permission appointments are left out.",
+  "Ohne Mikrofon-Berechtigung keine Spracheingabe.": "No voice input without microphone permission.",
+  "Benachrichtigungen sind nicht erlaubt (Berechtigung oder Systemeinstellung).": "Notifications are not allowed (permission or system setting).",
+  "Tägliches Update": "Daily update",
+  "Jetzt testen": "Test now",
+  "Stand": "Status",
+  "Konfiguration": "Configuration",
+  "Aus Datei": "From file",
+  "Gleiches Format wie am PC. 'builtin': weather oder websearch läuft in der App, 'url' spricht einen MCP-Server über HTTP an. Die Python-Server des PCs werden automatisch durch die eingebauten ersetzt. Eine Taste der Fernbedienung braucht nur {\"server\": \"remote\", \"button\": \"P1\"} (die Beschriftung kommt vom Server, keine Codes hier). Ein Makro spielt mehrere Werkzeuge ab: {\"macro\": [\"tv-p1\", 3, \"tv-off\"], \"hint\": \"…\"} (Zahl = Pause in Sekunden).": "Same format as on the PC. 'builtin': weather or websearch runs in the app, 'url' talks to an MCP server over HTTP. The PC's Python servers are replaced by the built-in ones automatically. A remote control needs only {\"server\": \"remote\", \"button\": \"P1\"} (the label comes from the server, no codes here). A macro plays several tools: {\"macro\": [\"tv-p1\", 3, \"tv-off\"], \"hint\": \"…\"} (a number = pause in seconds).",
+  "Werkzeuge von einem Server lesen": "Read tools from a server",
+  "Liest die Werkzeuge des laufenden Servers (bei einer Fernbedienung: alle Tasten mit ihrer Beschriftung) und fügt sie als kurze Aliase oben ein. Vorhandene Aliase bleiben unverändert; danach prüfen und \"Speichern & neu laden\".": "Reads the tools of the running server (for a remote control: all buttons with their labels) and inserts them above as short aliases. Existing aliases stay unchanged; then check and \"Save & reload\".",
+  "Kein Server gestartet (erst eine Konfiguration mit Server speichern).": "No server started (save a configuration with a server first).",
+  "Server": "Server",
+  "Vorsilbe der Aliasnamen": "Prefix of the alias names",
+  "Lesen und einfügen": "Read and insert",
+  "Schlüsselwörter aus Liste": "Keywords from a list",
+  "Liste wählen…": "Choose list…",
+  "Schlüsselwörter übernehmen?": "Apply keywords?",
+  "Bisherige Schlüsselwörter dieser Werkzeuge werden ersetzt.": "Existing keywords of these tools will be replaced.",
+  "CSV oder Excel (.xlsx), eine Zeile je Wort: Wort;Werkzeug;Parameter1;Parameter2;… Das Wort wird klein geschrieben, doppelte fallen weg, Zeilen ohne Werkzeug werden ignoriert. Wörter mit gleichem Werkzeug und gleichen Parametern werden zu einem Ausdruck zusammengefasst; die Parameter sind feste Argumente. Die bisherigen Schlüsselwörter der Werkzeuge in der Liste werden ersetzt. Eingeschaltet wird die Funktion unter Einstellungen.": "CSV or Excel (.xlsx), one row per word: word;tool;parameter1;parameter2;… The word is lowercased, duplicates are dropped, rows without a tool are ignored. Words with the same tool and parameters are merged into one expression; the parameters are fixed arguments. The existing keywords of the tools in the list are replaced. It is switched on under Settings.",
+  "Geheimnisse (für ${NAME} in Headern)": "Secrets (for ${NAME} in headers)",
+  "Gespeicherte Geheimnisse stehen oben (der Wert bleibt verborgen). Die Felder darunter sind nur für ein weiteres Geheimnis oder zum Ersetzen eines vorhandenen (gleicher Name).": "Saved secrets are listed above (the value stays hidden). The fields below are only for another secret or to replace an existing one (same name).",
+  "Name (z. B. BROADCAST_REMOTE_TOKEN)": "Name (e.g. BROADCAST_REMOTE_TOKEN)",
+  "Wert": "Value",
+  "Geheimnis speichern": "Save secret",
+  "Der Name fehlt: oben bei „Name“ eintragen (z. B. BROADCAST_REMOTE_TOKEN).": "The name is missing: enter it above under \"Name\" (e.g. BROADCAST_REMOTE_TOKEN).",
+  "Zertifikate (selbst signierte Server)": "Certificates (self-signed servers)",
+  "Server (Host:Port)": "Server (host:port)",
+  "Vom Server holen": "Get from server",
+  "Hole Zertifikat…": "Fetching certificate…",
+  "Zertifikat vertrauen?": "Trust certificate?",
+  "Vertrauen & speichern": "Trust & save",
+  "Speichern als (Name aus 'cert' in der Konfiguration)": "Save as (name from 'cert' in the configuration)",
+  "Werkzeuge werden gestartet…": "Starting tools…",
+  "Werkzeuge werden neu geladen": "Reloading tools",
+  "Werkzeug-Konfiguration exportiert": "Tool configuration exported",
+  "Keine PEM-Zertifikatsdatei": "Not a PEM certificate file",
+  "Der Server hat kein Zertifikat vorgezeigt.": "The server presented no certificate.",
+  "Das Wurzelelement muss ein Objekt sein.": "The root element must be an object.",
+  "Die Konfiguration im Feld ist kein gültiges JSON.": "The configuration in the field is not valid JSON.",
+  "In mcp_servers.json gibt es keine Werkzeuge (Block \"aliases\").": "mcp_servers.json has no tools (block \"aliases\").",
+  "Modell wird vorbereitet…": "Preparing the model…",
+  "Bitte zuerst in den Einstellungen ein Modell wählen.": "Please choose a model in Settings first.",
+  "Bitte zuerst in den Einstellungen eine Modelldatei wählen.": "Please choose a model file in Settings first.",
+  "Kein lokales Modell gewählt (Einstellungen).": "No local model chosen (Settings).",
+  "Die Modelldatei ist nicht mehr lesbar. Bitte in den Einstellungen neu wählen.": "The model file is no longer readable. Please choose it again in Settings.",
+  "Die Chat-Vorlage des Modells lässt sich nicht anwenden.": "The model's chat template cannot be applied.",
+  "Kein Whisper-Modell installiert (Einstellungen → Sprache).": "No Whisper model installed (Settings → Voice input).",
+  "Keine .onnx-Modelldatei im Ordner.": "No .onnx model file in the folder.",
+  "Keine Decoder-Datei (…decoder….onnx) im Ordner.": "No decoder file (…decoder….onnx) in the folder.",
+  "Keine Encoder-Datei (…encoder….onnx) im Ordner.": "No encoder file (…encoder….onnx) in the folder.",
+  "Die Datei …tokens.txt fehlt (sie liegt in jedem sherpa-onnx-Whisper-Paket).": "The file …tokens.txt is missing (it is part of every sherpa-onnx Whisper package).",
+  "Der Ordner espeak-ng-data fehlt (er liegt in jedem sherpa-onnx-Stimmenpaket, z. B. vits-piper-de_DE-…).": "The folder espeak-ng-data is missing (it is part of every sherpa-onnx voice package, e.g. vits-piper-de_DE-…).",
+  "tokens.txt fehlt: Das Piper-Modell muss für sherpa-onnx umgewandelt sein (siehe docs/EIGENE_STIMME.md).": "tokens.txt is missing: the Piper model must be converted for sherpa-onnx (see docs/EIGENE_STIMME.md).",
+  "Höre zu…": "Listening…",
+  "Höre zu… (Whisper, offline)": "Listening… (Whisper, offline)",
+  "Höre zu… (offline)": "Listening… (offline)",
+  "Mikrofon nicht bereit": "Microphone not ready",
+  "Keine Sprache gehört.": "No speech heard.",
+  "Keine Spracherkennung auf diesem Gerät.": "No speech recognition on this device.",
+  "Die Spracherkennung ist gerade belegt.": "Speech recognition is busy right now.",
+  "Spracherkennung nicht erreichbar (Offline-Sprachpaket installieren?).": "Speech recognition not reachable (install the offline language pack?).",
+  "Diese Sprache ist für die Erkennung nicht verfügbar (Offline-Sprachpaket installieren oder Online-Erkennung erlauben).": "This language is not available for recognition (install the offline language pack or allow online recognition).",
+  "Das Mikrofon lässt sich nicht nutzen.": "The microphone cannot be used.",
+  "Aufnahme mit 16 kHz nicht möglich": "Recording at 16 kHz is not possible",
+  "Prüfe installierte Sprachpakete…": "Checking installed language packs…",
+  "wird geladen…": "downloading…",
+  "keine": "none",
+  "angestoßen": "started",
+  "geplant (startet bei WLAN/Ladegerät)": "scheduled (starts on Wi-Fi/charger)",
+  "zu groß": "too large",
+  "online, Google": "online, Google",
+  "Whisper, offline": "Whisper, offline",
+  "Die Google-Sprachausgabe lässt sich nicht öffnen (Android-Einstellungen → Sprachausgabe).": "The Google speech output cannot be opened (Android settings → Text-to-speech).",
+  "Nachricht gesendet.": "Message sent.",
+  "Hallo, ich bin deine Begleiterin. So klingt meine Stimme.": "Hello, I am your companion. This is how my voice sounds.",
+  "Hello, this is how my voice sounds.": "Hello, this is how my voice sounds.",
+  "Bonjour, voici ma voix.": "Bonjour, voici ma voix.",
+  "Ciao, ecco come suona la mia voce.": "Ciao, ecco come suona la mia voce.",
+  "Hola, así suena mi voz.": "Hola, así suena mi voz.",
+  "Das Feld name fehlt: das ist keine Companion-Datei.": "The field name is missing: this is not a companion file.",
+  "Keine Companion-Dateien (.json) im Ordner gefunden.": "No companion files (.json) found in the folder.",
+  "Die Datei ist zu groß für eine Schlüsselwortliste.": "The file is too large for a keyword list.",
+  "Eintrag ist kein Objekt": "Entry is not an object",
+  "Wurzelelement ist kein Objekt": "Root element is not an object",
+  "keine JSON-Datei mit Feldern": "not a JSON file with fields",
+  "'servers' ist kein Objekt": "'servers' is not an object",
+  "'params' muss eine Liste sein": "'params' must be a list",
+  "'confirm' muss true oder false sein": "'confirm' must be true or false",
+  "'args' und 'defaults' müssen Objekte sein": "'args' and 'defaults' must be objects",
+  "'macro' hat zu viele Schritte (höchstens 20)": "'macro' has too many steps (at most 20)",
+  "'macro' muss eine nicht leere Liste sein": "'macro' must be a non-empty list",
+  "'keywords' muss eine Liste von regulären Ausdrücken sein": "'keywords' must be a list of regular expressions",
+  "'args' eines Schlüsselworts muss eine Liste sein": "'args' of a keyword must be a list",
+  "ein Schlüsselwort als Objekt braucht 'pattern'": "a keyword as an object needs 'pattern'",
+  "eine Wartezeit muss zwischen 0 und 60 Sekunden liegen": "a wait time must be between 0 and 60 seconds"
+ },
+ "patterns": [
+  [
+   "^Werkzeuge bereit: (.*)$",
+   "Tools ready: $1"
+  ],
+  [
+   "^Werkzeuge: (.*)$",
+   "Tools: $1"
+  ],
+  [
+   "^Verfügbar: (.*)$",
+   "Available: $1"
+  ],
+  [
+   "^Kontext ≈ (.*) Tokens$",
+   "Context ≈ $1 tokens"
+  ],
+  [
+   "^ · (\\d+) ältere ausgeblendet$",
+   " · $1 older hidden"
+  ],
+  [
+   "^Modell: (.*)$",
+   "Model: $1"
+  ],
+  [
+   "^mmproj: (.*)$",
+   "mmproj: $1"
+  ],
+  [
+   "^(\\d+) Modelle gefunden$",
+   "$1 models found"
+  ],
+  [
+   "^\\$?(.*) \\(Server nicht erreichbar\\)$",
+   "$1 (server not reachable)"
+  ],
+  [
+   "^Abschnitt (\\d+) von (\\d+)$",
+   "Section $1 of $2"
+  ],
+  [
+   "^ · Seite (\\d+) von (\\d+)$",
+   " · page $1 of $2"
+  ],
+  [
+   "^ · pausiert$",
+   " · paused"
+  ],
+  [
+   "^Weiterlesen: (.*) \\((\\d+)/(\\d+)\\)$",
+   "Continue reading: $1 ($2/$3)"
+  ],
+  [
+   "^Öffne (.*)…$",
+   "Opening $1…"
+  ],
+  [
+   "^Zuletzt gelesen bis Abschnitt (\\d+) von (\\d+)\\. Dort kann das Vorlesen weitergehen\\.$",
+   "Last read up to section $1 of $2. Reading can continue there."
+  ],
+  [
+   "^Die Datei „(.*)“ ist nicht mehr lesbar\\. Die Vorlese-Marke wurde gelöscht\\.$",
+   "The file \"$1\" is no longer readable. The reading mark was deleted."
+  ],
+  [
+   "^Datei gelesen: (.*)$",
+   "File read: $1"
+  ],
+  [
+   "^Bild geladen: (.*)$",
+   "Picture loaded: $1"
+  ],
+  [
+   "^Kopiere (.*)…$",
+   "Copying $1…"
+  ],
+  [
+   "^(.*) übernommen \\((\\d+) MB\\)\\.$",
+   "$1 imported ($2 MB)."
+  ],
+  [
+   "^(\\d+) Bilder übernommen$",
+   "$1 pictures imported"
+  ],
+  [
+   "^Lade Sprachpaket (.*)…$",
+   "Downloading language pack $1…"
+  ],
+  [
+   "^Sprachpaket (.*): installiert$",
+   "Language pack $1: installed"
+  ],
+  [
+   "^Sprachpaket (\\S+) wurde nicht installiert \\(Internetverbindung prüfen, dann erneut laden\\)\\.$",
+   "Language pack $1 was not installed (check the internet connection, then download again)."
+  ],
+  [
+   "^Sprachpaket (\\S+): (.*)$",
+   "Language pack $1: $2"
+  ],
+  [
+   "^Sprachpakete lassen sich nicht abfragen \\((.*)\\)\\.$",
+   "Language packs cannot be queried ($1)."
+  ],
+  [
+   "^Modell „(.*)“ übernommen\\. Unter „Spracheingabe“ auswählbar\\.$",
+   "Model \"$1\" imported. Selectable under \"Voice input\"."
+  ],
+  [
+   "^Modell „(.*)“ gelöscht\\.$",
+   "Model \"$1\" deleted."
+  ],
+  [
+   "^Stimme „(.*)“ übernommen\\. Im Companion-Editor unter „Stimme“ auswählbar\\.$",
+   "Voice \"$1\" imported. Selectable in the companion editor under \"Voice\"."
+  ],
+  [
+   "^Stimme „(.*)“ gelöscht\\.$",
+   "Voice \"$1\" deleted."
+  ],
+  [
+   "^'(.*)' samt laufendem Chat endgültig löschen\\?$",
+   "Delete '$1' together with its running chat for good?"
+  ],
+  [
+   "^Piper: (.*) \\(offline\\)$",
+   "Piper: $1 (offline)"
+  ],
+  [
+   "^Erkannt \\((.*)\\)$",
+   "Recognized ($1)"
+  ],
+  [
+   "^Höre zu… \\((.*)\\)$",
+   "Listening… ($1)"
+  ],
+  [
+   "^Reden zugeordnet: (\\d+) von (\\d+)$",
+   "Quotes assigned: $1 of $2"
+  ],
+  [
+   "^Tägliche Erinnerung geplant für (.*)$",
+   "Daily reminder scheduled for $1"
+  ],
+  [
+   "^Keine Stimme für (\\S+) installiert \\(Einstellungen → (Sprachausgabe|Stimmen)\\)\\.$",
+   "No voice installed for $1 (Settings → Voices)."
+  ],
+  [
+   "^Für die Sprache „(.*)“ ist weder eine Systemstimme noch eine Piper-Stimme installiert\\.$",
+   "For the language \"$1\" neither a system voice nor a Piper voice is installed."
+  ],
+  [
+   "^Stimme '(.*)' nicht gefunden$",
+   "Voice '$1' not found"
+  ],
+  [
+   "^Systemstimme: (installiert|keine)  ·  Piper: (.*)$",
+   "System voice: $1  ·  Piper: $2"
+  ],
+  [
+   "^Das Whisper-Modell „(.*)“ ist unvollständig\\.$",
+   "The Whisper model \"$1\" is incomplete."
+  ],
+  [
+   "^Die Datei „(.*)“ ist da \\((\\d+) Zeichen, ca\\. (\\d+) Tokens\\)\\. Was soll ich damit machen\\?$",
+   "The file \"$1\" is here ($2 characters, about $3 tokens). What should I do with it?"
+  ],
+  [
+   "^Das Bild „(.*)“ ist da \\((.*) KB\\)\\. Soll ich es beschreiben lassen\\?$",
+   "The picture \"$1\" is here ($2 KB). Shall I have it described?"
+  ],
+  [
+   "^(.*): So sieht das Bildmodell es \\(englisch\\):$",
+   "$1: This is how the image model sees it (English):"
+  ],
+  [
+   "^Der Text ist länger als mein Kontext \\(Platz für ca\\. (\\d+) Tokens\\): Beim Einlesen und Zusammenfassen berücksichtige ich nur den Anfang\\. Vorlesen geht vollständig\\.$",
+   "The text is longer than my context (room for about $1 tokens): I only use the beginning for reading in and summarizing. Reading aloud works in full."
+  ],
+  [
+   "^Der Text ist vermutlich (.*), aber dafür ist keine Sprachstimme installiert\\..*$",
+   "The text is probably $1, but no voice is installed for it. You can download voices (then tap Read aloud again) or read it now with the voice you have."
+  ],
+  [
+   "^Die Datei ist zu groß \\(mehr als (\\d+) MB\\)\\.$",
+   "The file is too large (more than $1 MB)."
+  ],
+  [
+   "^Die (DOCX|EPUB|PDF)-Datei lässt sich nicht lesen \\((.*)\\)\\.$",
+   "The $1 file cannot be read ($2)."
+  ],
+  [
+   "^Die Paketdatei der EPUB-Datei fehlt \\((.*)\\)\\.$",
+   "The package file of the EPUB is missing ($1)."
+  ],
+  [
+   "^Bild (.*) übersprungen: (.*)$",
+   "Picture $1 skipped: $2"
+  ],
+  [
+   "^Die Modelldatei ist nicht lesbar: (.*)$",
+   "The model file is not readable: $1"
+  ],
+  [
+   "^Interner Fehler: (.*)$",
+   "Internal error: $1"
+  ],
+  [
+   "^Das Mikrofon lässt sich nicht nutzen \\((.*)\\)\\.$",
+   "The microphone cannot be used ($1)."
+  ],
+  [
+   "^Spracherkennung fehlgeschlagen \\(Fehler (.*)\\)\\.$",
+   "Speech recognition failed (error $1)."
+  ],
+  [
+   "^Fehler (.*)$",
+   "Error $1"
+  ],
+  [
+   "^Download fehlgeschlagen \\((.*)\\)$",
+   "Download failed ($1)"
+  ],
+  [
+   "^Import fehlgeschlagen: (.*)$",
+   "Import failed: $1"
+  ],
+  [
+   "^Export fehlgeschlagen: (.*)$",
+   "Export failed: $1"
+  ],
+  [
+   "^Speichern fehlgeschlagen: (.*)$",
+   "Saving failed: $1"
+  ],
+  [
+   "^Lesen fehlgeschlagen: (.*)$",
+   "Reading failed: $1"
+  ],
+  [
+   "^Piper-Fehler: (.*)$",
+   "Piper error: $1"
+  ],
+  [
+   "^Whisper-Fehler: (.*)$",
+   "Whisper error: $1"
+  ],
+  [
+   "^Nicht erreichbar: (.*)$",
+   "Not reachable: $1"
+  ],
+  [
+   "^Kein gültiges JSON: (.*)$",
+   "Not valid JSON: $1"
+  ],
+  [
+   "^Keine gültige JSON-Datei: (.*)$",
+   "Not a valid JSON file: $1"
+  ],
+  [
+   "^Die Liste lässt sich nicht lesen: (.*)$",
+   "The list cannot be read: $1"
+  ],
+  [
+   "^Kein gültiger Companion \\(JSON\\): (.*)$",
+   "Not a valid companion (JSON): $1"
+  ],
+  [
+   "^Werkzeuge konnten nicht geladen werden: (.*)$",
+   "Tools could not be loaded: $1"
+  ],
+  [
+   "^Der Server '(.*)' läuft nicht \\(Konfiguration erst speichern\\)\\.$",
+   "The server '$1' is not running (save the configuration first)."
+  ],
+  [
+   "^Gespeichert: (.*) - die Werkzeuge werden neu gestartet\\.$",
+   "Saved: $1 - the tools are restarting."
+  ],
+  [
+   "^Es fehlt noch: (.*)$",
+   "Still missing: $1"
+  ],
+  [
+   "^(\\d+) neue Aliase eingefügt \\(noch nicht gespeichert\\): (.*)\\.( Schon vorhanden, nicht geändert: (.*)\\.)?$",
+   "$1 new aliases inserted (not saved yet): $2.$3"
+  ],
+  [
+   "^ Schon vorhanden, nicht geändert: (.*)\\.$",
+   " Already present, unchanged: $1."
+  ],
+  [
+   "^Lesen fehlgeschlagen: (.*)$",
+   "Reading failed: $1"
+  ],
+  [
+   "^Gespeichert als (.*)$",
+   "Saved as $1"
+  ],
+  [
+   "^Zertifikat gespeichert als (.*)$",
+   "Certificate saved as $1"
+  ],
+  [
+   "^(.*) möchte das Werkzeug '(.*)' ausführen\\.\\n\\n$",
+   "$1 wants to run the tool '$2'.\n\n"
+  ],
+  [
+   "^Argumente: (.*)$",
+   "Arguments: $1"
+  ],
+  [
+   "^Termin: (.*)$",
+   "Appointment: $1"
+  ],
+  [
+   "^Wecker: (.*)$",
+   "Alarm: $1"
+  ],
+  [
+   "^Timer: (.*)$",
+   "Timer: $1"
+  ],
+  [
+   "^Freigeschaltet, aber in der Werkzeug-Konfiguration nicht \\(mehr\\) vorhanden: (.*)$",
+   "Enabled, but no longer in the tool configuration: $1"
+  ],
+  [
+   "^Erlaubte Tasten \\(leer = alle\\): (.*)$",
+   "Allowed buttons (empty = all): $1"
+  ],
+  [
+   "^Das Bild '(.*)' fehlt: \\\"Avatare aus Ordner holen…\\\" oder ein Bild wählen\\.$",
+   "The picture '$1' is missing: use \"Avatars only…\" or choose a picture."
+  ],
+  [
+   "^Piper-Stimmen gibt es nur für: (.*)\\.$",
+   "Piper voices exist only for: $1."
+  ],
+  [
+   "^ Stimmen installierst du unter Einstellungen → Stimmen bzw\\. Piper-Stimmen\\.$",
+   " Install voices under Settings → Voices (Piper voices)."
+  ],
+  [
+   "^(\\d+) doppelte Wörter entfernt\\.$",
+   "$1 duplicate words removed."
+  ],
+  [
+   "^… und (\\d+) weitere Ausdrücke$",
+   "… and $1 more expressions"
+  ],
+  [
+   "^Schlüsselwort „(.*)“ \\((.*)\\): (.*) fehlgeschlagen$",
+   "Keyword \"$1\" ($2): $3 failed"
+  ],
+  [
+   "^Schlüsselwort „(.*)“ \\((.*)\\): abgelehnt\\.$",
+   "Keyword \"$1\" ($2): declined."
+  ],
+  [
+   "^Schlüsselwort „(.*)“ \\((.*)\\): führe (.*) aus…$",
+   "Keyword \"$1\" ($2): running $3…"
+  ],
+  [
+   "^Schlüsselwort „(.*)“ \\((.*)\\): übersprungen \\(eine Rückfrage ist noch offen\\)\\.$",
+   "Keyword \"$1\" ($2): skipped (a confirmation is still open)."
+  ],
+  [
+   "^Schlüsselwort „(.*)“ \\((.*)\\): (.*)$",
+   "Keyword \"$1\" ($2): $3"
+  ],
+  [
+   "^Schlüsselwörter übernommen: (\\d+) Wörter für (.*)\\.$",
+   "Keywords applied: $1 words for $2."
+  ],
+  [
+   "^(.*): (\\d+) Wörter in (\\d+) Ausdrücken für (.*)$",
+   "$1: $2 words in $3 expressions for $4"
+  ],
+  [
+   "^wird geladen… (\\d+) %$",
+   "downloading… $1 %"
+  ],
+  [
+   "^Wird (.*)$",
+   "$1"
+  ],
+  [
+   "^Das Modell läuft komplett auf dem Handy \\(llama\\.cpp, nur CPU\\)\\. Der Kontext ist auf (\\d+) Tokens begrenzt.*$",
+   "The model runs entirely on the phone (llama.cpp, CPU only). The context is limited to $1 tokens and memory is tight. The first reply takes longer because the model is loaded."
+  ],
+  [
+   "^Hinweis: Der Schalter „Schlüsselwörter lösen Werkzeuge aus“ in den Einstellungen ist noch aus\\.$",
+   "Note: the switch “Keywords trigger tools” in Settings is still off."
+  ],
+  [
+   "^… \\(\\+(\\d+)\\)$",
+   "… (+$1)"
+  ],
+  [
+   "^(\\d+) Avatar-Bild\\(er\\) übernommen\\.$",
+   "$1 avatar picture(s) imported."
+  ],
+  [
+   "^(\\d+) Companion\\(s\\) importiert: (.*)\\.$",
+   "$1 companion(s) imported: $2."
+  ],
+  [
+   "^Schon vorhanden, nicht überschrieben: (.*)\\.$",
+   "Already present, not overwritten: $1."
+  ],
+  [
+   "^Übersprungen \\(keine Companion-Datei\\): (.*)\\.$",
+   "Skipped (not a companion file): $1."
+  ],
+  [
+   "^(\\d+) doppelte Wörter entfernt\\.$",
+   "$1 duplicate words removed."
+  ],
+  [
+   "^(.*) ausgeführt$",
+   "$1 executed"
+  ],
+  [
+   "^Bild (.*)$",
+   "Picture $1"
+  ],
+  [
+   "^\\[Datei\\] (.*)$",
+   "[File] $1"
+  ],
+  [
+   "^\\[Bild\\] (.*)$",
+   "[Picture] $1"
+  ],
+  [
+   "^\\[Fehler\\] (.*)$",
+   "[Error] $1"
+  ],
+  [
+   "^\\[Vorlesen\\] Die Datei „(.*)“ ist nicht mehr da oder nicht lesbar \\((.*)\\)\\. Die Vorlese-Marke wurde gelöscht\\.$",
+   "[Reading] The file \"$1\" is gone or not readable ($2). The reading mark was deleted."
+  ],
+  [
+   "^» Werkzeug (.*)$",
+   "» Tool $1"
+  ],
+  [
+   "^« Ergebnis von (.*)$",
+   "« Result of $1"
+  ],
+  [
+   "^« Fehler von (.*)$",
+   "« Error from $1"
+  ],
+  [
+   "^… und (\\d+) weitere\\.$",
+   "… and $1 more."
+  ],
+  [
+   "^… und (\\d+) weitere Ausdrücke$",
+   "… and $1 more expressions"
+  ],
+  [
+   "^(.*) = •+$",
+   "$1 = ••••••••"
+  ],
+  [
+   "^Zuordnung der Reden über den Server nicht möglich: (.*)$",
+   "Assigning the quotes via the server is not possible: $1"
+  ],
+  [
+   "^Mit unterschiedlichem Werkzeug oder Parametern mehrfach genannt \\(nur die erste Zeile gilt\\): (.*)$",
+   "Named several times with a different tool or parameters (only the first row counts): $1"
+  ],
+  [
+   "^Parameter dürfen kein \\| enthalten, ignoriert: (.*)$",
+   "Parameters must not contain |, ignored: $1"
+  ],
+  [
+   "^Unbekannte Werkzeuge \\(kein Alias in mcp_servers\\.json\\), Zeilen ignoriert: (.*)$",
+   "Unknown tools (no alias in mcp_servers.json), rows ignored: $1"
+  ],
+  [
+   "^Server '(.*)' hat kein Werkzeug 'buttons'$",
+   "Server '$1' has no tool 'buttons'"
+  ],
+  [
+   "^Werkzeug '(.*)' nicht gefunden \\(Server nicht gestartet\\?\\)$",
+   "Tool '$1' not found (server not started?)"
+  ],
+  [
+   "^Taste '(.*)' gibt es auf '(.*)' nicht \\(bekannt: (.*)\\)$",
+   "Button '$1' does not exist on '$2' (known: $3)"
+  ],
+  [
+   "^Tasten von '(.*)' nicht lesbar: (.*)$",
+   "Buttons of '$1' not readable: $2"
+  ],
+  [
+   "^ungültiger Ausdruck in 'keywords': (.*)$",
+   "invalid expression in 'keywords': $1"
+  ],
+  [
+   "^Der Server hat kein Zertifikat vorgezeigt\\.$",
+   "The server presented no certificate."
+  ],
+  [
+   "^Server: (.*)\\nSubjekt: (.*)\\n\\nSHA-256-Fingerabdruck:\\n(.*)\\n\\nVergleiche ihn mit der Anzeige der Fernbedienungs-App\\..*$",
+   "Server: $1\nSubject: $2\n\nSHA-256 fingerprint:\n$3\n\nCompare it with the display of the remote control app. It is saved as the only trust anchor for servers that name this file under 'cert'."
+  ]
+ ]
+}

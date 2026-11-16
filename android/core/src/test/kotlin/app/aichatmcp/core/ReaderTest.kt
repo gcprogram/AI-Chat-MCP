@@ -296,3 +296,85 @@ class ReaderTest {
         assertNull(g.problems.firstOrNull())
     }
 }
+
+class ReaderInterruptionTest {
+    private class Out : ReaderOutput, ReaderPictures, ReaderEvents {
+        val spoken = mutableListOf<Triple<String, String, Boolean>>() // Text, Kennung, flush
+        val texts = mutableListOf<String>()
+        override fun speak(text: String, id: String, language: String?, flush: Boolean) { spoken += Triple(text, id, flush) }
+        override fun stopSpeaking() {}
+        override fun describe(picture: ReadItem.Picture, done: (String?) -> Unit) {}
+        override fun prefetch(picture: ReadItem.Picture) {}
+        override fun cancel() {}
+        override fun onSpoken(text: String, fromImage: Boolean) { texts += text }
+    }
+
+    private var now = 1_000_000L
+
+    private fun reader(items: List<ReadItem>, out: Out = Out()) =
+        Reader(ReadPlan(items, listOf(0)), out, out, out, textLanguage = "de-DE", clock = { now }) to out
+
+    private val text = "Der erste Satz ist lang genug. Danach kommt noch ein zweiter Satz."
+
+    @Test
+    fun shortInterruptionContinuesWhereTheLastWordBegan() {
+        val (r, out) = reader(listOf(ReadItem.Speech(text), ReadItem.Speech("naechster")))
+        r.play()
+        r.progress(out.spoken[0].second, 32) // "Danach" beginnt
+        r.focusLostTemporarily()
+        now += 5_000
+        out.spoken.clear()
+        r.focusGained()
+        assertEquals(text.substring(32), out.spoken[0].first) // nur der Rest, sofort
+        assertTrue(out.spoken[0].third)
+        assertEquals(listOf(text), out.texts) // nicht noch einmal "angesagt" (Schlüsselwörter lösen nicht erneut aus)
+        // Fortschritt gilt jetzt relativ zum Rest: Abschnitt 0, Wort ab Zeichen 6 des Rests
+        r.progress(out.spoken[0].second, 6)
+        r.pause()
+        now += 1_000
+        out.spoken.clear()
+        r.play()
+        assertEquals(text.substring(32 + 6), out.spoken[0].first)
+    }
+
+    @Test
+    fun longInterruptionStartsTheSectionAgain() {
+        val (r, out) = reader(listOf(ReadItem.Speech(text)))
+        r.play()
+        r.progress(out.spoken[0].second, 32)
+        r.focusLostTemporarily()
+        now += Reader.SHORT_INTERRUPTION_MS // genau die Grenze zählt schon als lang
+        out.spoken.clear()
+        r.focusGained()
+        assertEquals(text, out.spoken[0].first)
+    }
+
+    @Test
+    fun nothingSpokenYetOrAfterAJumpStartsFromTheBeginning() {
+        val (r, out) = reader(listOf(ReadItem.Speech(text), ReadItem.Speech(text)))
+        r.play()
+        r.pause() // noch kein Wort gemeldet
+        out.spoken.clear()
+        r.play()
+        assertEquals(text, out.spoken[0].first)
+        r.progress(out.spoken[0].second, 10)
+        r.pause()
+        r.seekTo(1) // Sprung: nie mitten im Abschnitt einsteigen
+        out.spoken.clear()
+        r.play()
+        assertEquals(text, out.spoken[0].first)
+    }
+
+    @Test
+    fun lateOrForeignProgressIsIgnoredAndPartsRestart() {
+        val (r, out) = reader(listOf(ReadItem.Speech(text).also { it.parts = listOf(Utterance("a", Role.NARRATOR), Utterance("b", Role.NARRATOR)) }))
+        r.play()
+        val firstId = out.spoken[0].second
+        r.progress("r:99:0", 20) // falsche Generation
+        r.progress(firstId, 20)
+        r.pause()
+        out.spoken.clear()
+        r.play()
+        assertEquals("a b", out.spoken[0].first) // Abschnitte mit Rede-Stücken beginnen wieder von vorn
+    }
+}

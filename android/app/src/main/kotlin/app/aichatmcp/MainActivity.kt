@@ -21,6 +21,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,7 +38,10 @@ import app.aichatmcp.ui.ChatScreen
 import app.aichatmcp.ui.CompanionsScreen
 import app.aichatmcp.ui.Screen
 import app.aichatmcp.ui.SettingsScreen
+import app.aichatmcp.ui.I18n
+import app.aichatmcp.ui.LocalUiLanguage
 import app.aichatmcp.ui.ToolsScreen
+import app.aichatmcp.ui.trNow
 
 class MainActivity : ComponentActivity() {
     override fun onStop() {
@@ -52,6 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        runCatching { I18n.load(assets.open("i18n_en.json").bufferedReader(Charsets.UTF_8).use { it.readText() }) } // Wörterbuch für die englische Oberfläche
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) { Root() }
@@ -62,11 +68,17 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun Root(vm: ChatViewModel = viewModel()) {
+    SideEffect { I18n.current = vm.config.uiLanguage }
+    CompositionLocalProvider(LocalUiLanguage provides vm.config.uiLanguage) { RootContent(vm) }
+}
+
+@Composable
+private fun RootContent(vm: ChatViewModel) {
     val context = LocalContext.current
     var screen by remember { mutableStateOf(Screen.CHAT) }
     BackHandler(enabled = screen != Screen.CHAT) { screen = Screen.CHAT }
 
-    fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    fun toast(text: String) = Toast.makeText(context, trNow(text), Toast.LENGTH_LONG).show()
     fun read(uri: Uri): String? = runCatching {
         context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
     }.getOrNull()

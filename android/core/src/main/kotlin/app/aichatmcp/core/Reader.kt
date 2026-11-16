@@ -62,6 +62,10 @@ interface ReaderEvents {
  *
  * Bilder: Steht ein Bild im Text, wird es nach dem Absatz beschrieben und die Beschreibung ([pictureLanguage]) vorgelesen; danach
  * geht der Text weiter. Die Beschreibung wird schon beim Abschnitt davor bestellt.
+ *
+ * Unterbrechungen: Pause und Tonfokus-Verlust halten das Sprechen an (die Android-Sprachausgabe kann nicht pausieren). Dauert die
+ * Unterbrechung weniger als [SHORT_INTERRUPTION_MS], geht es an der Stelle weiter, an der das zuletzt gesprochene Wort begann
+ * ([progress] meldet sie); bei längeren Unterbrechungen beginnt der Abschnitt wieder von vorn (zum Wiedereinstieg).
  */
 class Reader(
     val plan: ReadPlan,
@@ -71,6 +75,7 @@ class Reader(
     private val textLanguage: String?,
     private val pictureLanguage: String? = "en-US",
     startIndex: Int = 0,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     var state = ReaderState.STOPPED
         private set
@@ -83,6 +88,10 @@ class Reader(
     private var queuedUpTo = -1 // der letzte Abschnitt, der schon an die Sprachausgabe übergeben ist
     private var autoPaused = false // pausiert, weil ein Anruf oder anderer Ton dran ist: danach geht es von selbst weiter
     private var describing = false
+    private var spokenOffset = 0 // Zeichen im Text des aktuellen Abschnitts, ab dem das zuletzt begonnene Wort steht
+    private var baseOffset = 0 // ab welchem Zeichen des Abschnitts der laufende Sprechauftrag beginnt (nach kurzer Unterbrechung > 0)
+    private var pausedAt = 0L
+    private var pausedIndex = -1
 
     val total: Int get() = plan.size
     val page: Int get() = plan.pageOf(index) + 1
@@ -94,9 +103,25 @@ class Reader(
         if (plan.size == 0 || state == ReaderState.PLAYING) return
         autoPaused = false
         if (index >= plan.size) index = 0
+        // Kurze Unterbrechung am selben Abschnitt: dort weiter, wo das Sprechen stand (nur einfacher Text, keine Rede-Stücke)
+        val item = plan.items[index] as? ReadItem.Speech
+        val resumeAt = if (state == ReaderState.PAUSED && pausedIndex == index && clock() - pausedAt < SHORT_INTERRUPTION_MS &&
+            item != null && item.parts.isEmpty() && spokenOffset in 1 until item.text.length
+        ) spokenOffset else 0
         state = ReaderState.PLAYING
         events.onState(state)
-        startAt(index)
+        startAt(index, resumeAt)
+    }
+
+    /**
+     * Die Sprachausgabe meldet, dass im Abschnitt mit der Kennung [id] ein Wort ab dem Zeichen [start] (bezogen auf den gesprochenen Text) beginnt.
+     * Damit weiß [play] nach einer kurzen Unterbrechung, wo es weitergeht.
+     */
+    fun progress(id: String, start: Int) {
+        val parts = id.split(':')
+        if (parts.size < 3 || parts[0] != "r" || parts[1] != generation.toString() || state != ReaderState.PLAYING) return
+        if (parts[2].toIntOrNull() != index) return
+        spokenOffset = baseOffset + start
     }
 
     fun pause() {
@@ -109,6 +134,7 @@ class Reader(
         if (plan.size == 0 || state == ReaderState.PLAYING) return
         halt(ReaderState.PAUSED)
         autoPaused = true
+        pausedIndex = -1 // noch nichts gesprochen: vom Anfang
     }
 
     /** Beendet das Vorlesen an der aktuellen Stelle (die Marke merkt sich die Oberfläche über [onPosition]). */
@@ -122,6 +148,7 @@ class Reader(
         if (plan.size == 0) return
         val was = state
         halt(was) // alles Laufende beenden, Zustand behalten
+        pausedIndex = -1 // nach einem Sprung nie mitten im Abschnitt einsteigen
         index = target.coerceIn(0, plan.size - 1)
         events.onPosition(index, total)
         if (was == ReaderState.PLAYING) startAt(index)
@@ -187,6 +214,14 @@ class Reader(
     // --- Ablauf ---------------------------------------------------------------------------------------------------
 
     private fun halt(newState: ReaderState) {
+        if (newState == ReaderState.PAUSED && state == ReaderState.PLAYING) {
+            pausedAt = clock()
+            pausedIndex = index
+        } else if (newState != ReaderState.PAUSED) {
+            pausedIndex = -1
+            spokenOffset = 0
+            baseOffset = 0
+        }
         generation++
         queuedUpTo = -1
         output.stopSpeaking()
@@ -209,12 +244,15 @@ class Reader(
         events.onFinished()
     }
 
-    private fun startAt(i: Int) {
+    private fun startAt(i: Int, resumeAt: Int = 0) {
         index = i
         events.onPosition(index, total)
         when (val item = plan.items[i]) {
             is ReadItem.Speech -> {
-                speak(i, item.text, textLanguage, flush = true, fromImage = false, parts = item.parts)
+                baseOffset = resumeAt
+                spokenOffset = resumeAt
+                // Bei der Fortsetzung mitten im Abschnitt nicht noch einmal "angesagt" (Schlüsselwörter würden sonst erneut auslösen)
+                speak(i, item.text.substring(resumeAt), textLanguage, flush = true, fromImage = false, announce = resumeAt == 0, parts = item.parts)
                 queueNext(i)
                 prefetchPictureAfter(i)
             }
@@ -247,6 +285,8 @@ class Reader(
             return
         }
         index = n
+        baseOffset = 0
+        spokenOffset = 0
         events.onPosition(index, total)
         when (val item = plan.items[n]) {
             is ReadItem.Speech -> {
@@ -271,6 +311,9 @@ class Reader(
     }
 
     companion object {
+        /** Eine Unterbrechung unter dieser Dauer (Millisekunden) setzt das Vorlesen an der Stelle fort statt am Abschnittsanfang. */
+        const val SHORT_INTERRUPTION_MS = 6000L
+
         /** So viele Elemente im Voraus werden Bildbeschreibungen bestellt (5 x ca. 25 s: auch ein größeres Bildmodell ist rechtzeitig fertig). */
         const val PREFETCH_ITEMS = 5
 

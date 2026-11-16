@@ -289,6 +289,9 @@ class SpeechOutput(private val context: Context) {
     interface ItemSink {
         fun done(id: String)
         fun failed(id: String)
+
+        /** Ein Wort des Abschnitts [id] beginnt ab dem Zeichen [start] des gesprochenen Textes (nur Systemstimme). */
+        fun progress(id: String, start: Int) {}
     }
 
     private var itemSink: ItemSink? = null
@@ -307,6 +310,10 @@ class SpeechOutput(private val context: Context) {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) {
                 utteranceId?.takeIf { it.startsWith("r:") }?.let { id -> main.post { itemSink?.done(id) } }
+            }
+
+            override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+                utteranceId?.takeIf { it.startsWith("r:") }?.let { id -> main.post { itemSink?.progress(id, start) } }
             }
 
             @Deprecated("Deprecated in Java")

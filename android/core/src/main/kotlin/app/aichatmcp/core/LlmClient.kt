@@ -79,7 +79,11 @@ interface LlmBackend {
     ): Flow<StreamEvent>
 }
 
-class ChatClient(baseUrl: String, private val apiKey: String = "", http: OkHttpClient = OkHttpClient()) : LlmBackend {
+class ChatClient(
+    baseUrl: String, private val apiKey: String = "", http: OkHttpClient = OkHttpClient(),
+    /** Zusätzliche Kopfzeilen (z. B. von Anthropic verlangt). */
+    private val extraHeaders: Map<String, String> = emptyMap(),
+) : LlmBackend {
     private val baseUrl = baseUrl.trimEnd('/')
 
     // Lese-Timeout großzügig: LM Studio lädt das Modell beim ersten Request nach.
@@ -88,6 +92,7 @@ class ChatClient(baseUrl: String, private val apiKey: String = "", http: OkHttpC
 
     private fun request(path: String) = Request.Builder().url("$baseUrl$path").apply {
         if (apiKey.isNotEmpty()) header("Authorization", "Bearer $apiKey")
+        extraHeaders.forEach { (k, v) -> header(k, v) }
     }
 
     fun listModels(): List<String> {

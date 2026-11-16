@@ -31,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -240,7 +239,7 @@ private fun withToolCalls(text: String) = buildAnnotatedString {
     val segments = splitSegments(text)
     segments.forEachIndexed { i, (kind, part) ->
         if (kind == "call") {
-            withStyle(SpanStyle(color = ToolGreen, fontStyle = FontStyle.Italic)) { append("» Werkzeug $part") }
+            withStyle(SpanStyle(color = ToolGreen, fontStyle = FontStyle.Italic)) { append(trNow("» Werkzeug $part")) }
             if (i < segments.lastIndex) append("\n")
         } else {
             append(part)

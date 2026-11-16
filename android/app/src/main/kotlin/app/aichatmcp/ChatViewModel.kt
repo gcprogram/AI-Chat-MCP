@@ -725,6 +725,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.setItemSink(object : SpeechOutput.ItemSink {
             override fun done(id: String) = r.utteranceDone(id)
             override fun failed(id: String) = r.utteranceFailed(id)
+            override fun progress(id: String, start: Int) = r.progress(id, start)
         })
         startPlaying(r)
     }
