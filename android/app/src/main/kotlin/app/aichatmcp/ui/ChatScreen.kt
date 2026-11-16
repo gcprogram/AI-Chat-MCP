@@ -64,7 +64,7 @@ private val ToolGreen = Color(0xFF0B6B3A)
 private val ErrorRed = Color(0xFFC0392B)
 private val InfoBlue = Color(0xFF1A56C4)
 
-enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS }
+enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO }
 
 @Composable
 fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {

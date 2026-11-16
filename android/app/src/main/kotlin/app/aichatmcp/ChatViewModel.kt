@@ -47,6 +47,7 @@ import app.aichatmcp.core.DocumentException
 import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ChatSession
 import app.aichatmcp.core.Config
+import app.aichatmcp.core.Providers
 import app.aichatmcp.core.CompanionImport
 import app.aichatmcp.calendar.DeviceCalendar
 import app.aichatmcp.clock.DeviceClock
@@ -147,9 +148,17 @@ private const val MAX_JUDGED_SPEECHES = 400
 private const val LONG_MESSAGE_CHARS = 900
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
-    private val storage = AppStorage(app.filesDir) { name ->
+    private val storage = openStorage(app) { name ->
         runCatching { app.assets.open(name).bufferedReader(Charsets.UTF_8).use { it.readText() } }.getOrNull()
     }
+    private val folders = AppFolders(app)
+
+    /** Liegen Companions und Chats in den Standardordnern (AIChatMCP/…)? Ohne die Berechtigung "Zugriff auf alle Dateien" bleiben sie privat. */
+    var sharedFolders by mutableStateOf(folders.sharedAllowed())
+        private set
+    val foldersLabel: String get() = folders.label
+    var modelFiles by mutableStateOf<List<java.io.File>>(emptyList())
+        private set
 
     var config by mutableStateOf(Config())
         private set
@@ -247,6 +256,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private var listeningWithWhisper = false
     private val speechOut = SpeechOutput(app)
     private val packs = SpeechPacks(app)
+
+    /** Download-Manager für Modelle aus dem Katalog und von Hugging Face. */
+    val downloads = ModelManager(app, viewModelScope, storage, folders, vision, { storage.secrets()["huggingface"] }) { entry, file -> modelInstalled(entry, file) }
     private var registry = ToolRegistry()
     private val session: ChatSession
     private val engine: ChatEngine
@@ -1272,9 +1284,117 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         status = "Modell: $name"
     }
 
-    /** Modelle des Servers abfragen (für die Einstellungen); Fehlertext statt Ausnahme. */
+    /** Modelle des Servers abfragen (für die Einstellungen); Fehlertext statt Ausnahme. Die Liste wird je Anbieter auf Chat-Modelle reduziert. */
     suspend fun fetchModels(url: String, key: String): Result<List<String>> = withContext(Dispatchers.IO) {
-        runCatching { ChatClient(url.trim().trimEnd('/'), key).listModels() }
+        runCatching {
+            val provider = Providers.forUrl(url)
+            provider.cleanModels(ChatClient(url.trim().trimEnd('/'), key, extraHeaders = provider.extraHeaders(key)).listModels())
+        }
+    }
+
+    /** Der gemerkte Schlüssel eines Anbieters (jeder Anbieter hat seinen eigenen; er liegt bei den Geheimnissen, nicht in der Konfiguration). */
+    fun providerKey(id: String): String = storage.secrets()["key-$id"].orEmpty()
+
+    fun rememberProviderKey(id: String, key: String) {
+        val all = storage.secrets()
+        storage.saveSecrets(if (key.isBlank()) all - "key-$id" else all + ("key-$id" to key.trim()))
+    }
+
+    fun saveHuggingFaceToken(token: String) {
+        val all = storage.secrets()
+        storage.saveSecrets(if (token.isBlank()) all - "huggingface" else all + ("huggingface" to token.trim()))
+    }
+
+    fun hasHuggingFaceToken(): Boolean = storage.secrets()["huggingface"].isNullOrBlank().not()
+
+    // --- Modelle und Ordner -----------------------------------------------------------------------------
+
+    fun refreshModelFiles() {
+        modelFiles = downloads.localModels()
+    }
+
+    /** Nach einem Download: Listen neu lesen und das Modell nutzbar machen. */
+    private fun modelInstalled(entry: app.aichatmcp.core.CatalogEntry?, file: java.io.File?) {
+        refreshModelFiles()
+        when (entry?.kind) {
+            null, app.aichatmcp.core.ModelKind.CHAT -> {
+                val f = file ?: java.io.File(folders.models, entry!!.files.first().name)
+                if (config.localModel.isEmpty() || !config.onboardingDone) useModelFile(f)
+            }
+            app.aichatmcp.core.ModelKind.WHISPER -> {
+                whisperModels = storage.whisper.list()
+                saveConfig(config.copy(speechEngine = app.aichatmcp.core.ENGINE_WHISPER, whisperModel = entry.folder))
+            }
+            app.aichatmcp.core.ModelKind.VISION -> {
+                saveConfig(config.copy(visionModelName = entry.title, visionProjName = "mmproj.gguf"))
+                visionVersion++
+            }
+            app.aichatmcp.core.ModelKind.PIPER -> piperVoices = storage.piper.list()
+        }
+    }
+
+    fun finishOnboarding() = saveConfig(config.copy(onboardingDone = true))
+
+    /** Eine Datei aus dem Modellordner als Modell auf dem Gerät wählen. */
+    fun useModelFile(file: java.io.File) = setLocalModel(file.path, file.name) // ein einfacher Dateipfad: llama.cpp liest ihn direkt
+
+    fun isCurrentModel(file: java.io.File): Boolean = config.localModel == file.path
+
+    fun deleteModelFile(file: java.io.File) {
+        if (isCurrentModel(file)) {
+            localLlm.unload()
+            saveConfig(config.copy(localModel = "", localModelName = ""))
+        }
+        file.delete()
+        refreshModelFiles()
+    }
+
+    /**
+     * Ist der gemeinsame Ordner erlaubt, ziehen die Modelle aus dem app-eigenen Ordner dorthin um (verschieben, sonst kopieren und löschen;
+     * auch angefangene Downloads). Zeigt das gewählte Modell auf eine umgezogene Datei, folgt der Pfad.
+     */
+    private fun moveModelsToShared() {
+        if (!folders.sharedAllowed()) return
+        val old = folders.appModels
+        val target = folders.models
+        if (!old.isDirectory || old.canonicalPath == target.canonicalPath || old.listFiles().isNullOrEmpty()) return
+        viewModelScope.launch {
+            val moved = withContext(Dispatchers.IO) {
+                old.listFiles().orEmpty().filter { it.isFile }.mapNotNull { f ->
+                    val t = java.io.File(target, f.name)
+                    if (t.exists()) return@mapNotNull null
+                    // erst unter einem Zwischennamen kopieren: ein Abbruch mitten im Kopieren hinterlässt keine halbe Modelldatei
+                    val ok = f.renameTo(t) || runCatching {
+                        val temp = java.io.File(target, f.name + ".moving")
+                        f.copyTo(temp, overwrite = true)
+                        temp.renameTo(t) && f.delete()
+                    }.getOrDefault(false)
+                    if (ok) f.path to t.path else null
+                }
+            }
+            moved.firstOrNull { it.first == config.localModel }?.let { saveConfig(config.copy(localModel = it.second)) }
+            refreshModelFiles()
+        }
+    }
+
+    /** Nach der Berechtigung "Zugriff auf alle Dateien": auf die Standardordner umschalten (Vorhandenes wird hinein kopiert). Liefert einen Hinweis. */
+    fun refreshFolders(): String {
+        val allowed = folders.sharedAllowed()
+        sharedFolders = allowed
+        var copied = 0
+        if (allowed) copied = storage.useFolders(folders.companions, folders.chats) else storage.usePrivateFolders()
+        personaIds = storage.personas.list()
+        if (!streaming) {
+            val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
+            persona = storage.personas.load(id)
+            syncVoice()
+            session.persona = persona
+            session.reset()
+            restoreChat()
+        }
+        moveModelsToShared()
+        refreshModelFiles()
+        return if (allowed) "Ordner: ${folders.label} ($copied Dateien übernommen)" else "Ohne Zugriff auf alle Dateien bleiben Companions und Chats privat."
     }
 
     // --- Companions ---------------------------------------------------------------------------------------
@@ -1568,6 +1688,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         storage.ensureDefaults()
         config = storage.loadConfig()
+        moveModelsToShared()
+        refreshModelFiles()
         speechOut.rate = config.speechRate.toFloat()
         speechOut.piperStore = storage.piper
         speechOut.piperThreads = { config.localThreads }
@@ -1581,7 +1703,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         session = ChatSession(effectiveConfig(config), persona, registry)
         engine = ChatEngine(
             session,
-            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey) },
+            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey, extraHeaders = Providers.forUrl(it.baseUrl).extraHeaders(it.apiKey)) },
         ) { call, spec -> askUser(call, spec) }
         restoreChat()
         showDailyUpdate()

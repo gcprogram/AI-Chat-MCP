@@ -53,18 +53,46 @@ import androidx.compose.ui.unit.dp
 
 /** Rahmen für Nebenbildschirme: Titelzeile mit Zurück-Knopf, darunter scrollbarer Inhalt. */
 @Composable
-fun ScreenFrame(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun ScreenFrame(title: String, onBack: () -> Unit, pinned: @Composable () -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Zurück") }
             Text(title, style = MaterialTheme.typography.titleMedium)
         }
         HorizontalDivider()
+        Column(Modifier.padding(horizontal = 16.dp)) { pinned() } // bleibt beim Scrollen stehen (z. B. Download-Fortschritt)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             content = content,
         )
+    }
+}
+
+/** Wie [ScreenFrame], mit Reitern unter der Titelzeile und einem festen Fuß (z. B. "Speichern"), der beim Scrollen und Reiterwechsel stehen bleibt. */
+@Composable
+fun TabbedFrame(
+    title: String, onBack: () -> Unit, tabs: List<String>, selected: Int, onSelect: (Int) -> Unit,
+    footer: @Composable () -> Unit, content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ Zurück") }
+            Text(title, style = MaterialTheme.typography.titleMedium)
+        }
+        androidx.compose.material3.ScrollableTabRow(selectedTabIndex = selected, edgePadding = 8.dp) {
+            tabs.forEachIndexed { i, name ->
+                androidx.compose.material3.Tab(selected = i == selected, onClick = { onSelect(i) }, text = { Text(name, maxLines = 1) })
+            }
+        }
+        val scroll = remember(selected) { androidx.compose.foundation.ScrollState(0) }
+        Column(
+            Modifier.weight(1f).verticalScroll(scroll).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = content,
+        )
+        HorizontalDivider()
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) { footer() }
     }
 }
 
@@ -93,7 +121,7 @@ fun NumberSetting(label: String, value: String, onChange: (String) -> Unit) =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DropdownField(label: String, options: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier.fillMaxWidth()) {
+fun DropdownField(label: String, options: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier.fillMaxWidth(), raw: Boolean = false) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
         OutlinedTextField(
@@ -103,7 +131,7 @@ fun DropdownField(label: String, options: List<String>, selected: String, onSele
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
-                DropdownMenuItem(text = { Text(option) }, onClick = { onSelect(option); expanded = false })
+                DropdownMenuItem(text = { if (raw) androidx.compose.material3.Text(option) else Text(option) }, onClick = { onSelect(option); expanded = false })
             }
         }
     }

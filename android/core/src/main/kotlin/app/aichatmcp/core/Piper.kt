@@ -80,7 +80,7 @@ object PiperNames {
  * Piper-Stimmen im App-Speicher: je Stimme ein Ordner mit `*.onnx`, `tokens.txt` (und meist `*.onnx.json`); die espeak-ng-Daten
  * (Aussprache, für alle Stimmen gleich) liegen einmal gemeinsam in `espeak-ng-data`.
  */
-class PiperStore(private val root: File) {
+class PiperStore(val root: File) {
     private val espeak = File(root, ESPEAK)
 
     fun espeakReady(): Boolean = File(espeak, "phontab").isFile

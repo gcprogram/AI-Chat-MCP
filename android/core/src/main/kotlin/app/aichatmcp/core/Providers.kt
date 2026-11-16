@@ -51,7 +51,8 @@ object Providers {
     /** Der Anbieter zu einer gespeicherten Server-Adresse (damit ältere Einstellungen richtig erkannt werden). */
     fun forUrl(url: String): Provider {
         val u = url.trim().trimEnd('/').lowercase()
-        return all.firstOrNull { it.baseUrl.isNotEmpty() && it.id != LMSTUDIO && u.startsWith(it.baseUrl.trimEnd('/').lowercase()) } ?: if (u.isEmpty()) lmstudio else custom
+        return all.firstOrNull { it.baseUrl.isNotEmpty() && it.id != LMSTUDIO && u.startsWith(it.baseUrl.trimEnd('/').lowercase()) }
+            ?: if (u.isEmpty() || Regex(":(1234|11434)(/|$)").containsMatchIn(u)) lmstudio else custom // Standardanschlüsse von LM Studio und Ollama
     }
 
     /** Warnung vor Adressen ohne Verschlüsselung außerhalb des eigenen Netzes (Schlüssel gingen im Klartext durch das Netz). */

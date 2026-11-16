@@ -28,7 +28,7 @@ object VisionNative {
  * Chat-Modell bleibt.
  */
 class VisionLlm(private val context: Context) {
-    private val dir: File get() = File(context.filesDir, "vision").apply { mkdirs() }
+    val dir: File get() = File(context.filesDir, "vision").apply { mkdirs() }
     val modelFile: File get() = File(dir, "model.gguf")
     val projFile: File get() = File(dir, "mmproj.gguf")
 

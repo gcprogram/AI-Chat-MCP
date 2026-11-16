@@ -1,5 +1,6 @@
 package app.aichatmcp.reminder
 
+import app.aichatmcp.openStorage
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
@@ -62,7 +63,7 @@ object DailyReminder {
 
     /** Titel und Text der Nachricht aus den aktuellen Todos; die Sprache folgt dem aktiven Companion. */
     fun content(context: Context, today: LocalDate = LocalDate.now()): Pair<String, String> {
-        val storage = AppStorage(context.filesDir) { null }
+        val storage = openStorage(context)
         val german = storage.personas.load(storage.loadConfig().persona).isGerman()
         val calendar = DeviceCalendar(context)
         val appointments = if (calendar.canRead()) runCatching { calendar.events(today, 1).size }.getOrDefault(0) else 0
@@ -97,7 +98,7 @@ object DailyReminder {
 /** Der Alarm ist da: Nachricht zeigen und den nächsten Tag planen. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val config = AppStorage(context.filesDir) { null }.loadConfig()
+        val config = openStorage(context).loadConfig()
         if (!config.dailyReminder) return
         DailyReminder.show(context)
         DailyReminder.schedule(context, config.dailyReminderTime)
@@ -108,6 +109,6 @@ class ReminderReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        DailyReminder.apply(context, AppStorage(context.filesDir) { null }.loadConfig())
+        DailyReminder.apply(context, openStorage(context).loadConfig())
     }
 }

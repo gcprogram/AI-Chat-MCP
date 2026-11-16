@@ -51,7 +51,7 @@ object WhisperNames {
  * Whisper-Modelle im App-Speicher: je Modell ein Ordner mit Encoder, Decoder (je `.onnx` oder `.int8.onnx`) und Tokens
  * (`*tokens.txt`), wie in den Paketen von sherpa-onnx. Gibt es beide Fassungen, gilt die kleinere int8-Fassung.
  */
-class WhisperStore(private val root: File) {
+class WhisperStore(val root: File) {
     private fun dirOf(name: String) = File(root, PiperNames.safeName(name))
 
     private fun pick(dir: File, part: String): File? {

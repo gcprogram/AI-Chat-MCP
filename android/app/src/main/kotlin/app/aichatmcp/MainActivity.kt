@@ -35,6 +35,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.ui.ChatScreen
+import app.aichatmcp.ui.ModelsScreen
+import app.aichatmcp.ui.OnboardingScreen
 import app.aichatmcp.ui.CompanionsScreen
 import app.aichatmcp.ui.Screen
 import app.aichatmcp.ui.SettingsScreen
@@ -75,8 +77,8 @@ private fun Root(vm: ChatViewModel = viewModel()) {
 @Composable
 private fun RootContent(vm: ChatViewModel) {
     val context = LocalContext.current
-    var screen by remember { mutableStateOf(Screen.CHAT) }
-    BackHandler(enabled = screen != Screen.CHAT) { screen = Screen.CHAT }
+    var screen by remember { mutableStateOf(if (vm.config.onboardingDone) Screen.CHAT else Screen.INTRO) }
+    BackHandler(enabled = screen != Screen.CHAT && screen != Screen.INTRO) { screen = if (screen == Screen.MODELS) Screen.SETTINGS else Screen.CHAT }
 
     fun toast(text: String) = Toast.makeText(context, trNow(text), Toast.LENGTH_LONG).show()
     fun read(uri: Uri): String? = runCatching {
@@ -141,6 +143,14 @@ private fun RootContent(vm: ChatViewModel) {
         vm.refreshCalendarPermission()
         if (granted.values.any { !it }) toast("Ohne Kalender-Berechtigung bleiben Termine außen vor.")
     }
+    // "Zugriff auf alle Dateien" erlaubt nur der Nutzer selbst in den Systemeinstellungen; die App öffnet nur die Seite dafür
+    val allFilesAccess = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { toast(vm.refreshFolders()) }
+    fun requestAllFiles() {
+        val uri = Uri.parse("package:${context.packageName}")
+        runCatching { allFilesAccess.launch(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)) }
+            .recoverCatching { allFilesAccess.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+            .onFailure { toast("Die Einstellungsseite lässt sich nicht öffnen.") }
+    }
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
             // Zugriff dauerhaft behalten, sonst ist die Datei nach einem Neustart nicht mehr lesbar
@@ -190,7 +200,10 @@ private fun RootContent(vm: ChatViewModel) {
             onRequestNotifications = ::requestNotifications,
             onRequestCalendar = { calendarPermission.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
             onToast = ::toast,
+            onOpenModels = { screen = Screen.MODELS }, onRequestAllFiles = ::requestAllFiles, onReplayIntro = { screen = Screen.INTRO },
         )
+        Screen.MODELS -> ModelsScreen(vm, onBack = { screen = Screen.SETTINGS }, onRequestAllFiles = ::requestAllFiles)
+        Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, onRequestAllFiles = ::requestAllFiles)
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
             onImportFolder = { pickPersonaFolder.launch(null) },

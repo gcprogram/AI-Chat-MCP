@@ -209,6 +209,16 @@ Aliasen, Antwort-Bereinigung, Kontextverwaltung, Chat speichern/laden (gleiches 
 Das Modell läuft entweder in LM Studio (Server-URL und Token in den Einstellungen) oder **direkt auf dem Handy**
 (Einstellungen → Ausführung → *Auf dem Gerät*, `llama.cpp` nur CPU, GGUF-Datei über den Dateiauswahldialog).
 
+**Erster Start**: Eine Einführung (sieben Schritte, jeder überspringbar, später unter *Einstellungen → App* wiederholbar) zeigt, was die App kann,
+und richtet gleich Modelle ein: Chat-Modell auf dem Handy (Qwen3 4B und 1.7B, Gemmasutra, Gemma 3n) oder online (LM Studio/Ollama, OpenAI, Anthropic,
+Gemini mit vorgegebener Adresse, API-Schlüssel je Anbieter und Modellliste zum Auswählen), Whisper small, SmolVLM-500M, Piper-Stimmen und die
+Systemstimmen. Downloads (auch später: *Einstellungen → App → Modelle und Downloads*, dort zusätzlich Suche und Link-Eingabe für beliebige GGUF-Modelle
+auf Hugging Face) fragen vorher nach Größe, freiem Platz und WLAN, zeigen den Fortschritt und machen nach einem Abbruch dort weiter, wo sie waren.
+**Ordner**: `AIChatMCP/models`, `AIChatMCP/companions` und `AIChatMCP/chats`. Mit der (selbst zu erlaubenden) Berechtigung *Zugriff auf alle Dateien* liegen
+sie im gemeinsamen Speicher (`/sdcard/AIChatMCP`, sichtbar für Dateimanager und PC), sonst liegen die Modelle im app-eigenen Ordner und Companions und
+Chats privat; beim Erlauben zieht alles um. **Oberfläche**: Englisch (Standard) oder Deutsch (*Einstellungen → App*); die Einstellungen sind in
+Reiter geteilt (Chat-Modell, Chat, Spracheingabe, Stimmen, Bildmodell, Organizer, Werkzeuge, App).
+
 ```bash
 cd android
 set JAVA_HOME=<JDK 17>            # JDK 25 (z. B. das von Android Studio) kann Kotlin 2.0 nicht lesen
