@@ -71,10 +71,10 @@ enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO }
 @Composable
 fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {
     val listState = rememberLazyListState()
-    // Während eine Antwort entsteht, soll der Bildschirm nicht ausgehen (sonst muss man für jede Antwort entsperren). Das Vorwärmen läuft
-    // dagegen auch bei dunklem Bildschirm weiter (Vordergrunddienst mit Wake-Lock).
+    // Während das Modell rechnet (Antwort oder Vorwärmen), soll der Bildschirm nicht ausgehen: Sonst muss man für jede Antwort entsperren,
+    // und Samsung beschränkt die App bei dunklem Bildschirm auf die langsamen Kerne (gemessen: mehrfach langsamer).
     val view = LocalView.current
-    val working = vm.streaming
+    val working = vm.streaming || vm.warming
     DisposableEffect(working) {
         view.keepScreenOn = working
         onDispose { view.keepScreenOn = false }

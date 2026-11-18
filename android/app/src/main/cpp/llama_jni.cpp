@@ -219,6 +219,49 @@ JNIEXPORT jstring JNICALL Java_app_aichatmcp_local_LlamaNative_stats(JNIEnv * en
     return env->NewStringUTF(e ? e->stats.c_str() : "{}");
 }
 
+// Sichert den KV-Cache (Tokens und Zustand) in eine Datei: Der System-Prompt samt Werkzeugen ist der Hauptteil der Wartezeit der ersten Antwort
+// und ändert sich nicht, deshalb wird er beim nächsten Start geladen statt neu berechnet. Rückgabe: Zahl der Tokens, 0 = nichts gesichert, -1 = Fehler.
+JNIEXPORT jint JNICALL Java_app_aichatmcp_local_LlamaNative_saveCache(JNIEnv * env, jobject, jlong handle, jstring jpath) {
+    Engine * e = engine_of(handle);
+    if (!e || e->cache.empty()) return 0;
+    const char * raw = env->GetStringUTFChars(jpath, nullptr);
+    const std::string path = raw ? raw : "";
+    if (raw) env->ReleaseStringUTFChars(jpath, raw);
+    if (path.empty()) return -1;
+    const std::string tmp = path + ".tmp";  // erst unter einem Zwischennamen schreiben: ein Abbruch hinterlässt keine halbe Datei
+    const size_t written = llama_state_seq_save_file(e->ctx, tmp.c_str(), 0, e->cache.data(), e->cache.size());
+    if (written == 0 || std::rename(tmp.c_str(), path.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        return -1;
+    }
+    LOGI("KV-Cache gesichert: %d Tokens, %zu Bytes", static_cast<int>(e->cache.size()), written);
+    return static_cast<jint>(e->cache.size());
+}
+
+// Lädt einen gesicherten KV-Cache. Rückgabe: Zahl der geladenen Tokens, 0 = Datei fehlt oder passt nicht (der Cache bleibt dann leer).
+JNIEXPORT jint JNICALL Java_app_aichatmcp_local_LlamaNative_loadCache(JNIEnv * env, jobject, jlong handle, jstring jpath) {
+    Engine * e = engine_of(handle);
+    if (!e) return 0;
+    const char * raw = env->GetStringUTFChars(jpath, nullptr);
+    const std::string path = raw ? raw : "";
+    if (raw) env->ReleaseStringUTFChars(jpath, raw);
+    if (path.empty() || access(path.c_str(), R_OK) != 0) return 0;
+    std::vector<llama_token> tokens(static_cast<size_t>(e->n_ctx));
+    size_t count = 0;
+    llama_memory_t mem = llama_get_memory(e->ctx);
+    llama_memory_clear(mem, true);
+    e->cache.clear();
+    const size_t read = llama_state_seq_load_file(e->ctx, path.c_str(), 0, tokens.data(), tokens.size(), &count);
+    if (read == 0 || count == 0 || count + 8 >= static_cast<size_t>(e->n_ctx)) {
+        llama_memory_clear(mem, true);
+        return 0;
+    }
+    tokens.resize(count);
+    e->cache = tokens;
+    LOGI("KV-Cache geladen: %d Tokens", static_cast<int>(count));
+    return static_cast<jint>(count);
+}
+
 // Wendet die Chat-Vorlage des Modells an (aus der GGUF-Datei) und liefert den Prompt als UTF-8; null bei Fehler.
 JNIEXPORT jbyteArray JNICALL Java_app_aichatmcp_local_LlamaNative_applyTemplate(JNIEnv * env, jobject, jlong handle,
                                                                                jobjectArray roles,

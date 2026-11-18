@@ -2,6 +2,8 @@ package app.aichatmcp.local
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
+import android.util.Log
 import app.aichatmcp.core.AppJson
 import app.aichatmcp.core.CancelToken
 import app.aichatmcp.core.Config
@@ -40,12 +42,23 @@ object LlamaNative {
     external fun cancel(handle: Long)
     external fun contextSize(handle: Long): Int
     external fun stats(handle: Long): String
+
+    /** Sichert den KV-Cache in eine Datei (Tokens und Zustand); liefert die Zahl der Tokens, 0 = nichts, -1 = Fehler. */
+    external fun saveCache(handle: Long, path: String): Int
+
+    /** Lädt einen gesicherten KV-Cache; liefert die Zahl der Tokens, 0 = Datei fehlt oder passt nicht. */
+    external fun loadCache(handle: Long, path: String): Int
     external fun applyTemplate(handle: Long, roles: Array<String>, contents: Array<ByteArray>): ByteArray?
     external fun generate(
         handle: Long, prompt: ByteArray, maxTokens: Int, temperature: Float, topP: Float, repeatPenalty: Float,
         freqPenalty: Float, presencePenalty: Float, seed: Int, sink: PieceSink,
     ): Int
 }
+
+private const val TAG = "AiChat"
+
+/** Ab so vielen neu berechneten Tokens lohnt es sich, den KV-Cache zu sichern. */
+private const val MIN_NEW_TOKENS = 200
 
 /** Obergrenze für den Kontext auf dem Gerät: der KV-Cache braucht Arbeitsspeicher (Handys haben wenig frei). */
 const val LOCAL_MAX_CONTEXT = 4096
@@ -70,6 +83,7 @@ class LocalLlm(private val context: Context) {
         if (handle != 0L && wanted == key) return handle
         unload()
         if (model.isBlank()) throw LlmException("Kein lokales Modell gewählt (Einstellungen).")
+        val started = SystemClock.elapsedRealtime()
         val h: Long
         if (model.startsWith("content://")) {
             val pfd = try {
@@ -86,7 +100,39 @@ class LocalLlm(private val context: Context) {
         if (h == 0L) throw LlmException(LlamaNative.lastError())
         handle = h
         key = wanted
+        Log.i(TAG, "Modell geladen in ${SystemClock.elapsedRealtime() - started} ms")
+        val loadStart = SystemClock.elapsedRealtime()
+        val tokens = runCatching { LlamaNative.loadCache(h, cacheFile(wanted).path) }.getOrDefault(0)
+        if (tokens > 0) Log.i(TAG, "Vorab-Cache geladen: $tokens Tokens in ${SystemClock.elapsedRealtime() - loadStart} ms")
         return h
+    }
+
+    /** Die Datei mit dem gesicherten Anfang (System-Prompt) für dieses Modell und diesen Kontext; sie liegt im Cache-Ordner, den Android bei Platzmangel leeren darf. */
+    private fun cacheFile(wanted: String): File {
+        val name = java.security.MessageDigest.getInstance("SHA-1").digest(wanted.substringBeforeLast('|').toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
+        return File(File(context.cacheDir, "kv"), "$name.bin")
+    }
+
+    /**
+     * Sichert den Anfang des KV-Caches, wenn die letzte Berechnung viel neu rechnen musste (mindestens [MIN_NEW_TOKENS] Tokens): Ohne Sicherung braucht
+     * die erste Antwort nach jedem App-Start Minuten, weil der System-Prompt neu verarbeitet wird; mit ihr dauert das Laden Sekunden. Es bleibt
+     * nur die Datei des gewählten Modells (je 100 bis 200 MB). Gedacht für den Aufruf nach dem Vorwärmen.
+     */
+    @Synchronized
+    fun saveCacheIfWorthwhile() {
+        if (handle == 0L) return
+        val stats = runCatching { AppJson.parseToJsonElement(LlamaNative.stats(handle)) as JsonObject }.getOrNull() ?: return
+        val prompt = (stats["prompt"] as? JsonPrimitive)?.intOrNull ?: return
+        val cached = (stats["cached"] as? JsonPrimitive)?.intOrNull ?: 0
+        if (prompt - cached < MIN_NEW_TOKENS) return
+        val file = cacheFile(key)
+        file.parentFile?.mkdirs()
+        val started = SystemClock.elapsedRealtime()
+        val saved = synchronized(runLock) { runCatching { LlamaNative.saveCache(handle, file.path) }.getOrDefault(-1) }
+        if (saved > 0) {
+            Log.i(TAG, "Vorab-Cache gesichert: $saved Tokens, ${file.length() / 1_000_000} MB in ${SystemClock.elapsedRealtime() - started} ms")
+            file.parentFile?.listFiles { f -> f.isFile && f != file }?.forEach { it.delete() }
+        }
     }
 
     @Synchronized
@@ -121,6 +167,7 @@ class LocalLlm(private val context: Context) {
                 if (result == -1) throw LlmException(LlamaNative.lastError())
                 filter.flush().takeIf { it.isNotEmpty() }?.let { trySendBlocking(StreamEvent.Content(it)) }
                 val stats = runCatching { AppJson.parseToJsonElement(LlamaNative.stats(h)) as JsonObject }.getOrNull()
+                Log.i(TAG, "Antwort: ${LlamaNative.stats(h)}")
                 (stats?.get("prompt") as? JsonPrimitive)?.intOrNull?.let { trySendBlocking(StreamEvent.Usage(it)) }
             }
         }.flowOn(Dispatchers.IO)

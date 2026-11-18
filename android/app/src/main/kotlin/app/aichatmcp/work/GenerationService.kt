@@ -64,7 +64,9 @@ class GenerationService : Service() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             return NotificationCompat.Builder(context, CHANNEL).setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle(tNow("The model is working", "Das Modell rechnet")).setContentIntent(open).setOngoing(true)
+                .setContentTitle(tNow("The model is working", "Das Modell rechnet"))
+                .setContentText(tNow("With the screen off it can be much slower. Keep the screen on for speed.", "Bei dunklem Bildschirm kann es viel langsamer sein. Für Tempo den Bildschirm an lassen."))
+                .setContentIntent(open).setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE).build()
         }
     }

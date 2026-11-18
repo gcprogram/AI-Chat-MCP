@@ -150,6 +150,7 @@ private const val RESULT_PREVIEW_CHARS = 160
 /** So viele unklare Reden fragt der KI-Rückfall höchstens je Dokument ab (jede Frage kostet Zeit am Server). */
 private const val MAX_JUDGED_SPEECHES = 400
 private const val LONG_MESSAGE_CHARS = 900
+private const val NL = "\n"
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val storage = openStorage(app) { name ->
@@ -1622,21 +1623,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun warmUp() {
         if (warming || streaming || config.backend != BACKEND_LOCAL || config.localModel.isEmpty()) return
-        // Stürzt der native Code beim Laden ab (zu großes Modell, Speicher voll), beendet Android den ganzen Prozess. Die Marke bleibt dann liegen:
-        // beim nächsten Start wird dieses Modell nicht wieder vorab geladen, sonst käme man nie mehr in die App, um ein anderes zu wählen.
+        // Stürzt der native Code beim Laden ab (zu großes Modell, Speicher voll), beendet Android den ganzen Prozess. Die Marke zählt, wie oft das
+        // Vorwärmen in Folge nicht zu Ende kam (auch ein App-Update oder Wegwischen beendet es): ab dem zweiten Mal wird dieses Modell nicht mehr
+        // vorab geladen, sonst käme man nie mehr in die App, um ein anderes zu wählen.
         val marker = java.io.File(getApplication<Application>().filesDir, "warmup_crash.txt")
-        if (runCatching { marker.takeIf { it.isFile }?.readText() }.getOrNull() == config.localModel) return
+        val aborted = runCatching { marker.takeIf { it.isFile }?.readText()?.split(NL) }.getOrNull()
+            ?.takeIf { it.firstOrNull() == config.localModel }?.getOrNull(1)?.toIntOrNull() ?: 0
+        if (aborted >= 2) return
         val cfg = effectiveConfig(config)
         val messages = session.requestMessages()
         val stop = session.stopSequences
         warming = true
         syncKeepAlive()
         status = "Modell wird vorbereitet…"
-        runCatching { marker.writeText(config.localModel) }
+        runCatching { marker.writeText(config.localModel + NL + (aborted + 1)) }
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     localLlm.backend(cfg).streamChat(cfg.model, messages, cfg.temperature, 1, stop, CancelToken(), cfg.samplingParams()).collect { }
+                    localLlm.saveCacheIfWorthwhile() // der berechnete Anfang überlebt so den nächsten App-Start
                 }
             } catch (e: CancellationException) {
                 throw e
