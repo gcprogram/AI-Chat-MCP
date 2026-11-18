@@ -259,19 +259,26 @@
         "text",
         "due"
       ],
-      "hint": "Adds a to-do to the user's list (also: note, remember, 'füge hinzu', 'auf die Liste'; optional due date: today, tomorrow, monday, 2026-11-25)",
-      "example": "[[mcp:todo-add|Buy milk|tomorrow]]",
+      "hint": "Adds a to-do to the user's list (also: Todo, note, remember, 'füge hinzu', 'auf die Liste'). The due date is optional: give it ONLY if the user names a day (today, tomorrow, monday, 2026-11-25), never guess one",
+      "example": "[[mcp:todo-add|Buy milk]]",
       "result": "both",
-      "confirm": false
+      "confirm": false,
+      "keywords": [
+        "^\\s*(?:neues?\\s+|new\\s+)?(?:to-?do|aufgabe)\\s*[:,\\-]\\s*(.+?)\\s*$"
+      ]
     },
     "todo-list": {
       "server": "organizer",
       "tool": "todo_list",
       "params": [],
-      "hint": "Lists the user's open to-dos (also: 'was steht an', 'zeig die Liste')",
+      "hint": "Lists the user's open to-dos (also: 'Todos', 'Aufgaben', 'welche Todos haben wir', 'was steht an', 'zeig die Liste')",
       "example": "[[mcp:todo-list]]",
       "result": "both",
-      "confirm": false
+      "confirm": false,
+      "keywords": [
+        "^\\s*(?:zeig\\w*|anzeig\\w*|welche|liste|was\\s+steht)\\b.{0,30}?(?:to-?dos?|aufgaben|erinnerungen)",
+        "^\\s*(?:to-?dos?|aufgaben(?:liste)?)\\s*(?:anzeigen|zeigen|liste)?\\s*[?.!]?\\s*$"
+      ]
     },
     "todo-done": {
       "server": "organizer",
