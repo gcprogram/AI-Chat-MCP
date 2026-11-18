@@ -4,7 +4,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
 
 /** Der Download wurde vom Nutzer abgebrochen (die angefangene Datei bleibt für das Fortsetzen liegen). */
@@ -12,8 +11,10 @@ class DownloadCancelled : IOException("Download abgebrochen")
 
 /** Platzbedarf eines Downloads gegen den freien Platz. */
 data class StorageCheck(val neededBytes: Long, val freeBytes: Long, val reserveBytes: Long) {
-    val ok: Boolean get() = freeBytes - reserveBytes >= neededBytes
-    val missingBytes: Long get() = maxOf(0L, neededBytes + reserveBytes - freeBytes)
+    /** Ist der freie Platz nicht zu ermitteln (-1, z. B. bei einem Cloud-Ordner), versucht der Download es trotzdem. */
+    val known: Boolean get() = freeBytes >= 0
+    val ok: Boolean get() = !known || freeBytes - reserveBytes >= neededBytes
+    val missingBytes: Long get() = if (!known) 0L else maxOf(0L, neededBytes + reserveBytes - freeBytes)
 }
 
 /**
@@ -40,47 +41,47 @@ class Downloader(
     data class Progress(val doneBytes: Long, val totalBytes: Long, val file: String)
 
     /** Was fehlt noch? Fertige Dateien zählen nicht, angefangene nur mit dem Rest. */
-    fun remainingBytes(files: List<RemoteFile>, dir: File): Long = files.sumOf { f ->
-        val target = File(dir, f.name)
+    fun remainingBytes(files: List<RemoteFile>, store: FileStore): Long = files.sumOf { f ->
         when {
-            target.isFile -> 0L
-            else -> maxOf(0L, f.bytes - File(dir, f.name + PART).length())
+            store.exists(f.name) -> 0L
+            else -> maxOf(0L, f.bytes - maxOf(0L, store.size(f.name + PART)))
         }
     }
 
+    fun remainingBytes(files: List<RemoteFile>, dir: File): Long = remainingBytes(files, DirStore(dir))
+
     /** Reicht der Platz? [reserveBytes]: so viel soll danach noch frei sein (Standard 300 MB). */
-    fun checkStorage(files: List<RemoteFile>, dir: File, reserveBytes: Long = 300_000_000L): StorageCheck {
-        var probe: File? = dir
-        while (probe != null && !probe.exists()) probe = probe.parentFile
-        return StorageCheck(remainingBytes(files, dir), probe?.usableSpace ?: 0L, reserveBytes)
-    }
+    fun checkStorage(files: List<RemoteFile>, store: FileStore, reserveBytes: Long = 300_000_000L): StorageCheck =
+        StorageCheck(remainingBytes(files, store), store.freeBytes(), reserveBytes)
+
+    fun checkStorage(files: List<RemoteFile>, dir: File, reserveBytes: Long = 300_000_000L): StorageCheck = checkStorage(files, DirStore(dir), reserveBytes)
+
+    fun download(files: List<RemoteFile>, dir: File, isCancelled: () -> Boolean = { false }, onProgress: (Progress) -> Unit = {}) =
+        download(files, DirStore(dir), isCancelled, onProgress)
 
     /**
-     * Lädt [files] nach [dir]. [isCancelled] wird laufend abgefragt. Fehler als [IOException] mit verständlichem Text; bei Abbruch [DownloadCancelled].
+     * Lädt [files] in [store]. [isCancelled] wird laufend abgefragt. Fehler als [IOException] mit verständlichem Text; bei Abbruch [DownloadCancelled].
      */
-    fun download(files: List<RemoteFile>, dir: File, isCancelled: () -> Boolean = { false }, onProgress: (Progress) -> Unit = {}) {
-        dir.mkdirs()
+    fun download(files: List<RemoteFile>, store: FileStore, isCancelled: () -> Boolean = { false }, onProgress: (Progress) -> Unit = {}) {
         val total = files.sumOf { it.bytes }.coerceAtLeast(1)
         var done = 0L
         for (f in files) {
-            val target = File(dir, f.name)
-            if (target.isFile) {
-                done += maxOf(f.bytes, target.length())
+            if (store.exists(f.name)) {
+                done += maxOf(f.bytes, store.size(f.name))
                 onProgress(Progress(done, total, f.name))
                 continue
             }
-            val got = fetch(f, target, isCancelled) { fileBytes -> onProgress(Progress(done + fileBytes, maxOf(total, done + fileBytes), f.name)) }
+            val got = fetch(f, store, isCancelled) { fileBytes -> onProgress(Progress(done + fileBytes, maxOf(total, done + fileBytes), f.name)) }
             done += got
         }
         onProgress(Progress(total.coerceAtLeast(done), total.coerceAtLeast(done), ""))
     }
 
-    private fun fetch(f: RemoteFile, target: File, isCancelled: () -> Boolean, onBytes: (Long) -> Unit): Long {
-        target.parentFile?.mkdirs()
-        val part = File(target.path + PART)
+    private fun fetch(f: RemoteFile, store: FileStore, isCancelled: () -> Boolean, onBytes: (Long) -> Unit): Long {
+        val partName = f.name + PART
         var attempt = 0
         while (true) {
-            val have = part.length()
+            val have = maxOf(0L, store.size(partName))
             val request = Request.Builder().url(f.url).apply {
                 if (have > 0) header("Range", "bytes=$have-")
                 huggingFaceToken()?.takeIf { it.isNotBlank() && "huggingface.co" in f.url }?.let { header("Authorization", "Bearer $it") }
@@ -95,13 +96,13 @@ class Downloader(
                 when (r.code) {
                     200, 206 -> {}
                     416 -> { // Bereich nicht erfüllbar: die .part-Datei ist schon vollständig oder unbrauchbar
-                        if (part.length() > 0 && attempt++ == 0) {
+                        if (have > 0 && attempt++ == 0) {
                             val total = r.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
-                            if (total != null && total == part.length()) {
-                                part.renameTo(target)
-                                return target.length()
+                            if (total != null && total == have) {
+                                finish(store, partName, f.name)
+                                return store.size(f.name)
                             }
-                            part.delete()
+                            store.delete(partName)
                             return@use
                         }
                         throw IOException("Der Server hat die Anfrage abgelehnt (HTTP 416).")
@@ -112,11 +113,9 @@ class Downloader(
                 }
                 val body = r.body ?: throw IOException("Leere Antwort von ${request.url.host}")
                 val resumed = r.code == 206 && have > 0
-                if (!resumed && part.length() > 0) part.delete() // der Server hat die ganze Datei geschickt
+                if (!resumed && have > 0) store.delete(partName) // der Server hat die ganze Datei geschickt
                 val expected = if (resumed) have + body.contentLength() else body.contentLength()
-                RandomAccessFile(part, "rw").use { out ->
-                    out.seek(if (resumed) have else 0L)
-                    if (!resumed) out.setLength(0)
+                store.write(partName, append = resumed).use { out ->
                     val buffer = ByteArray(64 * 1024)
                     var written = if (resumed) have else 0L
                     var lastReport = 0L
@@ -140,14 +139,20 @@ class Downloader(
                     }
                     if (expected > 0 && written != expected) throw DownloadInterrupted("Download unvollständig: ${f.name} ($written von $expected Bytes). Erneut versuchen setzt fort.")
                 }
-                if (!part.renameTo(target)) {
-                    target.writeBytes(part.readBytes())
-                    part.delete()
-                }
-                onBytes(target.length())
-                return target.length()
+                finish(store, partName, f.name)
+                val size = store.size(f.name)
+                onBytes(size)
+                return size
             }
         }
+    }
+
+    /** Macht aus der angefangenen Datei die fertige (Umbenennen, sonst Kopieren). */
+    private fun finish(store: FileStore, partName: String, name: String) {
+        if (store.rename(partName, name)) return
+        val input = store.read(partName) ?: throw IOException("Die angefangene Datei fehlt: $partName")
+        input.use { src -> store.write(name, append = false).use { src.copyTo(it) } }
+        store.delete(partName)
     }
 
     companion object {

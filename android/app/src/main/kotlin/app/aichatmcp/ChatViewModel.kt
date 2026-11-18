@@ -84,6 +84,10 @@ import app.aichatmcp.local.effectiveConfig
 import app.aichatmcp.speech.DescribedPictures
 import app.aichatmcp.speech.ReaderFocus
 import app.aichatmcp.reminder.DailyReminder
+import app.aichatmcp.work.GenerationService
+import app.aichatmcp.core.DirStore
+import app.aichatmcp.core.StoredFile
+import app.aichatmcp.ui.tNow
 import app.aichatmcp.speech.SpeechInput
 import app.aichatmcp.speech.WhisperInput
 import app.aichatmcp.speech.SpeechReaderOutput
@@ -153,11 +157,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
     private val folders = AppFolders(app)
 
-    /** Liegen Companions und Chats in den Standardordnern (AIChatMCP/…)? Ohne die Berechtigung "Zugriff auf alle Dateien" bleiben sie privat. */
-    var sharedFolders by mutableStateOf(folders.sharedAllowed())
+    /** Die Modelldateien im Modellordner (liest der [ModelManager] im Hintergrund). */
+    val modelFiles: List<StoredFile> get() = downloads.localModels
+
+    /** Wo die Modelle liegen (Anzeige) und ob der Nutzer dafür einen eigenen Ordner gewählt hat. */
+    var modelFolderLabel by mutableStateOf("")
         private set
-    val foldersLabel: String get() = folders.label
-    var modelFiles by mutableStateOf<List<java.io.File>>(emptyList())
+    var modelFolderChosen by mutableStateOf(false)
         private set
 
     var config by mutableStateOf(Config())
@@ -258,7 +264,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val packs = SpeechPacks(app)
 
     /** Download-Manager für Modelle aus dem Katalog und von Hugging Face. */
-    private val installedCallback: (app.aichatmcp.core.CatalogEntry?, java.io.File?) -> Unit = { entry, file -> modelInstalled(entry, file) }
+    private val installedCallback: (app.aichatmcp.core.CatalogEntry?, String?) -> Unit = { entry, fileName -> modelInstalled(entry, fileName) }
     val downloads = ModelManager.shared(app).also { it.onInstalled = installedCallback }
     private var registry = ToolRegistry()
     private val session: ChatSession
@@ -338,6 +344,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         input = ""
         session.config = effectiveConfig(config)
         streaming = true
+        syncKeepAlive()
         turn = viewModelScope.launch {
             try {
                 engine.send(text).collect(::handle)
@@ -348,6 +355,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = "Fehler"
             } finally {
                 streaming = false
+                syncKeepAlive()
                 live = null
                 saveChat()
                 updateContext()
@@ -1311,16 +1319,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // --- Modelle und Ordner -----------------------------------------------------------------------------
 
     fun refreshModelFiles() {
-        modelFiles = downloads.localModels()
+        downloads.refreshLocal()
+        updateFolderLabel()
+    }
+
+    private fun updateFolderLabel() {
+        modelFolderChosen = folders.usingTree(config.modelFolder)
+        modelFolderLabel = folders.modelStore(config.modelFolder).label
     }
 
     /** Nach einem Download: Listen neu lesen und das Modell nutzbar machen. */
-    private fun modelInstalled(entry: app.aichatmcp.core.CatalogEntry?, file: java.io.File?) {
+    private fun modelInstalled(entry: app.aichatmcp.core.CatalogEntry?, fileName: String?) {
         refreshModelFiles()
         when (entry?.kind) {
             null, app.aichatmcp.core.ModelKind.CHAT -> {
-                val f = file ?: java.io.File(folders.models, entry!!.files.first().name)
-                if (config.localModel.isEmpty() || !config.onboardingDone) useModelFile(f)
+                val name = fileName ?: entry!!.files.first().name
+                val f = modelFiles.firstOrNull { it.name == name }
+                if (f != null && (config.localModel.isEmpty() || !config.onboardingDone)) useModelFile(f)
             }
             app.aichatmcp.core.ModelKind.WHISPER -> {
                 whisperModels = storage.whisper.list()
@@ -1336,66 +1351,114 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun finishOnboarding() = saveConfig(config.copy(onboardingDone = true))
 
-    /** Eine Datei aus dem Modellordner als Modell auf dem Gerät wählen. */
-    fun useModelFile(file: java.io.File) = setLocalModel(file.path, file.name) // ein einfacher Dateipfad: llama.cpp liest ihn direkt
+    /** Eine Datei aus dem Modellordner als Modell auf dem Gerät wählen (ein Pfad oder eine content://-Adresse: llama.cpp liest beides). */
+    fun useModelFile(file: StoredFile) = setLocalModel(file.ref, file.name)
 
-    fun isCurrentModel(file: java.io.File): Boolean = config.localModel == file.path
+    fun isCurrentModel(file: StoredFile): Boolean = config.localModel == file.ref
 
-    fun deleteModelFile(file: java.io.File) {
+    fun deleteModelFile(file: StoredFile) {
         if (isCurrentModel(file)) {
             localLlm.unload()
             saveConfig(config.copy(localModel = "", localModelName = ""))
         }
-        file.delete()
-        refreshModelFiles()
+        downloads.deleteLocal(file.name)
     }
 
     /**
-     * Ist der gemeinsame Ordner erlaubt, ziehen die Modelle aus dem app-eigenen Ordner dorthin um (verschieben, sonst kopieren und löschen;
-     * auch angefangene Downloads). Zeigt das gewählte Modell auf eine umgezogene Datei, folgt der Pfad.
+     * Neuer Modellordner (null = zurück zum app-eigenen Ordner). Der Nutzer hat ihn im Systemdialog gewählt; die App behält den Zugriff
+     * (das ist keine Berechtigung "Zugriff auf alle Dateien"). Zeigt das gewählte Modell noch auf einen alten Dateipfad, den die App nicht mehr
+     * lesen darf, und der neue Ordner enthält eine Datei gleichen Namens, folgt das Modell dorthin. Liefert einen Hinweis für den Nutzer.
      */
-    private fun moveModelsToShared() {
-        if (!folders.sharedAllowed()) return
-        val old = folders.appModels
-        val target = folders.models
-        if (!old.isDirectory || old.canonicalPath == target.canonicalPath || old.listFiles().isNullOrEmpty()) return
-        viewModelScope.launch {
-            val moved = withContext(Dispatchers.IO) {
-                old.listFiles().orEmpty().filter { it.isFile }.mapNotNull { f ->
-                    val t = java.io.File(target, f.name)
-                    if (t.exists()) return@mapNotNull null
-                    // erst unter einem Zwischennamen kopieren: ein Abbruch mitten im Kopieren hinterlässt keine halbe Modelldatei
-                    val ok = f.renameTo(t) || runCatching {
-                        val temp = java.io.File(target, f.name + ".moving")
-                        f.copyTo(temp, overwrite = true)
-                        temp.renameTo(t) && f.delete()
-                    }.getOrDefault(false)
-                    if (ok) f.path to t.path else null
-                }
+    fun setModelFolder(tree: Uri?): String {
+        val resolver = getApplication<Application>().contentResolver
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        if (tree != null) {
+            runCatching { resolver.takePersistableUriPermission(tree, flags) }.onFailure {
+                return tNow("Access to this folder cannot be kept: ${it.message}", "Der Zugriff auf diesen Ordner lässt sich nicht behalten: ${it.message}")
             }
-            moved.firstOrNull { it.first == config.localModel }?.let { saveConfig(config.copy(localModel = it.second)) }
-            refreshModelFiles()
+        }
+        val previous = config.modelFolder
+        val next = tree?.toString().orEmpty()
+        saveConfig(config.copy(modelFolder = next))
+        if (previous.isNotBlank() && previous != next) runCatching { resolver.releasePersistableUriPermission(Uri.parse(previous), flags) }
+        updateFolderLabel()
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { downloads.listLocalNow() }
+            downloads.setLocal(list)
+            val current = config.localModel
+            if (current.isNotEmpty() && !current.startsWith("content://") && !java.io.File(current).canRead()) {
+                list.firstOrNull { it.name == java.io.File(current).name }?.let { saveConfig(config.copy(localModel = it.ref)); status = "Modell: ${it.name}" }
+            }
+        }
+        return if (tree != null) tNow("Model folder: $modelFolderLabel", "Modellordner: $modelFolderLabel") else tNow("Models are stored in the app folder again.", "Modelle liegen wieder im App-Ordner.")
+    }
+
+    /**
+     * Sichert alle Companions (Dateien .json im Unterordner companions) und Chats (Dateien .aichat im Unterordner chats) in einen vom Nutzer gewählten Ordner (ohne Berechtigung "Zugriff
+     * auf alle Dateien": der Nutzer wählt den Ordner im Systemdialog für diese eine Aktion). Vorhandene Dateien dort werden ersetzt.
+     */
+    fun backupTo(tree: Uri, done: (String) -> Unit) {
+        saveChat()
+        viewModelScope.launch {
+            val message = withContext(Dispatchers.IO) {
+                runCatching {
+                    val root = TreeStore(getApplication(), tree)
+                    val personaTarget = root.sub("companions") ?: error("companions")
+                    val chatTarget = root.sub("chats") ?: error("chats")
+                    val p = app.aichatmcp.core.StoreCopy.copy(DirStore(storage.personasDir), personaTarget, onlyNewer = false) { it.endsWith(".json") }
+                    val c = app.aichatmcp.core.StoreCopy.copy(DirStore(storage.chatsDir), chatTarget, onlyNewer = false) { it.endsWith(ChatLog.EXTENSION) || it.endsWith(".json") }
+                    tNow("Saved $p companions and $c chats to ${root.label}.", "$p Companions und $c Chats gesichert nach ${root.label}.")
+                }.getOrElse { tNow("Backup failed: ${it.message}", "Sicherung fehlgeschlagen: ${it.message}") }
+            }
+            done(message)
         }
     }
 
-    /** Nach der Berechtigung "Zugriff auf alle Dateien": auf die Standardordner umschalten (Vorhandenes wird hinein kopiert). Liefert einen Hinweis. */
-    fun refreshFolders(): String {
-        val allowed = folders.sharedAllowed()
-        sharedFolders = allowed
-        var copied = 0
-        if (allowed) copied = storage.useFolders(folders.companions, folders.chats) else storage.usePrivateFolders()
-        personaIds = storage.personas.list()
-        if (!streaming) {
-            val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
-            persona = storage.personas.load(id)
-            syncVoice()
-            session.persona = persona
-            session.reset()
-            restoreChat()
+    /**
+     * Holt Companions und Chats aus einem Sicherungsordner zurück (Unterordner `companions` und `chats`, sonst die Dateien im Ordner selbst, auch der
+     * frühere Ordner AIChatMCP). Fehlendes wird ergänzt, Vorhandenes nur ersetzt, wenn die Datei im Ordner neuer ist; ungültige Companion-Dateien
+     * werden übersprungen.
+     */
+    fun restoreFrom(tree: Uri, done: (String) -> Unit) {
+        viewModelScope.launch {
+            val message = withContext(Dispatchers.IO) {
+                runCatching {
+                    val root = TreeStore(getApplication(), tree)
+                    val personaSource = root.sub("companions", create = false) ?: root
+                    val chatSource = root.sub("chats", create = false)
+                    val personaLocal = DirStore(storage.personasDir)
+                    val have = personaLocal.list().associateBy { it.name }
+                    var p = 0
+                    for (f in personaSource.list()) {
+                        if (!f.name.endsWith(".json")) continue
+                        val old = have[f.name]
+                        if (old != null && f.modified <= old.modified) continue
+                        val bytes = personaSource.read(f.name)?.use { it.readBytes() } ?: continue
+                        if (Persona.parseCompanion(bytes.toString(Charsets.UTF_8), Persona.slugify(f.name.removeSuffix(".json"))).isFailure) continue
+                        personaLocal.write(f.name).use { it.write(bytes) }
+                        p++
+                    }
+                    val c = app.aichatmcp.core.StoreCopy.copy(chatSource ?: root, DirStore(storage.chatsDir), onlyNewer = true) {
+                        it.endsWith(ChatLog.EXTENSION) || (chatSource != null && it.endsWith(".json"))
+                    }
+                    p to c
+                }
+            }
+            message.onSuccess { (p, c) ->
+                personaIds = storage.personas.list()
+                if (!streaming) {
+                    val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
+                    persona = storage.personas.load(id)
+                    syncVoice()
+                    session.persona = persona
+                    session.reset()
+                    restoreChat()
+                }
+                avatarVersion++
+                done(tNow("Restored $p companions and $c chats.", "$p Companions und $c Chats zurückgeholt."))
+            }
+            message.onFailure { done(tNow("Restore failed: ${it.message}", "Wiederherstellen fehlgeschlagen: ${it.message}")) }
         }
-        moveModelsToShared()
-        refreshModelFiles()
-        return if (allowed) "Ordner: ${folders.label} ($copied Dateien übernommen)" else "Ohne Zugriff auf alle Dateien bleiben Companions und Chats privat."
     }
 
     // --- Companions ---------------------------------------------------------------------------------------
@@ -1542,20 +1605,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private var warming = false
+    /** Das lokale Modell wird gerade geladen und der Prompt vorab berechnet (Bildschirm bleibt an, Dienst hält die CPU wach). */
+    var warming by mutableStateOf(false)
+        private set
+
+    /** Solange das Modell rechnet (Antwort oder Vorbereitung): Vordergrunddienst mit Wake-Lock, sonst schläft die CPU bei gesperrtem Bildschirm ein. */
+    private fun syncKeepAlive() {
+        if (streaming || warming) GenerationService.start(getApplication()) else GenerationService.stop(getApplication())
+    }
 
     /**
      * Lädt das lokale Modell und berechnet den bisherigen Verlauf vorab, solange noch nichts gefragt wurde: Die erste Antwort
      * nach einem App-Start braucht sonst mehrere Minuten, weil der ganze Prompt (Persona, Werkzeuge, Verlauf) neu verarbeitet
-     * wird. Die spätere Anfrage nutzt den Zwischenspeicher für den gemeinsamen Anfang.
+     * wird. Die spätere Anfrage nutzt den Zwischenspeicher für den gemeinsamen Anfang. Auch bei leerem Verlauf (neuer Chat,
+     * eben gewähltes Modell): dann zählt der System-Prompt mit den Werkzeugen, der den größten Teil der Wartezeit ausmacht.
      */
     private fun warmUp() {
-        if (warming || streaming || config.backend != BACKEND_LOCAL || config.localModel.isEmpty() || session.history.isEmpty()) return
+        if (warming || streaming || config.backend != BACKEND_LOCAL || config.localModel.isEmpty()) return
+        // Stürzt der native Code beim Laden ab (zu großes Modell, Speicher voll), beendet Android den ganzen Prozess. Die Marke bleibt dann liegen:
+        // beim nächsten Start wird dieses Modell nicht wieder vorab geladen, sonst käme man nie mehr in die App, um ein anderes zu wählen.
+        val marker = java.io.File(getApplication<Application>().filesDir, "warmup_crash.txt")
+        if (runCatching { marker.takeIf { it.isFile }?.readText() }.getOrNull() == config.localModel) return
         val cfg = effectiveConfig(config)
         val messages = session.requestMessages()
         val stop = session.stopSequences
         warming = true
+        syncKeepAlive()
         status = "Modell wird vorbereitet…"
+        runCatching { marker.writeText(config.localModel) }
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -1565,7 +1642,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 throw e
             } catch (_: Throwable) { // Vorwärmen ist nur eine Beschleunigung; Fehler zeigt die erste echte Anfrage
             } finally {
+                runCatching { marker.delete() }
                 warming = false
+                syncKeepAlive()
                 if (status == "Modell wird vorbereitet…") status = "Bereit"
             }
         }
@@ -1683,6 +1762,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.shutdown()
         localLlm.unload()
         registry.shutdown()
+        GenerationService.stop(getApplication())
     }
 
     // Muss am Ende der Klasse stehen: Eigenschaften werden in der Reihenfolge des Quelltextes angelegt, und renderHistory() und die
@@ -1690,7 +1770,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         storage.ensureDefaults()
         config = storage.loadConfig()
-        moveModelsToShared()
         refreshModelFiles()
         speechOut.rate = config.speechRate.toFloat()
         speechOut.piperStore = storage.piper

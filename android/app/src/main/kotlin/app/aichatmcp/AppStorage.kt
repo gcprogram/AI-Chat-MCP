@@ -29,10 +29,9 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
     private val privatePersonas = File(root, "personas")
     private val privateChats = File(root, "chats")
 
-    /** Ordner der Companions und Chats: zunächst der private Speicher, dann (siehe [useFolders]) die Standardordner. */
-    var personasDir = privatePersonas
-        private set
-    private var chatsDir = privateChats
+    /** Ordner der Companions und der Chats (privater Speicher). */
+    val personasDir = privatePersonas
+    val chatsDir = privateChats
     private val certsDir = File(root, "certs")
     private val configFile = File(root, "config.json")
     private val mcpFile = File(root, "mcp_servers.json")
@@ -49,29 +48,6 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
     /** Todos des Organizers (Werkzeuge `todo-*` und Tagesupdate). */
     val todos = TodoStore(File(root, "todos.json"))
     private val offeredFile = File(root, "defaults_offered.txt")
-
-    /**
-     * Schaltet auf die Standardordner um (`AIChatMCP/companions` und `…/chats`). Was im privaten Speicher liegt und dort noch fehlt, wird einmal
-     * hinein kopiert (nichts wird überschrieben, das Private bleibt als Sicherung). Liefert die Zahl der kopierten Dateien.
-     */
-    fun useFolders(personas: File, chats: File): Int {
-        var copied = 0
-        val marker = File(root, "folders_migrated.txt")
-        val key = personas.path + "|" + chats.path
-        if (marker.takeIf { it.isFile }?.readText() != key) {
-            copied += Folders.copyMissing(privatePersonas, personas) + Folders.copyMissing(privateChats, chats)
-            marker.writeText(key)
-        }
-        personasDir = personas
-        chatsDir = chats
-        return copied
-    }
-
-    /** Zurück in den privaten Speicher (Berechtigung entzogen). */
-    fun usePrivateFolders() {
-        personasDir = privatePersonas
-        chatsDir = privateChats
-    }
 
     /** Beim ersten Start: Standard-Companion und Werkzeugkonfiguration aus den mitgelieferten Dateien anlegen. */
     fun ensureDefaults() {

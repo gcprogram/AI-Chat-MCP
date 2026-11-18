@@ -41,7 +41,7 @@ private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
 fun SettingsScreen(
     vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit,
     onPickPiper: () -> Unit, onPickWhisper: () -> Unit, onRequestNotifications: () -> Unit, onRequestCalendar: () -> Unit, onToast: (String) -> Unit,
-    onOpenModels: () -> Unit, onRequestAllFiles: () -> Unit, onReplayIntro: () -> Unit,
+    onOpenModels: () -> Unit, folders: FolderActions, onReplayIntro: () -> Unit,
 ) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
@@ -406,7 +406,8 @@ fun SettingsScreen(
                 )
                 SectionTitle(t("Models and folders", "Modelle und Ordner"))
                 Button(onClick = onOpenModels) { Text(t("Models and downloads…", "Modelle und Downloads…")) }
-                FolderInfo(vm, onRequestAllFiles)
+                FolderInfo(vm, folders)
+                BackupInfo(folders)
                 SectionTitle(t("Introduction", "Einführung"))
                 OutlinedButton(onClick = onReplayIntro) { Text(t("Show the introduction again", "Einführung noch einmal zeigen")) }
             }

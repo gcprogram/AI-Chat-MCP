@@ -9,8 +9,14 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-/** Ein Treffer der Modellsuche auf Hugging Face. */
-data class ModelHit(val id: String, val downloads: Long, val likes: Long)
+/**
+ * Ein Treffer der Modellsuche auf Hugging Face. [params] = Zahl der Parameter laut GGUF-Kopf (0 = unbekannt), [updated] = letzte Änderung
+ * als ISO-Zeitstempel (leer = unbekannt).
+ */
+data class ModelHit(val id: String, val downloads: Long, val likes: Long, val params: Long = 0, val updated: String = "") {
+    /** Grobe Dateigröße einer 4-Bit-Fassung (Q4_K_M braucht etwa 0,6 Byte je Parameter); 0, wenn die Parameterzahl fehlt. */
+    val estimatedQ4Bytes: Long get() = (params * 0.6).toLong()
+}
 
 /** Eine GGUF-Datei eines Repositories mit Größe und Quantisierung (z. B. "Q4_K_M"). */
 data class GgufFile(val file: RemoteFile, val quant: String, val isProjector: Boolean)
@@ -39,7 +45,8 @@ object HuggingFace {
     fun treeUrl(repo: String) = "$HOST/api/models/$repo/tree/main?recursive=true"
 
     fun searchUrl(query: String, limit: Int = 25) =
-        "$HOST/api/models?search=${URLEncoder.encode(query.trim(), "UTF-8")}&filter=gguf&sort=downloads&direction=-1&limit=$limit"
+        "$HOST/api/models?search=${URLEncoder.encode(query.trim(), "UTF-8")}&filter=gguf&sort=downloads&direction=-1&limit=$limit" +
+            "&expand%5B%5D=gguf&expand%5B%5D=lastModified&expand%5B%5D=downloads&expand%5B%5D=likes"
 
     fun fileUrl(repo: String, path: String) =
         "$HOST/$repo/resolve/main/${path.split('/').joinToString("/") { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }}?download=true"
@@ -61,8 +68,23 @@ object HuggingFace {
         return array.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val id = o.string("id") ?: o.string("modelId") ?: return@mapNotNull null
-            ModelHit(id, (o["downloads"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0, (o["likes"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0)
+            val params = ((o["gguf"] as? JsonObject)?.get("total") as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L
+            val updated = o.string("lastModified") ?: o.string("createdAt") ?: ""
+            ModelHit(id, (o["downloads"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0, (o["likes"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0, params, updated)
         }
+    }
+
+    /** Alter eines ISO-Zeitstempels ("2026-03-02T14:08:17.000Z") in Tagen; null, wenn er sich nicht lesen lässt. */
+    fun ageDays(iso: String, now: java.time.Instant = java.time.Instant.now()): Long? {
+        val then = runCatching { java.time.Instant.parse(iso) }.getOrNull() ?: return null
+        return java.time.Duration.between(then, now).toDays().coerceAtLeast(0)
+    }
+
+    /** Parameterzahl kurz: 4205751296 -> "4.2B", 360000000 -> "360M". */
+    fun paramsLabel(params: Long): String = when {
+        params >= 1_000_000_000L -> String.format(java.util.Locale.ROOT, "%.1fB", params / 1e9)
+        params >= 1_000_000L -> "${params / 1_000_000L}M"
+        else -> ""
     }
 
     private val QUANT = Regex("(?i)(IQ\\d_[A-Z0-9]+|UD-[A-Z0-9_]+|Q\\d_K_[A-Z]+|Q\\d_K|Q\\d_\\d|Q\\d|BF16|F16|F32)")

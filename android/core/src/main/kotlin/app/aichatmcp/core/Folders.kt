@@ -12,6 +12,9 @@ object Folders {
     const val COMPANIONS = "companions"
     const val CHATS = "chats"
 
+    /** Heißt die Datei wie ein Chat-Modell (GGUF, aber keine Bild-Hilfsdatei)? */
+    fun isModelName(name: String) = name.endsWith(".gguf", ignoreCase = true) && !name.startsWith("mmproj", ignoreCase = true)
+
     /** Endungen, die in `models/` als Chat-Modell gelten. */
     fun isModelFile(f: File) = f.isFile && f.name.endsWith(".gguf", ignoreCase = true) && !f.name.startsWith("mmproj", ignoreCase = true)
 

@@ -1,39 +1,35 @@
 package app.aichatmcp
 
 import android.content.Context
-import android.os.Build
-import android.os.Environment
+import android.net.Uri
+import app.aichatmcp.core.DirStore
+import app.aichatmcp.core.FileStore
 import app.aichatmcp.core.Folders
 import java.io.File
 
 /**
- * Die Standardordner `AIChatMCP/models`, `…/companions`, `…/chats`. Mit "Zugriff auf alle Dateien" liegen sie im gemeinsamen Speicher
- * (`/sdcard/AIChatMCP`, für Dateimanager und PC sichtbar, überleben eine Neuinstallation), sonst im app-eigenen externen Ordner
- * (`Android/data/<app>/files`, ohne Berechtigung les- und schreibbar, geht bei Deinstallation verloren).
+ * Wo die Modelle liegen. Standard ist der app-eigene externe Ordner (`Android/data/<app>/files/models`, ohne Berechtigung les- und schreibbar,
+ * geht bei der Deinstallation verloren). Der Nutzer kann stattdessen einen eigenen Ordner wählen (Storage Access Framework): Er bleibt bei einer
+ * Neuinstallation erhalten, ist für Dateimanager und PC sichtbar und kann von anderen Apps mit denselben Modellen genutzt werden. Dafür braucht die
+ * App keine Berechtigung "Zugriff auf alle Dateien" (die Google Play nur Dateimanagern und ähnlichen Apps erlaubt).
  */
 class AppFolders(private val context: Context) {
-    /** Hat der Nutzer der App "Zugriff auf alle Dateien" erlaubt? (Ab Android 11; davor gilt der app-eigene Ordner.) */
-    fun sharedAllowed(): Boolean = Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
-
-    val root: File
-        get() = if (sharedAllowed()) File(Environment.getExternalStorageDirectory(), Folders.ROOT_NAME)
-        else context.getExternalFilesDir(null) ?: File(context.filesDir, Folders.ROOT_NAME)
-
-    val models: File get() = File(root, Folders.MODELS).apply { mkdirs() }
-    val companions: File get() = File(root, Folders.COMPANIONS).apply { mkdirs() }
-    val chats: File get() = File(root, Folders.CHATS).apply { mkdirs() }
-
-    /** Der Modellordner im app-eigenen Speicher (dort landen Downloads, solange der gemeinsame Ordner nicht erlaubt ist). */
+    /** Der Modellordner im app-eigenen Speicher. */
     val appModels: File get() = File(context.getExternalFilesDir(null) ?: context.filesDir, Folders.MODELS)
 
-    /** Lesbarer Pfad für die Anzeige. */
-    val label: String get() = root.path
+    /** Hat die App noch Zugriff auf den gewählten Ordner? (Der Nutzer kann ihn in den Systemeinstellungen entziehen, oder der Ordner wurde gelöscht.) */
+    fun treeAccessible(tree: String): Boolean {
+        if (tree.isBlank()) return false
+        val uri = Uri.parse(tree)
+        return context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
+    }
+
+    /** Der Speicher für Modelle: der gewählte Ordner, sonst (oder wenn der Zugriff fehlt) der app-eigene. */
+    fun modelStore(tree: String): FileStore = if (treeAccessible(tree)) TreeStore(context, Uri.parse(tree)) else DirStore(appModels)
+
+    /** Ist der gewählte Ordner in Benutzung (gewählt und erreichbar)? */
+    fun usingTree(tree: String): Boolean = treeAccessible(tree)
 }
 
-/** Der App-Speicher mit den richtigen Ordnern: sind die Standardordner erlaubt, liegen Companions und Chats dort, sonst im privaten Speicher. */
-fun openStorage(context: Context, asset: (String) -> String? = { null }): AppStorage {
-    val storage = AppStorage(context.filesDir, asset)
-    val folders = AppFolders(context)
-    if (folders.sharedAllowed()) storage.useFolders(folders.companions, folders.chats)
-    return storage
-}
+/** Der App-Speicher (privat: Einstellungen, Companions, Chats). Sicherungen in einen frei gewählten Ordner macht [ChatViewModel.backupTo]. */
+fun openStorage(context: Context, asset: (String) -> String? = { null }): AppStorage = AppStorage(context.filesDir, asset)

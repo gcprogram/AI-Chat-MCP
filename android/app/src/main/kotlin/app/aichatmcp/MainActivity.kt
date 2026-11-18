@@ -36,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.ui.ChatScreen
 import app.aichatmcp.ui.DownloadQuestion
+import app.aichatmcp.ui.FolderActions
 import app.aichatmcp.ui.ModelsScreen
 import app.aichatmcp.ui.OnboardingScreen
 import app.aichatmcp.ui.CompanionsScreen
@@ -144,14 +145,11 @@ private fun RootContent(vm: ChatViewModel) {
         vm.refreshCalendarPermission()
         if (granted.values.any { !it }) toast("Ohne Kalender-Berechtigung bleiben Termine außen vor.")
     }
-    // "Zugriff auf alle Dateien" erlaubt nur der Nutzer selbst in den Systemeinstellungen; die App öffnet nur die Seite dafür
-    val allFilesAccess = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { toast(vm.refreshFolders()) }
-    fun requestAllFiles() {
-        val uri = Uri.parse("package:${context.packageName}")
-        runCatching { allFilesAccess.launch(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)) }
-            .recoverCatching { allFilesAccess.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
-            .onFailure { toast("Die Einstellungsseite lässt sich nicht öffnen.") }
-    }
+    // Ordner: Der Nutzer wählt ihn im Systemdialog (keine Berechtigung "Zugriff auf alle Dateien" nötig)
+    val pickModelFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let { toast(vm.setModelFolder(it)) } }
+    val backupFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let { vm.backupTo(it, ::toast) } }
+    val restoreFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let { vm.restoreFrom(it, ::toast) } }
+    val folders = remember { FolderActions({ pickModelFolder.launch(null) }, { backupFolder.launch(null) }, { restoreFolder.launch(null) }) }
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { u ->
             // Zugriff dauerhaft behalten, sonst ist die Datei nach einem Neustart nicht mehr lesbar
@@ -203,10 +201,10 @@ private fun RootContent(vm: ChatViewModel) {
             onRequestNotifications = ::requestNotifications,
             onRequestCalendar = { calendarPermission.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
             onToast = ::toast,
-            onOpenModels = { screen = Screen.MODELS }, onRequestAllFiles = ::requestAllFiles, onReplayIntro = { screen = Screen.INTRO },
+            onOpenModels = { screen = Screen.MODELS }, folders = folders, onReplayIntro = { screen = Screen.INTRO },
         )
-        Screen.MODELS -> ModelsScreen(vm, onBack = { screen = Screen.SETTINGS }, onRequestAllFiles = ::requestAllFiles)
-        Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, onRequestAllFiles = ::requestAllFiles)
+        Screen.MODELS -> ModelsScreen(vm, onBack = { screen = Screen.SETTINGS }, folders = folders)
+        Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
             onImportFolder = { pickPersonaFolder.launch(null) },

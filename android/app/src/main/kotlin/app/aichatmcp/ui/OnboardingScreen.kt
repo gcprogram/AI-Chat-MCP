@@ -43,7 +43,7 @@ private const val STEPS = 7
  * jeder Schritt überspringbar. Modelle werden hier gleich heruntergeladen (WLAN-Hinweis und Platzprüfung wie sonst auch).
  */
 @Composable
-fun OnboardingScreen(vm: ChatViewModel, onDone: () -> Unit, onRequestAllFiles: () -> Unit) {
+fun OnboardingScreen(vm: ChatViewModel, onDone: () -> Unit, folders: FolderActions) {
     var step by rememberSaveable { mutableStateOf(0) }
     var online by rememberSaveable { mutableStateOf(vm.config.backend == BACKEND_SERVER && vm.config.localModel.isEmpty() && vm.config.onboardingDone) }
     val server = remember { ServerDraft(vm.config) }
@@ -66,7 +66,7 @@ fun OnboardingScreen(vm: ChatViewModel, onDone: () -> Unit, onRequestAllFiles: (
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             when (step) {
                 0 -> Welcome(vm)
-                1 -> ChatModelStep(vm, online, { online = it }, server, onRequestAllFiles)
+                1 -> ChatModelStep(vm, online, { online = it }, server, folders)
                 2 -> {
                     StepTitle(t("Speak to your companion", "Sprich mit deinem Companion"))
                     Text(
@@ -87,10 +87,10 @@ fun OnboardingScreen(vm: ChatViewModel, onDone: () -> Unit, onRequestAllFiles: (
                 5 -> {
                     StepTitle(t("Where your files live", "Wo deine Dateien liegen"))
                     Text(
-                        t("Models, companions and chats get their own folders: AIChatMCP/models, AIChatMCP/companions and AIChatMCP/chats. You can copy companions and chats between phone and PC there.",
-                            "Modelle, Companions und Chats haben eigene Ordner: AIChatMCP/models, AIChatMCP/companions und AIChatMCP/chats. Dort kannst du Companions und Chats zwischen Handy und PC kopieren."),
+                        t("Models can live in a folder you choose: it survives reinstalling, shows up in your file manager and other offline AI apps can use the same models. You can also back up companions and chats to a folder later (Settings).",
+                            "Modelle können in einem Ordner deiner Wahl liegen: Er übersteht eine Neuinstallation, erscheint im Dateimanager, und andere Offline-KI-Apps können dieselben Modelle nutzen. Companions und Chats kannst du später in einen Ordner sichern (Einstellungen)."),
                     )
-                    FolderInfo(vm, onRequestAllFiles)
+                    FolderInfo(vm, folders)
                     Text(
                         t("Calendar, notifications and the microphone are asked for only when you use those features (Settings > Organizer, and the microphone button).",
                             "Kalender, Benachrichtigungen und Mikrofon werden erst gefragt, wenn du die Funktion nutzt (Einstellungen > Organizer und der Mikrofon-Knopf)."),
@@ -139,7 +139,7 @@ private fun Welcome(vm: ChatViewModel) {
 }
 
 @Composable
-private fun ChatModelStep(vm: ChatViewModel, online: Boolean, onOnline: (Boolean) -> Unit, server: ServerDraft, onRequestAllFiles: () -> Unit) {
+private fun ChatModelStep(vm: ChatViewModel, online: Boolean, onOnline: (Boolean) -> Unit, server: ServerDraft, folders: FolderActions) {
     StepTitle(t("Choose a chat model", "Wähle ein Chat-Modell"))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(selected = !online, onClick = { onOnline(false) }, label = { Text(t("On this phone", "Auf diesem Handy")) })

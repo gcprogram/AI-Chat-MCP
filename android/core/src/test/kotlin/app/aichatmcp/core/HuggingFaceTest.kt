@@ -47,6 +47,23 @@ class HuggingFaceTest {
     }
 
     @Test
+    fun searchHitsCarrySizeAndAge() {
+        val hits = HuggingFace.parseSearch(
+            """[{"id":"u/Q-GGUF","lastModified":"2026-03-02T14:08:17.000Z","likes":576,"downloads":1633531,"gguf":{"total":4205751296,"architecture":"qwen35"}},{"id":"x/y","createdAt":"bad"}]""",
+        )
+        assertEquals(4205751296L, hits[0].params)
+        assertEquals("4.2B", HuggingFace.paramsLabel(hits[0].params))
+        assertEquals(2523450777L, hits[0].estimatedQ4Bytes)
+        assertEquals(0L, hits[1].params)
+        assertEquals("", HuggingFace.paramsLabel(0))
+        assertEquals("360M", HuggingFace.paramsLabel(360_000_000L))
+        val now = java.time.Instant.parse("2026-11-18T00:00:00Z")
+        assertEquals(260L, HuggingFace.ageDays(hits[0].updated, now))
+        assertEquals(null, HuggingFace.ageDays(hits[1].updated, now))
+        assertTrue(HuggingFace.searchUrl("q").contains("expand%5B%5D=gguf"))
+    }
+
+    @Test
     fun subfolderFilesAreUsedWhenTheTopFolderHasNone() {
         val files = HuggingFace.parseTree("""[{"type":"file","path":"Q4/x-Q4_K_M.gguf","size":5}]""", "o/r")
         assertEquals(listOf("Q4/x-Q4_K_M.gguf"), HuggingFace.ggufFiles(files).map { it.file.name })

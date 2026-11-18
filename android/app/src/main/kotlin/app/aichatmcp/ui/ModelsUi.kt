@@ -191,9 +191,9 @@ fun CatalogCard(vm: ChatViewModel, entry: CatalogEntry) {
                 if (installed) {
                     Text(t("Installed", "Installiert"), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                     if (entry.kind == ModelKind.CHAT) {
-                        val file = java.io.File(vm.modelFiles.firstOrNull { it.name == entry.files.first().name }?.path ?: "")
-                        if (file.isFile && !vm.isCurrentModel(file)) OutlinedButton(onClick = { vm.useModelFile(file) }) { Text(t("Use", "Verwenden")) }
-                        else if (file.isFile) Text(t("in use", "in Benutzung"), style = MaterialTheme.typography.labelSmall)
+                        val file = vm.modelFiles.firstOrNull { it.name == entry.files.first().name }
+                        if (file != null && !vm.isCurrentModel(file)) OutlinedButton(onClick = { vm.useModelFile(file) }) { Text(t("Use", "Verwenden")) }
+                        else if (file != null) Text(t("in use", "in Benutzung"), style = MaterialTheme.typography.labelSmall)
                     }
                 } else {
                     Button(onClick = { vm.downloads.ask(entry) }, enabled = !busy) { Text(t("Download", "Herunterladen")) }
@@ -230,7 +230,7 @@ fun HuggingFaceSection(vm: ChatViewModel) {
         TextButton(onClick = { vm.downloads.hfOpen(hit.id) }, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text(hit.id, style = MaterialTheme.typography.bodyMedium)
-                Text("↓ ${hit.downloads}  ♥ ${hit.likes}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Text(hitDetails(hit), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
         }
     }
@@ -273,7 +273,7 @@ fun HuggingFaceSection(vm: ChatViewModel) {
 
 /** Alles zum Laden und Verwalten von Modellen auf einem Bildschirm (Einstellungen > App > Modelle, auch aus der Einführung erreichbar). */
 @Composable
-fun ModelsScreen(vm: ChatViewModel, onBack: () -> Unit, onRequestAllFiles: () -> Unit) {
+fun ModelsScreen(vm: ChatViewModel, onBack: () -> Unit, folders: FolderActions) {
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshModelFiles(); vm.refreshVoices() }
     ScreenFrame(t("Models and downloads", "Modelle und Downloads"), onBack, pinned = { DownloadHost(vm) }) {
         Text(
@@ -285,13 +285,13 @@ fun ModelsScreen(vm: ChatViewModel, onBack: () -> Unit, onRequestAllFiles: () ->
         CatalogList(vm, ModelCatalog.chat)
 
         SectionTitle(t("Your model files", "Deine Modelldateien"))
-        FolderInfo(vm, onRequestAllFiles)
+        FolderInfo(vm, folders)
         if (vm.modelFiles.isEmpty()) Text(t("No model files in the models folder yet.", "Noch keine Modelldateien im Modellordner."), style = MaterialTheme.typography.bodySmall)
         vm.modelFiles.forEach { f ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(f.name, style = MaterialTheme.typography.bodyMedium)
-                    Text(formatBytes(f.length()) + if (vm.isCurrentModel(f)) "  ·  " + t("in use", "in Benutzung") else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    Text(formatBytes(f.bytes) + if (vm.isCurrentModel(f)) "  ·  " + t("in use", "in Benutzung") else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 }
                 if (!vm.isCurrentModel(f)) OutlinedButton(onClick = { vm.useModelFile(f) }) { Text(t("Use", "Verwenden")) }
                 TextButton(onClick = { vm.deleteModelFile(f) }) { Text(t("Delete", "Löschen")) }
@@ -316,17 +316,64 @@ fun ModelsScreen(vm: ChatViewModel, onBack: () -> Unit, onRequestAllFiles: () ->
     }
 }
 
-/** Wo die Ordner liegen und wie man den gemeinsamen Ordner freischaltet. */
+/** Die Knöpfe für Ordner, die die Hauptaktivität bedient (Systemdialoge zur Ordnerwahl). */
+class FolderActions(val pickModels: () -> Unit, val backup: () -> Unit, val restore: () -> Unit)
+
+/** Wo die Modelle liegen, mit Wahl eines eigenen Ordners (z. B. um sie mit anderen Apps zu teilen). */
 @Composable
-fun FolderInfo(vm: ChatViewModel, onRequestAllFiles: () -> Unit) {
+fun FolderInfo(vm: ChatViewModel, folders: FolderActions) {
     Text(
-        t("Folder: ${vm.foldersLabel}", "Ordner: ${vm.foldersLabel}") + "\n" +
-            if (vm.sharedFolders) t("Models, companions and chats are stored in AIChatMCP/models, /companions and /chats, visible to file managers and your PC.",
-                "Modelle, Companions und Chats liegen in AIChatMCP/models, /companions und /chats, sichtbar für Dateimanager und PC.")
-            else t("Models are stored in this app folder. To use the shared folder AIChatMCP (models, companions and chats; visible to file managers, survives reinstalling), allow “All files access”. Companions and chats are kept private until then.",
-                "Modelle liegen in diesem App-Ordner. Für den gemeinsamen Ordner AIChatMCP (Modelle, Companions und Chats; sichtbar für Dateimanager, übersteht eine Neuinstallation) erlaube „Zugriff auf alle Dateien“. Companions und Chats bleiben bis dahin privat."),
+        t("Model folder: ${vm.modelFolderLabel}", "Modellordner: ${vm.modelFolderLabel}") + "\n" +
+            if (vm.modelFolderChosen) t("Your own folder: it survives reinstalling, file managers and your PC can see it, and other apps can use the same models from it.",
+                "Dein eigener Ordner: Er übersteht eine Neuinstallation, Dateimanager und PC sehen ihn, und andere Apps können dieselben Modelle daraus nutzen.")
+            else t("Models are stored privately for this app and are lost when it is uninstalled. Choose a folder to keep them, and to share them with your other offline AI apps.",
+                "Modelle liegen privat für diese App und gehen bei der Deinstallation verloren. Wähle einen Ordner, um sie zu behalten und mit deinen anderen Offline-KI-Apps zu teilen."),
         style = MaterialTheme.typography.bodySmall,
     )
-    if (!vm.sharedFolders) OutlinedButton(onClick = onRequestAllFiles) { Text(t("Allow all files access…", "Zugriff auf alle Dateien erlauben…")) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = folders.pickModels) { Text(t("Choose folder…", "Ordner wählen…")) }
+        if (vm.modelFolderChosen) TextButton(onClick = { vm.setModelFolder(null) }) { Text(t("Use app folder", "App-Ordner nutzen")) }
+    }
 }
 
+/** Companions und Chats in einen Ordner sichern und von dort zurückholen (z. B. beim Wechsel des Handys). */
+@Composable
+fun BackupInfo(folders: FolderActions) {
+    SectionTitle(t("Back up companions and chats", "Companions und Chats sichern"))
+    Text(
+        t("Copies all companions and chats into a folder you choose (subfolders companions and chats), for example on the memory card or in a synced folder. Restoring adds what is missing and replaces files that are newer in the folder.",
+            "Kopiert alle Companions und Chats in einen Ordner deiner Wahl (Unterordner companions und chats), z. B. auf die Speicherkarte oder in einen synchronisierten Ordner. Beim Zurückholen wird Fehlendes ergänzt und ersetzt, was im Ordner neuer ist."),
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = folders.backup) { Text(t("Back up…", "Sichern…")) }
+        OutlinedButton(onClick = folders.restore) { Text(t("Restore…", "Zurückholen…")) }
+    }
+}
+
+/** Kurzzahl: 1633531 -> "1.6M", 12400 -> "12k". */
+fun compactCount(n: Long): String = when {
+    n >= 1_000_000L -> String.format(java.util.Locale.ROOT, "%.1fM", n / 1e6)
+    n >= 10_000L -> "${n / 1000}k"
+    n >= 1_000L -> String.format(java.util.Locale.ROOT, "%.1fk", n / 1e3)
+    else -> n.toString()
+}
+
+/** Eine Zeile unter einem Suchtreffer: Größe (Parameter, grobe 4-Bit-Dateigröße), Alter der letzten Änderung, Beliebtheit. */
+@Composable
+fun hitDetails(hit: app.aichatmcp.core.ModelHit): String {
+    val parts = mutableListOf<String>()
+    val params = app.aichatmcp.core.HuggingFace.paramsLabel(hit.params)
+    if (params.isNotEmpty()) parts += t("$params parameters, about ${formatBytes(hit.estimatedQ4Bytes)} (Q4)", "$params Parameter, etwa ${formatBytes(hit.estimatedQ4Bytes)} (Q4)")
+    val days = app.aichatmcp.core.HuggingFace.ageDays(hit.updated)
+    if (days != null) {
+        parts += when {
+            days < 1 -> t("updated today", "heute aktualisiert")
+            days < 30 -> t("updated $days days ago", "aktualisiert vor $days Tagen")
+            days < 365 -> (days / 30).let { m -> t("updated $m months ago", "aktualisiert vor $m Monaten") }
+            else -> (days / 365).let { y -> t("updated $y years ago", "aktualisiert vor $y Jahren") }
+        }
+    }
+    parts += "↓ ${compactCount(hit.downloads)}  ♥ ${compactCount(hit.likes)}"
+    return parts.joinToString("  ·  ")
+}

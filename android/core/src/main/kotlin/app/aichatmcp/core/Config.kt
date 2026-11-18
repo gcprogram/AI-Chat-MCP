@@ -35,6 +35,8 @@ data class Config(
     /** Lokales Modell: Pfad zu einer GGUF-Datei oder eine content://-URI (vom Dateiauswahldialog). */
     @SerialName("local_model") val localModel: String = "",
     @SerialName("local_model_name") val localModelName: String = "",
+    /** Vom Nutzer gewählter Modellordner (`content://`-Adresse des Ordners); leer = der app-eigene Ordner. */
+    @SerialName("model_folder") val modelFolder: String = "",
     @SerialName("local_threads") val localThreads: Int = 4,
     /** Bildmodell (beschreibt Bilder als Text): nur die Anzeigenamen, die Dateien liegen im privaten Speicher der App. */
     @SerialName("vision_model_name") val visionModelName: String = "",

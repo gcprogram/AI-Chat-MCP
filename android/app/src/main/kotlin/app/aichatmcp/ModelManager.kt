@@ -11,6 +11,8 @@ import app.aichatmcp.core.CatalogEntry
 import app.aichatmcp.core.DownloadCancelled
 import app.aichatmcp.core.DownloadInterrupted
 import app.aichatmcp.core.Downloader
+import app.aichatmcp.core.DirStore
+import app.aichatmcp.core.FileStore
 import app.aichatmcp.core.Folders
 import app.aichatmcp.core.GgufFile
 import app.aichatmcp.core.HuggingFace
@@ -24,6 +26,7 @@ import app.aichatmcp.core.NetworkPolicy
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.RemoteFile
 import app.aichatmcp.core.StorageCheck
+import app.aichatmcp.core.StoredFile
 import app.aichatmcp.download.DownloadService
 import app.aichatmcp.local.VisionLlm
 import app.aichatmcp.ui.tNow
@@ -37,7 +40,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Ein Download, der auf die Bestätigung wartet (Größe, freier Platz, Netz). */
-class PendingDownload(val title: String, val files: List<RemoteFile>, val dir: File, val check: StorageCheck, val onWifi: Boolean, val finish: () -> Unit) {
+class PendingDownload(val title: String, val files: List<RemoteFile>, val store: FileStore, val check: StorageCheck, val onWifi: Boolean, val finish: () -> Unit) {
     val bytes: Long get() = check.neededBytes
 }
 
@@ -85,11 +88,18 @@ class ModelManager private constructor(private val app: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val storage = openStorage(app)
     private val folders = AppFolders(app)
+
+    /** Der gewählte Modellordner (die Einstellung liest der Manager selbst, weil er auch ohne Oberfläche läuft). */
+    private fun modelStore(): FileStore = folders.modelStore(storage.loadConfig().modelFolder)
     private val vision = VisionLlm(app)
     private val token: () -> String? = { storage.secrets()["huggingface"] }
 
     /** Wird nach einem fertigen Download aufgerufen (vom aktuellen ViewModel gesetzt, beim Schließen wieder entfernt). */
-    var onInstalled: ((CatalogEntry?, File?) -> Unit)? = null
+    var onInstalled: ((CatalogEntry?, String?) -> Unit)? = null
+
+    /** Die Modelldateien im Modellordner (Zustand für die Oberfläche; [refreshLocal] liest neu, im Hintergrund). */
+    var localModels by mutableStateOf<List<StoredFile>>(emptyList())
+        private set
 
     var pending by mutableStateOf<PendingDownload?>(null)
         private set
@@ -177,7 +187,7 @@ class ModelManager private constructor(private val app: Application) {
     // --- Katalog ---------------------------------------------------------------------------------------
 
     fun isInstalled(entry: CatalogEntry): Boolean = when (entry.kind) {
-        ModelKind.CHAT -> File(folders.models, entry.files.first().name).isFile
+        ModelKind.CHAT -> localModels.any { it.name == entry.files.first().name }
         ModelKind.WHISPER -> storage.whisper.files(entry.folder) != null
         ModelKind.VISION -> vision.available
         ModelKind.PIPER -> storage.piper.espeakReady() && storage.piper.list().any { it.name == entry.folder }
@@ -189,24 +199,24 @@ class ModelManager private constructor(private val app: Application) {
         scope.launch {
             note = ""
             try {
-                val (files, dir) = withContext(Dispatchers.IO) { filesFor(entry) }
-                val check = withContext(Dispatchers.IO) { Downloader(huggingFaceToken = token).checkStorage(files, dir) }
-                pending = PendingDownload(entry.title, files, dir, check, onWifi()) { onInstalled?.invoke(entry, null) }
+                val (files, store) = withContext(Dispatchers.IO) { filesFor(entry) }
+                val check = withContext(Dispatchers.IO) { Downloader(huggingFaceToken = token).checkStorage(files, store) }
+                pending = PendingDownload(entry.title, files, store, check, onWifi()) { onInstalled?.invoke(entry, null) }
             } catch (e: Exception) {
                 note = e.message ?: e::class.simpleName.orEmpty()
             }
         }
     }
 
-    private fun filesFor(entry: CatalogEntry): Pair<List<RemoteFile>, File> = when (entry.kind) {
-        ModelKind.CHAT -> entry.files to folders.models
-        ModelKind.VISION -> entry.files to vision.dir
-        ModelKind.WHISPER -> entry.files to File(storage.whisper.root, entry.folder)
+    private fun filesFor(entry: CatalogEntry): Pair<List<RemoteFile>, FileStore> = when (entry.kind) {
+        ModelKind.CHAT -> entry.files to modelStore()
+        ModelKind.VISION -> entry.files to DirStore(vision.dir)
+        ModelKind.WHISPER -> entry.files to DirStore(File(storage.whisper.root, entry.folder))
         ModelKind.PIPER -> {
             val own = entry.files.map { it.copy(name = "${entry.folder}/${it.name}") }
             // die gemeinsamen Sprachdaten (espeak-ng-data) braucht jede Stimme, einmal für alle
             val shared = if (storage.piper.espeakReady()) emptyList() else api.folder(ModelCatalog.ESPEAK_REPO, PiperStore.ESPEAK)
-            (shared + own) to storage.piper.root // die Stimme selbst zuletzt: erst dann gilt sie als installiert
+            (shared + own) to DirStore(storage.piper.root) // die Stimme selbst zuletzt: erst dann gilt sie als installiert
         }
     }
 
@@ -245,11 +255,13 @@ class ModelManager private constructor(private val app: Application) {
     /** Bereitet den Download einer GGUF-Datei von Hugging Face in den Modellordner vor. */
     fun askGguf(file: GgufFile) {
         if (active != null) return
-        val dir = folders.models
         val files = listOf(file.file.copy(name = file.file.name.substringAfterLast('/')))
         scope.launch {
-            val check = withContext(Dispatchers.IO) { Downloader(huggingFaceToken = token).checkStorage(files, dir) }
-            pending = PendingDownload(files.first().name, files, dir, check, onWifi()) { onInstalled?.invoke(null, File(dir, files.first().name)) }
+            val (store, check) = withContext(Dispatchers.IO) {
+                val st = modelStore()
+                st to Downloader(huggingFaceToken = token).checkStorage(files, st)
+            }
+            pending = PendingDownload(files.first().name, files, store, check, onWifi()) { onInstalled?.invoke(null, files.first().name) }
         }
     }
 
@@ -286,7 +298,7 @@ class ModelManager private constructor(private val app: Application) {
         job = scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    dl.download(p.files, p.dir, isCancelled = { stop != null }) { pr ->
+                    dl.download(p.files, p.store, isCancelled = { stop != null }) { pr ->
                         val now = System.currentTimeMillis()
                         if (now - last > 250) { // nicht bei jedem Häppchen die Oberfläche neu zeichnen
                             last = now
@@ -334,9 +346,15 @@ class ModelManager private constructor(private val app: Application) {
     }
 
     private fun interrupt(p: PendingDownload, reason: InterruptReason, ask: Boolean, detail: String = "") {
-        val left = Downloader(huggingFaceToken = token).remainingBytes(p.files, p.dir)
-        interruption = Interruption(reason, ask, detail, left)
+        interruption = Interruption(reason, ask, detail, 0)
         DownloadService.refresh(app)
+        scope.launch { // den Rest im Hintergrund zählen (ein gewählter Ordner des Systems antwortet langsamer als ein Pfad)
+            val left = withContext(Dispatchers.IO) { runCatching { Downloader(huggingFaceToken = token).remainingBytes(p.files, p.store) }.getOrDefault(0L) }
+            interruption?.takeIf { it.reason == reason && current === p }?.let {
+                interruption = it.copy(remainingBytes = left)
+                DownloadService.refresh(app)
+            }
+        }
     }
 
     /** Das Netz ist zurück oder der Nutzer hat entschieden: dort weitermachen, wo die angefangene Datei endet. */
@@ -350,7 +368,10 @@ class ModelManager private constructor(private val app: Application) {
         val title = p.title
         end(tNow("\"$title\" is ready.", "„$title“ ist fertig."))
         DownloadService.finished(app, title)
-        p.finish()
+        scope.launch {
+            localModels = withContext(Dispatchers.IO) { listLocal() } // erst die Liste neu lesen, dann das Modell wählen lassen
+            p.finish()
+        }
     }
 
     /** Beendet den Download (fertig, abgebrochen, Fehler): Zustand leeren, Dienst und Netzbeobachtung beenden. */
@@ -405,11 +426,33 @@ class ModelManager private constructor(private val app: Application) {
         }
     }
 
-    /** Freier Platz im Modellordner (für die Anzeige). */
-    fun freeBytes(): Long = runCatching { folders.models.usableSpace }.getOrDefault(0L)
+    /** Liest die Modelldateien des Modellordners neu (im Hintergrund). */
+    fun refreshLocal() {
+        scope.launch { localModels = withContext(Dispatchers.IO) { listLocal() } }
+    }
 
-    /** Modelldateien im Modellordner. */
-    fun localModels(): List<File> = Folders.models(folders.models)
+    /** Für die Oberfläche: Liste im Hintergrund lesen und danach mit [setLocal] übernehmen. */
+    fun listLocalNow(): List<StoredFile> = listLocal()
+
+    fun setLocal(list: List<StoredFile>) {
+        localModels = list
+    }
+
+    private fun listLocal(): List<StoredFile> =
+        runCatching { modelStore().list().filter { Folders.isModelName(it.name) }.sortedBy { it.name.lowercase() } }.getOrDefault(emptyList())
+
+    /** Löscht eine Modelldatei aus dem Modellordner (im Hintergrund) und liest die Liste neu. */
+    fun deleteLocal(name: String) {
+        scope.launch {
+            localModels = withContext(Dispatchers.IO) {
+                modelStore().delete(name)
+                listLocal()
+            }
+        }
+    }
+
+    /** Der gewählte Ordner (Anzeige): Pfad im Speicher oder der app-eigene Ordner. */
+    fun folderLabel(): String = modelStore().label
 
     companion object {
         private const val MAX_AUTO_RETRIES = 3

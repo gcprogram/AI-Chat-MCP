@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -69,6 +71,14 @@ enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO }
 @Composable
 fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {
     val listState = rememberLazyListState()
+    // Während eine Antwort entsteht, soll der Bildschirm nicht ausgehen (sonst muss man für jede Antwort entsperren). Das Vorwärmen läuft
+    // dagegen auch bei dunklem Bildschirm weiter (Vordergrunddienst mit Wake-Lock).
+    val view = LocalView.current
+    val working = vm.streaming
+    DisposableEffect(working) {
+        view.keepScreenOn = working
+        onDispose { view.keepScreenOn = false }
+    }
     val liveLength = vm.live?.let { it.content.length + it.reasoning.length } ?: 0
     LaunchedEffect(vm.messages.size, liveLength) {
         listState.scrollToItem(0) // neueste Nachricht unten sichtbar
