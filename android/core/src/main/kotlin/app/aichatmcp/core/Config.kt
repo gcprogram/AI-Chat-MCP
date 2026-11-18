@@ -35,6 +35,8 @@ data class Config(
     /** Lokales Modell: Pfad zu einer GGUF-Datei oder eine content://-URI (vom Dateiauswahldialog). */
     @SerialName("local_model") val localModel: String = "",
     @SerialName("local_model_name") val localModelName: String = "",
+    /** Nachdenken (Reasoning) von Qwen3-Modellen auf dem Gerät. Aus = schneller und weniger Gerede über die Regeln; Qwen3 "Instruct" denkt ohnehin nie. */
+    @SerialName("local_thinking") val localThinking: Boolean = false,
     /** Vom Nutzer gewählter Modellordner (`content://`-Adresse des Ordners); leer = der app-eigene Ordner. */
     @SerialName("model_folder") val modelFolder: String = "",
     @SerialName("local_threads") val localThreads: Int = 4,

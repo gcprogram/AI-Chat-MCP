@@ -47,6 +47,7 @@ fun SettingsScreen(
     var backend by remember { mutableStateOf(c.backend) }
     var localPath by remember { mutableStateOf(c.localModel) }
     var threads by remember { mutableStateOf(c.localThreads.toString()) }
+    var thinking by remember { mutableStateOf(c.localThinking) }
     val server = remember { ServerDraft(c) }
     var userName by remember { mutableStateOf(c.userName) }
     var temperature by remember { mutableStateOf(c.temperature.toString()) }
@@ -87,7 +88,7 @@ fun SettingsScreen(
                 vm.rememberProviderKey(server.provider, server.key)
                 vm.saveConfig(
                     server.apply(vm.config).copy( // aktueller Stand: die Modelldatei kann gerade erst gewählt worden sein
-                        backend = backend, localThreads = threads.toIntOrNull() ?: c.localThreads, userName = userName,
+                        backend = backend, localThreads = threads.toIntOrNull() ?: c.localThreads, localThinking = thinking, userName = userName,
                         temperature = temperature.toDoubleOrNull() ?: c.temperature,
                         maxReplyTokens = maxReply.toIntOrNull() ?: c.maxReplyTokens,
                         contextTokens = contextTokens.toIntOrNull() ?: c.contextTokens,
@@ -134,6 +135,15 @@ fun SettingsScreen(
                         OutlinedButton(onClick = onPickModel) { Text("Modelldatei (GGUF) wählen…") }
                     }
                     TextSetting("Threads (Rechenkerne)", threads, { threads = it }, keyboard = KeyboardType.Number)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(t("Let the model think first (Qwen3, slower)", "Modell erst nachdenken lassen (Qwen3, langsamer)"), modifier = Modifier.weight(1f))
+                        Switch(checked = thinking, onCheckedChange = { thinking = it })
+                    }
+                    Text(
+                        t("Qwen3 models can write a long train of thought before they answer. It costs a lot of time on a phone and rarely improves chat answers, so it is off by default. The thoughts are shown but never stored. Qwen3 Instruct models do not think at all.",
+                            "Qwen3-Modelle können vor der Antwort lange nachdenken. Das kostet auf dem Handy viel Zeit und verbessert Chat-Antworten selten, deshalb ist es standardmäßig aus. Die Gedanken werden angezeigt, aber nie gespeichert. Qwen3-Instruct-Modelle denken gar nicht."),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Text(
                         "Das Modell läuft komplett auf dem Handy (llama.cpp, nur CPU). Der Kontext ist auf $LOCAL_MAX_CONTEXT Tokens " +
                             "begrenzt, der Arbeitsspeicher ist knapp. Die erste Antwort braucht länger, weil das Modell geladen wird.",

@@ -11,6 +11,7 @@ import app.aichatmcp.core.LlmBackend
 import app.aichatmcp.core.LlmException
 import app.aichatmcp.core.StopFilter
 import app.aichatmcp.core.StreamEvent
+import app.aichatmcp.core.Thinking
 import app.aichatmcp.core.WireMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.trySendBlocking
@@ -154,8 +155,11 @@ class LocalLlm(private val context: Context) {
                     h, messages.map { it.role }.toTypedArray(), messages.map { it.content.toByteArray(Charsets.UTF_8) }.toTypedArray(),
                 ) ?: throw LlmException("Die Chat-Vorlage des Modells lässt sich nicht anwenden.")
                 val filter = StopFilter(stop)
+                val modelName = config.localModelName.ifEmpty { config.localModel.substringAfterLast('/') }
+                val promptText = String(prompt, Charsets.UTF_8)
+                val finalPrompt = Thinking.prefill(promptText, modelName, config.localThinking).let { if (it === promptText) prompt else it.toByteArray(Charsets.UTF_8) }
                 val result = LlamaNative.generate(
-                    h, prompt, maxTokens, temperature.toFloat(), (extra["top_p"] ?: 1.0).toFloat(),
+                    h, finalPrompt, maxTokens, temperature.toFloat(), (extra["top_p"] ?: 1.0).toFloat(),
                     (extra["repeat_penalty"] ?: 1.0).toFloat(), (extra["frequency_penalty"] ?: 0.0).toFloat(),
                     (extra["presence_penalty"] ?: 0.0).toFloat(), System.nanoTime().toInt(),
                 ) { bytes ->

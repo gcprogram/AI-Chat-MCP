@@ -63,7 +63,20 @@ class ChatEngine(
             val guard = StreamGuard(config.userName, persona.name, toolNames)
             val reply = StringBuilder()
             val reasoning = StringBuilder()
+            val splitter = ThinkSplitter() // Modelle, die ihr Nachdenken als <think>-Block in den Text schreiben (Qwen3 u. a.)
             var usage: Int? = null
+            suspend fun take(parts: List<ThinkSplitter.Part>) {
+                for (part in parts) {
+                    if (part.reasoning) {
+                        reasoning.append(part.text)
+                        emit(ChatEvent.Live(reasoning.toString(), reply.toString()))
+                    } else {
+                        reply.append(part.text)
+                        emit(ChatEvent.Live(reasoning.toString(), reply.toString()))
+                        if (guard.feed(part.text) != null) cancelToken.stop() // Schleife/Markup/fertiger Aufruf
+                    }
+                }
+            }
             try {
                 clientFor(config).streamChat(
                     config.model, messages, config.temperature, config.maxReplyTokens, session.stopSequences,
@@ -71,11 +84,7 @@ class ChatEngine(
                 ).collect { event ->
                     if (cancelToken.stopped) return@collect // schon abgebrochen: was noch im Puffer liegt, zählt nicht
                     when (event) {
-                        is StreamEvent.Content -> {
-                            reply.append(event.text)
-                            emit(ChatEvent.Live(reasoning.toString(), reply.toString()))
-                            if (guard.feed(event.text) != null) cancelToken.stop() // Schleife/Markup/fertiger Aufruf
-                        }
+                        is StreamEvent.Content -> take(splitter.feed(event.text))
                         is StreamEvent.Reasoning -> {
                             reasoning.append(event.text)
                             emit(ChatEvent.Live(reasoning.toString(), reply.toString()))
@@ -83,6 +92,7 @@ class ChatEngine(
                         is StreamEvent.Usage -> usage = event.promptTokens
                     }
                 }
+                take(splitter.flush())
             } catch (e: LlmException) {
                 restoreInput()
                 emit(ChatEvent.Notice("[Fehler] ${e.message}", NoticeKind.ERROR))
