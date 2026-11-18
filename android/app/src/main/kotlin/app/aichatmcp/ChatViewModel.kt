@@ -85,6 +85,8 @@ import app.aichatmcp.speech.DescribedPictures
 import app.aichatmcp.speech.ReaderFocus
 import app.aichatmcp.reminder.DailyReminder
 import app.aichatmcp.work.GenerationService
+import app.aichatmcp.report.ReportAction
+import app.aichatmcp.core.ReportText
 import app.aichatmcp.core.DirStore
 import app.aichatmcp.core.StoredFile
 import app.aichatmcp.ui.tNow
@@ -1620,6 +1622,24 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Hinweis, solange eine Antwort auf das Laden des lokalen Modells warten muss (mit der gemessenen Dauer des letzten Ladens). */
     var modelNotice by mutableStateOf<String?>(null)
         private set
+
+    /** Meldet eine Antwort des Companions (Melden unter der Antwort): öffnet das Mailprogramm mit fertigem Text. */
+    fun reportReply(answer: String) {
+        val german = config.uiLanguage == app.aichatmcp.core.LANGUAGE_DE
+        val body = ReportText.body(answer, reportModelName(), BuildConfig.VERSION_NAME, german)
+        reportNotice = ReportAction.send(getApplication(), ReportText.subject(german), body)
+    }
+
+    /** Allgemeine Meldung aus den Einstellungen; liefert einen Hinweis für den Nutzer oder null. */
+    fun reportProblem(): String? {
+        val german = config.uiLanguage == app.aichatmcp.core.LANGUAGE_DE
+        return ReportAction.send(getApplication(), ReportText.subject(german), ReportText.general(reportModelName(), BuildConfig.VERSION_NAME, german))
+    }
+
+    private fun reportModelName() = if (config.backend == BACKEND_LOCAL) timingKey() else config.model
+
+    /** Hinweis nach dem Melden (z. B. "Text kopiert"); die Oberfläche zeigt ihn kurz und leert ihn. */
+    var reportNotice by mutableStateOf<String?>(null)
 
     fun dismissNotice() {
         modelNotice = null

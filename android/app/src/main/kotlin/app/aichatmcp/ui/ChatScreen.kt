@@ -79,6 +79,10 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
         view.keepScreenOn = working
         onDispose { view.keepScreenOn = false }
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(vm.reportNotice) { // Hinweis nach dem Melden (z. B. "Text kopiert")
+        vm.reportNotice?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show(); vm.reportNotice = null }
+    }
     val liveLength = vm.live?.let { it.content.length + it.reasoning.length } ?: 0
     LaunchedEffect(vm.messages.size, liveLength) {
         listState.scrollToItem(0) // neueste Nachricht unten sichtbar
@@ -103,7 +107,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
                     // reverseLayout: Eintrag 0 ist unten, die Liste bleibt am Ende verankert (wie bei Chat-Apps)
                     item { Spacer(Modifier.padding(2.dp)) }
                     vm.live?.let { live -> item { LiveItem(live, vm.persona.name) } }
-                    items(vm.messages.asReversed()) { MessageItem(it, vm.persona.name, vm.config.userName) }
+                    items(vm.messages.asReversed()) { MessageItem(it, vm.persona.name, vm.config.userName, vm::reportReply) }
                     item { Spacer(Modifier.padding(2.dp)) }
                 }
             }
@@ -223,13 +227,19 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
 }
 
 @Composable
-private fun MessageItem(message: UiMessage, personaName: String, userName: String) {
+private fun MessageItem(message: UiMessage, personaName: String, userName: String, onReport: (String) -> Unit) {
     when (message.kind) {
         UiKind.USER -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Bubble(userName, message.text, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
         }
-        UiKind.ASSISTANT -> Row(Modifier.fillMaxWidth()) {
-            Bubble(personaName, message.text, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+        UiKind.ASSISTANT -> Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth()) {
+                Bubble(personaName, message.text, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // Pflicht für Apps mit KI-erzeugten Inhalten (Google Play): Antworten melden können
+            TextButton(onClick = { onReport(message.text) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text(t("Report", "Melden"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
         }
         UiKind.RESULT -> Text(message.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
         UiKind.RESULT_ERROR -> Text(message.text, style = MaterialTheme.typography.bodySmall, color = ErrorRed)

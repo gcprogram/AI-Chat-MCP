@@ -418,6 +418,13 @@ fun SettingsScreen(
                 Button(onClick = onOpenModels) { Text(t("Models and downloads…", "Modelle und Downloads…")) }
                 FolderInfo(vm, folders)
                 BackupInfo(folders)
+                SectionTitle(t("Report a problem", "Problem melden"))
+                Text(
+                    t("Sends a short message to the developer (your mail app opens with the text ready; nothing is sent before you press send). You can also report a single reply with “Report” under it.",
+                        "Schickt eine kurze Nachricht an den Entwickler (dein Mailprogramm öffnet sich mit fertigem Text; erst mit „Senden“ geht etwas ab). Eine einzelne Antwort meldest du mit „Melden“ unter der Antwort."),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = { vm.reportProblem()?.let(onToast) }) { Text(t("Report a problem…", "Problem melden…")) }
                 SectionTitle(t("Introduction", "Einführung"))
                 OutlinedButton(onClick = onReplayIntro) { Text(t("Show the introduction again", "Einführung noch einmal zeigen")) }
             }

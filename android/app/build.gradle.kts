@@ -12,7 +12,13 @@ android {
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
+    // Wohin Meldungen über KI-Antworten gehen (android/report.properties, nicht im Repo; Vorlage report.properties.example)
+    val reportProps = file("../report.properties").takeIf { it.isFile }?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    fun reportValue(key: String) = (reportProps?.getProperty(key) ?: "").trim().replace("\\", "").replace("\"", "")
+
     defaultConfig {
+        buildConfigField("String", "REPORT_EMAIL", "\"${reportValue("reportEmail")}\"")
+        buildConfigField("String", "REPORT_URL", "\"${reportValue("reportUrl")}\"")
         applicationId = "app.aichatmcp"
         minSdk = 26
         targetSdk = 36 // Google Play verlangt für neue Apps und Updates ab 31.08.2026 Android 16 (API 36)
@@ -59,6 +65,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {

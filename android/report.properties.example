@@ -1,0 +1,7 @@
+# Vorlage: nach android/report.properties kopieren und eines von beiden ausfuellen (die Datei steht in .gitignore, nie einchecken).
+# Wohin "Antwort melden" und "Problem melden" in der App gehen:
+#   reportEmail: E-Mail-Adresse; das Mailprogramm oeffnet sich mit fertigem Text
+#   reportUrl:   Webseite mit Meldeformular; der Text wird in die Zwischenablage kopiert
+# Ohne Eintrag oeffnet sich die Auswahl "Teilen".
+reportEmail=
+reportUrl=

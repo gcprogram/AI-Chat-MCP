@@ -30,3 +30,4 @@ meine-stimme/
 android/keystore.properties
 *.jks
 *.keystore
+android/report.properties

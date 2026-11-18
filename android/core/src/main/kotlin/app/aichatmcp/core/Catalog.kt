@@ -46,7 +46,7 @@ object ModelCatalog {
         ),
         CatalogEntry(
             "gemmasutra-4b", ModelKind.CHAT, "Gemmasutra Small 4B (role play)",
-            "Fine-tuned for role play and storytelling; writes tool calls poorly. Unfiltered, for adults.",
+            "Fine-tuned for role play and storytelling; writes tool calls poorly. Role-play model.",
             listOf(
                 RemoteFile(
                     hf("bartowski/TheDrummer_Gemmasutra-Small-4B-v1-GGUF", "TheDrummer_Gemmasutra-Small-4B-v1-Q4_K_M.gguf"),

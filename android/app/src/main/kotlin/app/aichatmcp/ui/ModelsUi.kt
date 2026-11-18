@@ -48,7 +48,7 @@ fun formatBytes(bytes: Long): String = when {
 private fun noteDe(id: String): String? = when (id) {
     "qwen3-4b-instruct" -> "Bester Allrounder für Werkzeuge (Todos, Kalender, Wecker). Braucht ein neueres Handy, etwa 3 GB Arbeitsspeicher."
     "qwen3-1.7b" -> "Klein und schnell, für ältere Handys. Einfachere Antworten, bei Werkzeugen weniger zuverlässig; zeigt manchmal „Denk“-Text."
-    "gemmasutra-4b" -> "Für Rollenspiel und Geschichten feinabgestimmt; schreibt Werkzeugaufrufe schlecht. Ungefiltert, für Erwachsene."
+    "gemmasutra-4b" -> "Für Rollenspiel und Geschichten feinabgestimmt; schreibt Werkzeugaufrufe schlecht. Rollenspiel-Modell."
     "gemma-3n-e2b" -> "Googles kleines Modell für Handys: gute Sprache, bei Werkzeugen schwächer."
     "whisper-small" -> "Spracheingabe offline in vielen Sprachen. Gute Genauigkeit, auf dem Handy schnell genug."
     "smolvlm-500m" -> "Beschreibt Bilder als Text, damit ein Chat-Modell darüber sprechen kann. Zwei Dateien, geladen nur während der Beschreibung."
