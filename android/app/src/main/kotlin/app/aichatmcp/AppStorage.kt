@@ -8,6 +8,7 @@ import app.aichatmcp.core.LoadedChat
 import app.aichatmcp.core.Persona
 import app.aichatmcp.core.EmbeddedAvatar
 import app.aichatmcp.core.Folders
+import app.aichatmcp.core.ModelTimings
 import app.aichatmcp.core.PersonaStore
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.ReadMarks
@@ -139,6 +140,14 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
     }
 
     // --- Werkzeuge (mcp_servers.json), Geheimnisse, Zertifikate -------------------------------------------
+
+    // --- Gemessene Zeiten der lokalen Modelle ---------------------------------------------------------------
+
+    private val timingsFile = File(root, "timings.json")
+
+    fun loadTimings(): Map<String, ModelTimings> = ModelTimings.parseAll(timingsFile.takeIf { it.isFile }?.readText())
+
+    fun saveTimings(all: Map<String, ModelTimings>) = timingsFile.writeText(ModelTimings.toJson(all))
 
     fun mcpJson(): String = mcpFile.takeIf { it.exists() }?.readText() ?: asset("default_mcp_servers.json").orEmpty()
 

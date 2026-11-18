@@ -15,6 +15,8 @@ data class Provider(
     val extraHeaders: (String) -> Map<String, String> = { emptyMap() },
     /** Aus der Modellliste des Anbieters die Chat-Modelle (und lesbare Namen) auswählen. */
     val cleanModels: (List<String>) -> List<String> = { it },
+    /** Welche Felder die Chat-Anfrage enthalten darf (siehe [Dialect]). */
+    val dialect: Dialect = Dialect.STANDARD,
 )
 
 object Providers {
@@ -26,18 +28,18 @@ object Providers {
     val lmstudio = Provider(LMSTUDIO, "LM Studio / Ollama (own server)", "http://192.168.0.10:1234/v1", needsKey = false, cleanModels = { ids -> ids.filter { "embed" !in it.lowercase() } })
 
     val openai = Provider(
-        "openai", "OpenAI", "https://api.openai.com/v1", needsKey = true, keyUrl = "https://platform.openai.com/api-keys",
+        "openai", "OpenAI", "https://api.openai.com/v1", needsKey = true, keyUrl = "https://platform.openai.com/api-keys", dialect = Dialect.OPENAI,
         cleanModels = { ids -> ids.filter { !NOT_CHAT.containsMatchIn(it) && (it.startsWith("gpt") || it.startsWith("o") || it.startsWith("chatgpt")) }.sorted() },
     )
 
     val anthropic = Provider(
-        "anthropic", "Anthropic (Claude)", "https://api.anthropic.com/v1", needsKey = true, keyUrl = "https://console.anthropic.com/settings/keys",
+        "anthropic", "Anthropic (Claude)", "https://api.anthropic.com/v1", needsKey = true, keyUrl = "https://console.anthropic.com/settings/keys", dialect = Dialect.ANTHROPIC,
         extraHeaders = { key -> mapOf("x-api-key" to key, "anthropic-version" to "2023-06-01") },
         cleanModels = { ids -> ids.filter { it.startsWith("claude") }.sortedDescending() },
     )
 
     val gemini = Provider(
-        "gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", needsKey = true, keyUrl = "https://aistudio.google.com/apikey",
+        "gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", needsKey = true, keyUrl = "https://aistudio.google.com/apikey", dialect = Dialect.GEMINI,
         // die Liste nennt "models/gemini-…", Chat-Aufrufe wollen "gemini-…"
         cleanModels = { ids -> ids.map { it.removePrefix("models/") }.filter { it.startsWith("gemini") && !NOT_CHAT.containsMatchIn(it) }.sortedDescending() },
     )
@@ -45,6 +47,12 @@ object Providers {
     val custom = Provider(CUSTOM, "Other (OpenAI-compatible URL)", "", needsKey = false)
 
     val all = listOf(lmstudio, openai, anthropic, gemini, custom)
+
+    /** Ein Client für die gespeicherte Adresse: mit den Kopfzeilen und dem Anfrage-Dialekt des erkannten Anbieters. */
+    fun client(baseUrl: String, apiKey: String): ChatClient {
+        val provider = forUrl(baseUrl)
+        return ChatClient(baseUrl, apiKey, extraHeaders = provider.extraHeaders(apiKey), dialect = provider.dialect)
+    }
 
     fun byId(id: String): Provider = all.firstOrNull { it.id == id } ?: custom
 

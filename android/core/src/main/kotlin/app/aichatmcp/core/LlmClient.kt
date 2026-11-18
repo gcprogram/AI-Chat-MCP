@@ -83,6 +83,8 @@ class ChatClient(
     baseUrl: String, private val apiKey: String = "", http: OkHttpClient = OkHttpClient(),
     /** Zusätzliche Kopfzeilen (z. B. von Anthropic verlangt). */
     private val extraHeaders: Map<String, String> = emptyMap(),
+    /** Welche Felder die Anfrage enthalten darf (OpenAI und Gemini lehnen die Felder von LM Studio ab). */
+    private val dialect: Dialect = Dialect.STANDARD,
 ) : LlmBackend {
     private val baseUrl = baseUrl.trimEnd('/')
 
@@ -120,18 +122,7 @@ class ChatClient(
         model: String, messages: List<WireMessage>, temperature: Double, maxTokens: Int,
         stop: List<String>, cancel: CancelToken, extra: Map<String, Double>,
     ): Flow<StreamEvent> = flow {
-        val payload = buildJsonObject {
-            put("model", model)
-            putJsonArray("messages") {
-                for (m in messages) add(buildJsonObject { put("role", m.role); put("content", m.content) })
-            }
-            put("stream", true)
-            put("temperature", temperature)
-            put("max_tokens", maxTokens)
-            putJsonObject("stream_options") { put("include_usage", true) }
-            for ((k, v) in extra) put(k, v) // z. B. top_p, frequency_penalty, repeat_penalty
-            if (stop.isNotEmpty()) putJsonArray("stop") { stop.forEach { add(JsonPrimitive(it)) } }
-        }
+        val payload = ChatPayload.build(dialect, model, messages, temperature, maxTokens, stop, extra)
         val url = "$baseUrl/chat/completions"
         val call = client.newCall(
             request("/chat/completions").post(payload.toString().toRequestBody("application/json".toMediaType())).build(),
@@ -145,8 +136,7 @@ class ChatClient(
             throw LlmException("Server nicht erreichbar ($url): ${e.message}")
         }
         response.use { r ->
-            if (r.code == 401) throw LlmException("Nicht autorisiert - API-Schlüssel prüfen.")
-            if (r.code != 200) throw LlmException("Serverfehler ${r.code}: ${r.body?.string().orEmpty().take(300)}")
+            if (r.code != 200) throw LlmException(httpError(r.code, r.body?.string().orEmpty()))
             val source = r.body!!.source()
             try {
                 while (!cancel.stopped) {
@@ -164,6 +154,21 @@ class ChatClient(
     }.flowOn(Dispatchers.IO)
 
     companion object {
+        /** Verständliche Meldung zu einem HTTP-Fehler; die Fehlermeldung des Anbieters (`error.message`) wird mit angezeigt. */
+        internal fun httpError(code: Int, body: String): String {
+            val detail = runCatching {
+                val root = AppJson.parseToJsonElement(body)
+                val obj = (root as? JsonObject) ?: (root as? JsonArray)?.firstOrNull() as? JsonObject
+                ((obj?.get("error") as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
+            }.getOrNull()?.takeIf { it.isNotBlank() } ?: body.take(300)
+            return when (code) {
+                401, 403 -> "Nicht autorisiert - API-Schlüssel prüfen." + if (detail.isNotEmpty() && code == 403) " ($detail)" else ""
+                404 -> "Modell oder Adresse nicht gefunden (HTTP 404): $detail"
+                429 -> "Zu viele Anfragen oder das Kontingent ist aufgebraucht (HTTP 429): $detail"
+                else -> "Serverfehler $code: $detail"
+            }
+        }
+
         internal fun events(data: String): List<StreamEvent> {
             val chunk = try {
                 AppJson.parseToJsonElement(data) as? JsonObject ?: return emptyList()

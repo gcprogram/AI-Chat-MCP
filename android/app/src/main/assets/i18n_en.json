@@ -874,6 +874,18 @@
   [
    "^Hugging Face meldet HTTP (\\d+)\\.$",
    "Hugging Face reports HTTP $1."
+  ],
+  [
+   "^Modell oder Adresse nicht gefunden \\(HTTP 404\\): (.*)$",
+   "Model or address not found (HTTP 404): $1"
+  ],
+  [
+   "^Zu viele Anfragen oder das Kontingent ist aufgebraucht \\(HTTP 429\\): (.*)$",
+   "Too many requests or the quota is used up (HTTP 429): $1"
+  ],
+  [
+   "^Nicht autorisiert - API-Schlüssel prüfen\\.(.*)$",
+   "Not authorized - check the API key.$1"
   ]
  ]
 }

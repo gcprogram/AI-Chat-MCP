@@ -86,6 +86,14 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
     Column(Modifier.fillMaxSize()) {
         TopBar(vm, open, onExport, onImport)
         HorizontalDivider()
+        vm.modelNotice?.let { text ->
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = vm::dismissNotice) { Text("OK") }
+                }
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             SelectionContainer {
                 LazyColumn(

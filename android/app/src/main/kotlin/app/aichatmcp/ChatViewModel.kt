@@ -152,6 +152,12 @@ private const val MAX_JUDGED_SPEECHES = 400
 private const val LONG_MESSAGE_CHARS = 900
 private const val NL = "\n"
 
+/** Ab so vielen neu berechneten Prompt-Tokens zählt eine Messung als "Modell bereit" (Laden samt Prompt), nicht als normale Antwort. */
+private const val READY_MIN_TOKENS = 200
+
+/** Kürzere Ladezeiten (z. B. mit gesichertem Cache) brauchen keinen Hinweis. */
+private const val NOTICE_MIN_MS = 5_000L
+
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val storage = openStorage(app) { name ->
         runCatching { app.assets.open(name).bufferedReader(Charsets.UTF_8).use { it.readText() } }.getOrNull()
@@ -344,6 +350,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.stop()
         input = ""
         session.config = effectiveConfig(config)
+        modelNotice = if (config.backend == BACKEND_LOCAL && (warming || !localLlm.isLoaded(effectiveConfig(config)))) loadNoticeText() else null
         streaming = true
         syncKeepAlive()
         turn = viewModelScope.launch {
@@ -356,6 +363,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = "Fehler"
             } finally {
                 streaming = false
+                modelNotice = null
                 syncKeepAlive()
                 live = null
                 saveChat()
@@ -782,7 +790,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (!config.dialogueJudge || config.backend != BACKEND_SERVER) return
         val pending = dialogue.unresolvedFrom(plan.items.getOrNull(startItem) as? ReadItem.Speech).take(MAX_JUDGED_SPEECHES)
         if (pending.isEmpty()) return
-        val judge = SpeakerJudge(ChatClient(config.baseUrl, config.apiKey), config.model)
+        val judge = SpeakerJudge(Providers.client(config.baseUrl, config.apiKey), config.model)
         judgeJob = viewModelScope.launch {
             var failures = 0
             var done = 0
@@ -1210,7 +1218,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = event.text
                 if (event.text.startsWith("Warte")) live = null
             }
-            is ChatEvent.Live -> live = event
+            is ChatEvent.Live -> {
+                live = event
+                if (modelNotice != null && (event.content.isNotEmpty() || event.reasoning.isNotEmpty())) modelNotice = null // das Modell antwortet: der Hinweis hat sich erledigt
+            }
             is ChatEvent.Added -> {
                 if (event.message.role == "assistant") {
                     live = null
@@ -1606,6 +1617,43 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Hinweis, solange eine Antwort auf das Laden des lokalen Modells warten muss (mit der gemessenen Dauer des letzten Ladens). */
+    var modelNotice by mutableStateOf<String?>(null)
+        private set
+
+    fun dismissNotice() {
+        modelNotice = null
+    }
+
+    private var timings: Map<String, app.aichatmcp.core.ModelTimings> = storage.loadTimings()
+
+    private fun timingKey() = config.localModelName.ifEmpty { config.localModel.substringAfterLast('/') }
+
+    /** Ein Messwert vom Modell: Laden samt Prompt-Berechnung ("bereit") oder eine Antwort im geladenen Zustand. */
+    private fun record(m: app.aichatmcp.local.Measure) {
+        val key = timingKey().ifEmpty { return }
+        val ready = m.loadMs > 0 || m.newTokens >= READY_MIN_TOKENS
+        var t = timings[key] ?: app.aichatmcp.core.ModelTimings()
+        if (ready) t = t.withReady(m.loadMs + m.promptMs)
+        else if (m.generated >= 3) t = t.withAnswer(m.promptMs + m.genMs)
+        timings = timings + (key to t)
+        runCatching { storage.saveTimings(timings) }
+    }
+
+    /** Text des Hinweises vor dem Laden: gemessene Wartezeit (m:ss) und die Antwortzeit im geladenen Zustand. */
+    private fun loadNoticeText(): String? {
+        val t = timings[timingKey()]
+        val ready = t?.readyMs ?: 0
+        if (ready in 1 until NOTICE_MIN_MS) return null // lädt in Sekunden (gesicherter Cache): kein Hinweis nötig
+        val wait = if (ready > 0) tNow("about ${app.aichatmcp.core.ModelTimings.clock(ready)} (min:sec)", "etwa ${app.aichatmcp.core.ModelTimings.clock(ready)} (Min:Sek)")
+        else tNow("a few minutes (it is measured and shown exactly next time)", "einige Minuten (wird gemessen und beim nächsten Mal genau angezeigt)")
+        val answer = t?.answerSeconds()?.let { tNow("about $it seconds", "ca. $it Sekunden") } ?: tNow("seconds", "Sekunden")
+        return tNow(
+            "The model has to be loaded first. The first wait can take $wait. Once loaded, replies take $answer.",
+            "Das Modell muss erst geladen werden. Die Wartezeit für das erste Laden kann $wait dauern. Im geladenen Zustand liegen die Antwortzeiten bei $answer.",
+        )
+    }
+
     /** Das lokale Modell wird gerade geladen und der Prompt vorab berechnet (Bildschirm bleibt an, Dienst hält die CPU wach). */
     var warming by mutableStateOf(false)
         private set
@@ -1776,6 +1824,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         storage.ensureDefaults()
         config = storage.loadConfig()
         refreshModelFiles()
+        localLlm.onMeasured = { m -> viewModelScope.launch { record(m) } }
         speechOut.rate = config.speechRate.toFloat()
         speechOut.piperStore = storage.piper
         speechOut.piperThreads = { config.localThreads }
@@ -1789,7 +1838,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         session = ChatSession(effectiveConfig(config), persona, registry)
         engine = ChatEngine(
             session,
-            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else ChatClient(it.baseUrl, it.apiKey, extraHeaders = Providers.forUrl(it.baseUrl).extraHeaders(it.apiKey)) },
+            { if (it.backend == BACKEND_LOCAL) localLlm.backend(it) else Providers.client(it.baseUrl, it.apiKey) },
         ) { call, spec -> askUser(call, spec) }
         restoreChat()
         showDailyUpdate()

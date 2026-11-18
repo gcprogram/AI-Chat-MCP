@@ -25,3 +25,8 @@ android/third_party/
 # Eigene Aufnahmen und virtuelle Umgebung der Sprach-Werkzeuge (persoenliche Stimmdaten gehoeren nicht ins Repo)
 .venv-voice/
 meine-stimme/
+
+# Signierschluessel fuer Google Play: gehoeren nie ins Repo
+android/keystore.properties
+*.jks
+*.keystore

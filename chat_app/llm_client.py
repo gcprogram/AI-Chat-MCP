@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from dataclasses import dataclass
 from typing import Iterator
@@ -21,15 +22,62 @@ class StreamEvent:
     arguments: str = ""  # nur bei tool_call: Argumente als JSON-Text
 
 
+def dialect_for(base_url: str) -> str:
+    """Welcher Anbieter hinter der Adresse steckt: "openai", "anthropic", "gemini" oder "standard" (LM Studio, Ollama, eigene Server).
+    OpenAI und Gemini lehnen Felder wie repeat_penalty mit HTTP 400 ab, neuere OpenAI-Modelle wollen max_completion_tokens."""
+    url = base_url.lower()
+    if "api.openai.com" in url:
+        return "openai"
+    if "api.anthropic.com" in url:
+        return "anthropic"
+    if "generativelanguage.googleapis.com" in url:
+        return "gemini"
+    return "standard"
+
+
+def is_openai_reasoning(model: str) -> bool:
+    """OpenAI-Denkmodelle (o1, o3, o4-mini, gpt-5 ...): nur die Standardtemperatur, kein stop, keine Sampling-Parameter."""
+    m = model.lower().removeprefix("ft:")
+    return bool(re.match(r"^(o\d|gpt-5)", m)) and not m.startswith("gpt-5-chat")
+
+
+def build_payload(dialect: str, model: str, messages: list[dict], temperature: float, max_tokens: int,
+                  stop: list[str] | None, extra: dict | None) -> dict:
+    """Die Chat-Anfrage, auf das beschränkt, was der Anbieter annimmt (gleiche Regeln wie ChatPayload in der Android-App)."""
+    reasoning = dialect == "openai" and is_openai_reasoning(model)
+    payload: dict = {"model": model, "messages": messages, "stream": True}
+    if not reasoning:
+        payload["temperature"] = temperature
+    payload["max_completion_tokens" if dialect == "openai" else "max_tokens"] = max_tokens
+    if dialect in ("standard", "openai"):
+        payload["stream_options"] = {"include_usage": True}
+    allowed = {
+        "standard": None,
+        "openai": set() if reasoning else {"top_p", "frequency_penalty", "presence_penalty"},
+        "anthropic": {"top_p"},
+        "gemini": {"top_p", "frequency_penalty", "presence_penalty"},
+    }[dialect]
+    for key, value in (extra or {}).items():
+        if allowed is None or key in allowed:
+            payload[key] = value
+    if stop and not reasoning:
+        payload["stop"] = stop
+    return payload
+
+
 class ChatClient:
     def __init__(self, base_url: str, api_key: str = ""):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.dialect = dialect_for(self.base_url)
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            if self.dialect == "anthropic":
+                headers["x-api-key"] = self.api_key
+                headers["anthropic-version"] = "2023-06-01"
         return headers
 
     def list_models(self) -> list[str]:
@@ -53,14 +101,7 @@ class ChatClient:
                     extra: dict | None = None, tools: list[dict] | None = None) -> Iterator[StreamEvent]:
         """tools: Funktionsbeschreibungen (OpenAI-Format) für natives Tool-Calling; Aufrufe kommen am Ende des
         Streams als StreamEvent("tool_call") - die Deltas werden hier zusammengesetzt."""
-        payload = {
-            "model": model, "messages": messages, "stream": True,
-            "temperature": temperature, "max_tokens": max_tokens,
-            "stream_options": {"include_usage": True},
-        }
-        payload.update(extra or {})  # z. B. top_p, frequency_penalty, repeat_penalty
-        if stop:
-            payload["stop"] = stop
+        payload = build_payload(self.dialect, model, messages, temperature, max_tokens, stop, extra)
         if tools:
             payload["tools"] = tools
         calls: dict[int, dict] = {}

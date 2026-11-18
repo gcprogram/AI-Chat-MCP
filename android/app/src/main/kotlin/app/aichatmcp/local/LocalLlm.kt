@@ -61,6 +61,9 @@ private const val TAG = "AiChat"
 /** Ab so vielen neu berechneten Tokens lohnt es sich, den KV-Cache zu sichern. */
 private const val MIN_NEW_TOKENS = 200
 
+/** Messwerte einer Erzeugung: [loadMs] = Laden des Modells (nur wenn diese Anfrage es laden musste, sonst 0), danach Prompt-Rest und Erzeugung. */
+data class Measure(val loadMs: Long, val promptMs: Long, val genMs: Long, val newTokens: Int, val generated: Int)
+
 /** Obergrenze für den Kontext auf dem Gerät: der KV-Cache braucht Arbeitsspeicher (Handys haben wenig frei). */
 const val LOCAL_MAX_CONTEXT = 4096
 
@@ -74,8 +77,22 @@ fun effectiveConfig(config: Config): Config =
  * eingelesen, sodass nichts kopiert werden muss (Modelle sind groß, der Gerätespeicher oft knapp).
  */
 class LocalLlm(private val context: Context) {
+    // @Volatile statt Sperre: isLoaded() läuft im Hauptthread und darf nicht auf das Laden warten; saveCacheIfWorthwhile() und die
+    // Erzeugung dürfen sich nicht gegenseitig mit this und runLock in verschiedener Reihenfolge festhalten (das war ein Deadlock,
+    // wenn eine Antwort während des Vorwärmens gesendet wurde).
+    @Volatile
     private var handle = 0L
+
+    @Volatile
     private var key = ""
+
+    /** Wird nach jeder Erzeugung mit den Messwerten aufgerufen (Hintergrundthread). */
+    @Volatile
+    var onMeasured: ((Measure) -> Unit)? = null
+    private val pendingLoadMs = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** Ist das Modell für diese Einstellungen schon geladen (die nächste Antwort braucht dann kein Laden)? */
+    fun isLoaded(config: Config): Boolean = handle != 0L && key == "${config.localModel}|${config.contextTokens}|${config.localThreads}"
     private val runLock = Any() // eine Erzeugung gleichzeitig
 
     @Synchronized
@@ -105,6 +122,7 @@ class LocalLlm(private val context: Context) {
         val loadStart = SystemClock.elapsedRealtime()
         val tokens = runCatching { LlamaNative.loadCache(h, cacheFile(wanted).path) }.getOrDefault(0)
         if (tokens > 0) Log.i(TAG, "Vorab-Cache geladen: $tokens Tokens in ${SystemClock.elapsedRealtime() - loadStart} ms")
+        pendingLoadMs.set(SystemClock.elapsedRealtime() - started)
         return h
     }
 
@@ -119,17 +137,17 @@ class LocalLlm(private val context: Context) {
      * die erste Antwort nach jedem App-Start Minuten, weil der System-Prompt neu verarbeitet wird; mit ihr dauert das Laden Sekunden. Es bleibt
      * nur die Datei des gewählten Modells (je 100 bis 200 MB). Gedacht für den Aufruf nach dem Vorwärmen.
      */
-    @Synchronized
     fun saveCacheIfWorthwhile() {
-        if (handle == 0L) return
-        val stats = runCatching { AppJson.parseToJsonElement(LlamaNative.stats(handle)) as JsonObject }.getOrNull() ?: return
+        val h = handle
+        if (h == 0L) return
+        val stats = runCatching { AppJson.parseToJsonElement(LlamaNative.stats(h)) as JsonObject }.getOrNull() ?: return
         val prompt = (stats["prompt"] as? JsonPrimitive)?.intOrNull ?: return
         val cached = (stats["cached"] as? JsonPrimitive)?.intOrNull ?: 0
         if (prompt - cached < MIN_NEW_TOKENS) return
         val file = cacheFile(key)
         file.parentFile?.mkdirs()
         val started = SystemClock.elapsedRealtime()
-        val saved = synchronized(runLock) { runCatching { LlamaNative.saveCache(handle, file.path) }.getOrDefault(-1) }
+        val saved = synchronized(runLock) { if (handle != h) 0 else runCatching { LlamaNative.saveCache(h, file.path) }.getOrDefault(-1) }
         if (saved > 0) {
             Log.i(TAG, "Vorab-Cache gesichert: $saved Tokens, ${file.length() / 1_000_000} MB in ${SystemClock.elapsedRealtime() - started} ms")
             file.parentFile?.listFiles { f -> f.isFile && f != file }?.forEach { it.delete() }
@@ -172,6 +190,11 @@ class LocalLlm(private val context: Context) {
                 filter.flush().takeIf { it.isNotEmpty() }?.let { trySendBlocking(StreamEvent.Content(it)) }
                 val stats = runCatching { AppJson.parseToJsonElement(LlamaNative.stats(h)) as JsonObject }.getOrNull()
                 Log.i(TAG, "Antwort: ${LlamaNative.stats(h)}")
+                if (stats != null) {
+                    fun num(key: String) = (stats[key] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0
+                    val loaded = pendingLoadMs.getAndSet(0)
+                    onMeasured?.invoke(Measure(loaded, num("prompt_ms").toLong(), num("gen_ms").toLong(), (num("prompt") - num("cached")).toInt(), num("gen").toInt()))
+                }
                 (stats?.get("prompt") as? JsonPrimitive)?.intOrNull?.let { trySendBlocking(StreamEvent.Usage(it)) }
             }
         }.flowOn(Dispatchers.IO)

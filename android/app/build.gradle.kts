@@ -1,4 +1,5 @@
 import java.security.MessageDigest
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -8,13 +9,13 @@ plugins {
 
 android {
     namespace = "app.aichatmcp"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "app.aichatmcp"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36 // Google Play verlangt für neue Apps und Updates ab 31.08.2026 Android 16 (API 36)
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -30,9 +31,23 @@ android {
         }
     }
 
+    // Signierung für Google Play: Schlüssel und Passwörter stehen in android/keystore.properties (nicht im Repo, Vorlage und Anleitung:
+    // docs/PLAYSTORE.md). Ohne die Datei entsteht eine unsignierte Release-Fassung (zum Prüfen des Builds).
+    val keystoreProps = file("../keystore.properties").takeIf { it.isFile }?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    signingConfigs {
+        if (keystoreProps != null) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
