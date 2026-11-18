@@ -20,7 +20,7 @@ Commit `217b144`). Der Übersetzer lebt jetzt in `gcprogram/AI-Translator`.
 - Persönlichkeit = `personas/*.json` → `Persona.system_prompt()` (Rollenregeln, Du/Ich, kurze Chat-Antworten),
   Stop-Sequenzen gegen selbst weitergeschriebene Dialoge, `max_reply_tokens` begrenzt Antworten.
   Begrüßung steht im System-Prompt, nicht als Assistant-Nachricht (manche Templates verlangen `user` zuerst).
-  **Du/Ich**: Der Prompt nennt das Modell "du"; früher stand in einer Regel "du" auch für den Nutzer (Widerspruch, Ursache der Verwechslungen). Jetzt: Pronomen je Rolle erklärt (`_pronoun_rules`/`pronounRules`), Spiegelregel mit Beispielen ("Ich bin müde" -> "Du klingst müde"), Erinnerung am Ende; bei nicht deutscher Antwortsprache kurze englische Regel. Python und Kotlin gleich. Wirkung am echten Modell NICHT geprüft.
+  **Du/Ich**: Der Prompt nennt das Modell "du"; früher stand in einer Regel "du" auch für den Nutzer (Widerspruch, Ursache der Verwechslungen). Jetzt (zweite Fassung, 18.11.2026): eine kurze Zuordnung ("Schreibt Tom du/dir/dein, meint er dich; ich/mir/mein, meint er sich selbst") und zwei Beispiele statt abstrakter Spiegelregel und "Merke"-Satz (`_pronoun_rules`/`pronounRules`), weil das 1.7B-Modell die Spiegelregel falsch las und lange darüber nachdachte; bei nicht deutscher Antwortsprache kurze englische Regel. Python und Kotlin gleich. Wirkung am echten Modell NICHT geprüft.
 - Reasoning (`reasoning_content`) wird angezeigt, aber nie in den Verlauf gespeichert.
 - LM Studio verlangt einen **API-Token** (Developer-Einstellungen) → in den Einstellungen eintragen
   (`config.json`, gitignored). Token niemals ins Repo oder in Chat-Ausgaben schreiben.

@@ -121,9 +121,11 @@ class PersonaAndSessionTest(unittest.TestCase):
 
     def test_prompt_explains_du_and_ich_per_role_with_mirroring(self):
         german = Persona(name="Mia").system_prompt("Alex")
-        for needle in ('bedeutet "ich/mir/mich/mein" immer Mia', '"du/dir/dich/dein" an', "Spiegeln:", '"Ich bin müde." -> "Du klingst müde."',
-                       'Merke: "ich" in deinen Antworten ist immer Mia, "du" ist immer Alex.'):
+        for needle in ('Du sprichst Alex mit "du/dir/dein" an.', 'meint er dich (Mia)', 'meint er sich selbst', '"Ich bin müde." -> "Du klingst müde."',
+                       '"Wie geht es dir?" -> "Mir geht es gut."'):
             self.assertIn(needle, german)
+        self.assertNotIn("Spiegeln:", german)  # die abstrakte Spiegelregel ließ kleine Modelle lange grübeln
+        self.assertNotIn("Merke:", german)
         self.assertNotIn('"Ich" bist immer du', german)  # der alte, widersprüchliche Satz (du = Modell und Nutzer)
         english = Persona(name="Fern", language="English").system_prompt("Alex")
         self.assertIn('"I/me/my" always means Fern and "you/your" always means Alex', english)

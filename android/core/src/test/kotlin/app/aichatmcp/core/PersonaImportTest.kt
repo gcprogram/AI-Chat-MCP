@@ -70,9 +70,10 @@ class PersonaImportTest {
     fun promptExplainsDuAndIchPerRoleLikeThePythonApp() {
         val german = Persona(name = "Mia").systemPrompt("Alex")
         for (needle in listOf(
-            "bedeutet \"ich/mir/mich/mein\" immer Mia", "\"du/dir/dich/dein\" an", "Spiegeln:", "\"Ich bin müde.\" -> \"Du klingst müde.\"",
-            "Merke: \"ich\" in deinen Antworten ist immer Mia, \"du\" ist immer Alex.",
+            "Du sprichst Alex mit \"du/dir/dein\" an.", "meint er dich (Mia)", "meint er sich selbst", "\"Ich bin müde.\" -> \"Du klingst müde.\"",
+            "\"Wie geht es dir?\" -> \"Mir geht es gut.\"",
         )) assertTrue(needle in german, needle)
+        assertTrue("Spiegeln:" !in german && "Merke:" !in german) // die abstrakte Spiegelregel ließ kleine Modelle lange grübeln
         assertTrue("\"Ich\" bist immer du" !in german)
         val english = Persona(name = "Fern", language = "English").systemPrompt("Alex")
         assertTrue("\"I/me/my\" always means Fern and \"you/your\" always means Alex" in english)

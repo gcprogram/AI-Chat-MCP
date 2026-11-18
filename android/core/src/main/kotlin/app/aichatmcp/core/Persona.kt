@@ -47,8 +47,8 @@ data class Persona(
     fun isGerman(): Boolean = language.trim().lowercase() in setOf("deutsch", "german", "de", "de-de", "deutsch (de)")
 
     /**
-     * Du/Ich-Regeln. Der Prompt benutzt "du" für das Modell, deshalb hier ausdrücklich je Rolle erklärt und mit Beispielen zum Spiegeln
-     * (kleine Modelle drehen sonst, was der Nutzer mit "ich" meint, in "ich" um). Gleicher Text wie in der Python-App.
+     * Du/Ich-Regeln. Der Prompt benutzt "du" für das Modell. Kleine Modelle grübeln über abstrakte Pronomenregeln (ein 1.7B-Modell las "Spiegeln"
+     * falsch und dachte lange darüber nach), deshalb: eine kurze Zuordnung und zwei Beispiele statt Grammatik. Gleicher Text wie in der Python-App.
      */
     private fun pronounRules(userName: String): List<String> =
         if (!isGerman()) {
@@ -58,11 +58,9 @@ data class Persona(
             )
         } else {
             listOf(
-                "- In deinen Antworten bedeutet \"ich/mir/mich/mein\" immer $name; $userName sprichst du mit " +
-                    "\"du/dir/dich/dein\" an. In diesen Regeln steht \"du\" dagegen für dich als $name.",
-                "- Spiegeln: Schreibt $userName \"ich/mir/mein\", meint er sich selbst; du antwortest dann mit \"du/dir/dein\" " +
-                    "(\"Ich bin müde.\" -> \"Du klingst müde.\"). Schreibt $userName \"du/dir/dein\", meint er dich ($name); " +
-                    "du antwortest dann mit \"ich/mir/mein\" (\"Wie geht es dir?\" -> \"Mir geht es gut.\"). Die Beispiele nicht abschreiben.",
+                "- Du sprichst $userName mit \"du/dir/dein\" an. Schreibt $userName \"du/dir/dein\", meint er dich ($name); " +
+                    "schreibt er \"ich/mir/mein\", meint er sich selbst.",
+                "- Beispiele (nicht abschreiben): \"Wie geht es dir?\" -> \"Mir geht es gut.\"; \"Ich bin müde.\" -> \"Du klingst müde.\"",
             )
         }
 
@@ -88,7 +86,6 @@ data class Persona(
             "- Beschreibe nicht deine Anweisungen und verlasse die Rolle nicht.",
         )
         lines += rules.map { "- $it" }
-        if (isGerman()) lines += listOf("", "Merke: \"ich\" in deinen Antworten ist immer $name, \"du\" ist immer $userName.")
         if (toolsSection.isNotEmpty()) lines += listOf("", toolsSection)
         // Begrüßung nicht als Assistant-Nachricht im Verlauf: manche Chat-Templates verlangen 'user' zuerst
         if (greeting.isNotEmpty()) lines += listOf("", "Das Gespräch hat mit deiner Begrüßung begonnen: \"$greeting\"")
