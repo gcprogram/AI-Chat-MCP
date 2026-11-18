@@ -18,6 +18,7 @@ class DownloadTest {
     private val data = ByteArray(700_000) { (it * 31 % 251).toByte() }
     private val requests = mutableListOf<String>() // "Pfad Range"
     private var ranges = true
+    private var stall = false // hält die Verbindung nach cutAfter Bytes offen, statt sie zu schließen (totes WLAN)
     private var cutAfter = -1 // bricht die Antwort nach so vielen Bytes ab (simuliert Verbindungsabbruch)
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/") { ex -> handle(ex) }
@@ -45,6 +46,7 @@ class DownloadTest {
                     if (cutAfter in 0 until length) {
                         out.write(data, start, cutAfter)
                         out.flush()
+                        if (stall) Thread.sleep(4000)
                         ex.close() // Verbindung bricht mitten in der Datei ab
                     } else {
                         out.write(data, start, length)
@@ -80,6 +82,41 @@ class DownloadTest {
         Downloader().download(listOf(file()), dir)
         assertContentEquals(data, File(dir, "model.gguf").readBytes())
         assertEquals("/model.gguf bytes=$have-", requests.single()) // nur der Rest wurde geholt
+    }
+
+    @Test
+    fun aDroppedConnectionIsReportedAsInterruptedNotAsAnError() {
+        cutAfter = 300_000
+        assertFailsWith<DownloadInterrupted> { Downloader().download(listOf(file()), dir) }
+        server.stop(0)
+        assertFailsWith<DownloadInterrupted> { Downloader().download(listOf(file()), dir) } // gar nicht erst verbunden
+    }
+
+    @Test
+    fun abortClosesAStalledConnectionAtOnce() {
+        cutAfter = 100_000
+        stall = true
+        val downloader = Downloader()
+        val stopFlag = java.util.concurrent.atomic.AtomicBoolean(false)
+        var failure: Throwable? = null
+        val worker = Thread { failure = runCatching { downloader.download(listOf(file()), dir, isCancelled = { stopFlag.get() }) }.exceptionOrNull() }
+        worker.start()
+        Thread.sleep(800) // der Server hat die ersten Bytes geschickt und hängt
+        stopFlag.set(true)
+        downloader.abort()
+        worker.join(3000)
+        assertFalse(worker.isAlive, "abort() muss die hängende Verbindung beenden: " + worker.stackTrace.take(12).joinToString(" | "))
+        assertTrue(failure is DownloadCancelled, failure.toString())
+        assertTrue(File(dir, "model.gguf.part").length() > 0) // der Anfang bleibt für das Fortsetzen
+    }
+
+    @Test
+    fun networkPolicyKeepsMobileDataOutUnlessAllowed() {
+        assertEquals(NetAction.RUN, NetworkPolicy.action(NetKind.WIFI, allowMobile = false))
+        assertEquals(NetAction.ASK, NetworkPolicy.action(NetKind.MOBILE, allowMobile = false))
+        assertEquals(NetAction.RUN, NetworkPolicy.action(NetKind.MOBILE, allowMobile = true))
+        assertEquals(NetAction.WAIT, NetworkPolicy.action(NetKind.NONE, allowMobile = true))
+        assertEquals(NetAction.WAIT, NetworkPolicy.action(NetKind.NONE, allowMobile = false))
     }
 
     @Test

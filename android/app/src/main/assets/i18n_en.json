@@ -307,7 +307,8 @@
   "'keywords' muss eine Liste von regulären Ausdrücken sein": "'keywords' must be a list of regular expressions",
   "'args' eines Schlüsselworts muss eine Liste sein": "'args' of a keyword must be a list",
   "ein Schlüsselwort als Objekt braucht 'pattern'": "a keyword as an object needs 'pattern'",
-  "eine Wartezeit muss zwischen 0 und 60 Sekunden liegen": "a wait time must be between 0 and 60 seconds"
+  "eine Wartezeit muss zwischen 0 und 60 Sekunden liegen": "a wait time must be between 0 and 60 seconds",
+  "Keine GGUF-Dateien in diesem Repository.": "No GGUF files in this repository."
  },
  "patterns": [
   [
@@ -821,6 +822,58 @@
   [
    "^Server: (.*)\\nSubjekt: (.*)\\n\\nSHA-256-Fingerabdruck:\\n(.*)\\n\\nVergleiche ihn mit der Anzeige der Fernbedienungs-App\\..*$",
    "Server: $1\nSubject: $2\n\nSHA-256 fingerprint:\n$3\n\nCompare it with the display of the remote control app. It is saved as the only trust anchor for servers that name this file under 'cert'."
+  ],
+  [
+   "^Keine Verbindung zu (.*): (.*)$",
+   "No connection to $1: $2"
+  ],
+  [
+   "^Verbindung unterbrochen bei (.*): (.*)\\. Erneut versuchen setzt fort\\.$",
+   "Connection interrupted at $1: $2. Trying again continues."
+  ],
+  [
+   "^Download unvollständig: (.*) \\((\\d+) von (\\d+) Bytes\\)\\. Erneut versuchen setzt fort\\.$",
+   "Download incomplete: $1 ($2 of $3 bytes). Trying again continues."
+  ],
+  [
+   "^Der Server hat die Anfrage abgelehnt \\(HTTP 416\\)\\.$",
+   "The server rejected the request (HTTP 416)."
+  ],
+  [
+   "^Zugriff verweigert \\(HTTP (\\d+)\\)\\. Das Modell ist geschützt: Hugging-Face-Zugangsschlüssel in den Einstellungen eintragen\\.$",
+   "Access denied (HTTP $1). The model is protected: enter a Hugging Face access token in the settings."
+  ],
+  [
+   "^Datei nicht gefunden \\(HTTP 404\\): (.*)$",
+   "File not found (HTTP 404): $1"
+  ],
+  [
+   "^Serverfehler \\(HTTP (\\d+)\\) bei (.*)$",
+   "Server error (HTTP $1) at $2"
+  ],
+  [
+   "^Leere Antwort von (.*)$",
+   "Empty response from $1"
+  ],
+  [
+   "^Download abgebrochen$",
+   "Download cancelled"
+  ],
+  [
+   "^Hugging Face ist nicht erreichbar: (.*)$",
+   "Hugging Face is not reachable: $1"
+  ],
+  [
+   "^Nicht gefunden \\(HTTP 404\\)\\. Name oder Adresse prüfen\\.$",
+   "Not found (HTTP 404). Check the name or address."
+  ],
+  [
+   "^Zugriff verweigert \\(HTTP (\\d+)\\): geschütztes Modell, Zugangsschlüssel nötig\\.$",
+   "Access denied (HTTP $1): protected model, access token required."
+  ],
+  [
+   "^Hugging Face meldet HTTP (\\d+)\\.$",
+   "Hugging Face reports HTTP $1."
   ]
  ]
 }

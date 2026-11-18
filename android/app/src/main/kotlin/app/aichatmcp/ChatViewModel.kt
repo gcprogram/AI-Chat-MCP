@@ -258,7 +258,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val packs = SpeechPacks(app)
 
     /** Download-Manager für Modelle aus dem Katalog und von Hugging Face. */
-    val downloads = ModelManager(app, viewModelScope, storage, folders, vision, { storage.secrets()["huggingface"] }) { entry, file -> modelInstalled(entry, file) }
+    private val installedCallback: (app.aichatmcp.core.CatalogEntry?, java.io.File?) -> Unit = { entry, file -> modelInstalled(entry, file) }
+    val downloads = ModelManager.shared(app).also { it.onInstalled = installedCallback }
     private var registry = ToolRegistry()
     private val session: ChatSession
     private val engine: ChatEngine
@@ -1676,6 +1677,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         android.util.Log.w("AiChat", "ViewModel onCleared")
+        if (downloads.onInstalled === installedCallback) downloads.onInstalled = null // der Download läuft im Dienst weiter; ein neues ViewModel setzt den Rückruf wieder
         speechIn.stop()
         whisperIn.release()
         speechOut.shutdown()

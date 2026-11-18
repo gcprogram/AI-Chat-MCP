@@ -2,6 +2,11 @@
 
 package app.aichatmcp.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -22,8 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.InterruptReason
+import app.aichatmcp.Interruption
+import app.aichatmcp.ModelManager
 import app.aichatmcp.core.CatalogEntry
 import app.aichatmcp.core.ModelCatalog
 import app.aichatmcp.core.ModelKind
@@ -54,6 +63,14 @@ private fun noteDe(id: String): String? = when (id) {
 @Composable
 fun DownloadHost(vm: ChatViewModel) {
     val d = vm.downloads
+    val context = LocalContext.current
+    // Ab Android 13 braucht die Fortschritts-Benachrichtigung eine Erlaubnis; der Download startet auch bei "Nein"
+    val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { d.confirm() }
+    val startDownload = {
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else d.confirm()
+    }
     d.pending?.let { p ->
         AlertDialog(
             onDismissRequest = d::dismiss,
@@ -78,12 +95,12 @@ fun DownloadHost(vm: ChatViewModel) {
                             color = MaterialTheme.colorScheme.error,
                         )
                     } else {
-                        Text(t("You are on Wi-Fi. Keep the app open while it downloads; an interrupted download continues where it stopped.",
-                            "Du bist im WLAN. Lass die App während des Downloads offen; ein unterbrochener Download macht dort weiter, wo er stand."))
+                        Text(t("You are on Wi-Fi. The download keeps running in the background (a notification shows the progress). If Wi-Fi drops, you are asked what to do, and it continues where it stopped.",
+                            "Du bist im WLAN. Der Download läuft im Hintergrund weiter (eine Benachrichtigung zeigt den Fortschritt). Fällt das WLAN weg, wirst du gefragt, und er macht dort weiter, wo er stand."))
                     }
                 }
             },
-            confirmButton = { Button(onClick = d::confirm, enabled = p.check.ok) { Text(t("Download", "Herunterladen")) } },
+            confirmButton = { Button(onClick = { startDownload() }, enabled = p.check.ok) { Text(t("Download", "Herunterladen")) } },
             dismissButton = { TextButton(onClick = d::dismiss) { Text(t("Cancel", "Abbrechen")) } },
         )
     }
@@ -97,11 +114,63 @@ fun DownloadHost(vm: ChatViewModel) {
                     "${formatBytes(a.doneBytes)} / ${formatBytes(a.totalBytes)} (${(fraction * 100).toInt()} %)  ·  ${a.file.substringAfterLast('/')}",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                OutlinedButton(onClick = d::cancel) { Text(t("Cancel", "Abbrechen")) }
+                val i = d.interruption
+                if (i == null) {
+                    OutlinedButton(onClick = d::cancel) { Text(t("Cancel", "Abbrechen")) }
+                } else {
+                    Text(interruptionText(i), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    InterruptionButtons(d, i)
+                }
             }
         }
     }
     if (d.note.isNotEmpty() && d.active == null) Text(d.note, style = MaterialTheme.typography.bodySmall)
+}
+
+/** Was gerade los ist, wenn ein Download angehalten wurde. */
+private fun interruptionText(i: Interruption): String {
+    val left = formatBytes(i.remainingBytes)
+    return when (i.reason) {
+        InterruptReason.WIFI_LOST ->
+            if (i.ask) tNow("Wi-Fi was lost. The download is paused ($left left). Continue over mobile data (uses your data plan) or wait for Wi-Fi?",
+                "Das WLAN ist weg. Der Download ist angehalten (noch $left). Über Mobilfunk fortsetzen (verbraucht Datenvolumen) oder auf WLAN warten?")
+            else tNow("Waiting for Wi-Fi ($left left). It continues by itself when Wi-Fi is back.", "Warte auf WLAN (noch $left). Es geht von selbst weiter, sobald das WLAN zurück ist.")
+        InterruptReason.OFFLINE -> tNow("No connection. It continues by itself when a network is back ($left left).", "Keine Verbindung. Es geht von selbst weiter, sobald ein Netz da ist (noch $left).")
+        InterruptReason.FAILED -> tNow("The connection was interrupted ($left left). ${i.detail}", "Die Verbindung ist abgerissen (noch $left). ${i.detail}")
+        InterruptReason.SYSTEM -> tNow("Android paused the background service after its time limit ($left left). Continue?", "Android hat den Hintergrunddienst nach seinem Zeitlimit angehalten (noch $left). Fortsetzen?")
+    }
+}
+
+@Composable
+private fun InterruptionButtons(d: ModelManager, i: Interruption) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (i.reason) {
+            InterruptReason.WIFI_LOST -> {
+                Button(onClick = d::continueOnMobile) { Text(t("Use mobile data", "Über Mobilfunk")) }
+                if (i.ask) OutlinedButton(onClick = d::waitForWifi) { Text(t("Wait for Wi-Fi", "Auf WLAN warten")) }
+            }
+            InterruptReason.FAILED, InterruptReason.SYSTEM -> Button(onClick = d::retry) { Text(if (i.reason == InterruptReason.SYSTEM) t("Continue", "Fortsetzen") else t("Try again", "Erneut versuchen")) }
+            InterruptReason.OFFLINE -> {}
+        }
+        OutlinedButton(onClick = d::cancel) { Text(t("Cancel", "Abbrechen")) }
+    }
+}
+
+/**
+ * Fragt nach, wenn ein Download angehalten wurde und der Nutzer entscheiden muss (WLAN weg, Verbindung abgerissen). Gehört in die Wurzel der App,
+ * damit die Frage auf jedem Bildschirm erscheint; dieselben Knöpfe stehen in der Benachrichtigung.
+ */
+@Composable
+fun DownloadQuestion(vm: ChatViewModel) {
+    val d = vm.downloads
+    val i = d.interruption ?: return
+    if (!i.ask) return
+    AlertDialog(
+        onDismissRequest = { if (i.reason == InterruptReason.WIFI_LOST) d.waitForWifi() },
+        title = { Text(d.active?.title?.let { t("Download paused: $it", "Download angehalten: $it") } ?: t("Download paused", "Download angehalten")) },
+        text = { Text(interruptionText(i)) },
+        confirmButton = { Column(horizontalAlignment = Alignment.End) { InterruptionButtons(d, i) } },
+    )
 }
 
 /** Eine Karte je Katalogeintrag: Titel, Beschreibung, Größe, Knopf zum Laden (oder "installiert"). */

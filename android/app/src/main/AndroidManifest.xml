@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
@@ -34,6 +36,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name=".download.DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <receiver android:name=".reminder.ReminderReceiver" android:exported="false" />
         <receiver android:name=".reminder.BootReceiver" android:exported="true">
             <intent-filter>

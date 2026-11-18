@@ -2,12 +2,14 @@ package app.aichatmcp
 
 import android.app.Application
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.aichatmcp.core.CatalogEntry
 import app.aichatmcp.core.DownloadCancelled
+import app.aichatmcp.core.DownloadInterrupted
 import app.aichatmcp.core.Downloader
 import app.aichatmcp.core.Folders
 import app.aichatmcp.core.GgufFile
@@ -16,14 +18,20 @@ import app.aichatmcp.core.HuggingFaceApi
 import app.aichatmcp.core.ModelCatalog
 import app.aichatmcp.core.ModelHit
 import app.aichatmcp.core.ModelKind
+import app.aichatmcp.core.NetAction
+import app.aichatmcp.core.NetKind
+import app.aichatmcp.core.NetworkPolicy
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.RemoteFile
 import app.aichatmcp.core.StorageCheck
+import app.aichatmcp.download.DownloadService
 import app.aichatmcp.local.VisionLlm
 import app.aichatmcp.ui.tNow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -36,6 +44,27 @@ class PendingDownload(val title: String, val files: List<RemoteFile>, val dir: F
 /** Fortschritt des laufenden Downloads. */
 data class DownloadState(val title: String, val doneBytes: Long = 0, val totalBytes: Long = 0, val file: String = "")
 
+/** Warum ein Download angehalten wurde. */
+enum class InterruptReason {
+    /** Das WLAN ist weg, es gibt nur noch Mobilfunk (nicht erlaubt): der Nutzer entscheidet. */
+    WIFI_LOST,
+
+    /** Gar kein Netz: es wird gewartet, bis eines da ist. */
+    OFFLINE,
+
+    /** Die Verbindung riss trotz Netz ab (Server, Funkloch): erneut versuchen oder abbrechen. */
+    FAILED,
+
+    /** Android hat den Hintergrunddienst beendet (Zeitlimit der Systemdienste). */
+    SYSTEM,
+}
+
+/**
+ * Ein angehaltener Download. [ask]: dem Nutzer wird die Entscheidung gezeigt (Dialog und Benachrichtigung); nach "Auf WLAN warten" steht es auf
+ * false, der Download wartet dann still und läuft von selbst weiter, sobald das WLAN zurück ist.
+ */
+data class Interruption(val reason: InterruptReason, val ask: Boolean = true, val detail: String = "", val remainingBytes: Long = 0)
+
 /** Suche und Dateiliste von Hugging Face. */
 data class HfState(
     val busy: Boolean = false, val error: String = "", val hits: List<ModelHit> = emptyList(),
@@ -44,40 +73,108 @@ data class HfState(
 
 /**
  * Lädt Modelle aus dem Katalog oder von Hugging Face herunter: Platz und Netz werden vorher geprüft (Bestätigung durch den Nutzer), der Download
- * läuft mit Fortschritt, Abbruch und Fortsetzen. Ein Download zur Zeit. Was nach dem Laden zu tun ist (Modell wählen, Liste neu lesen), erledigt
- * der Rückruf [onInstalled].
+ * läuft mit Fortschritt, Abbruch und Fortsetzen. Ein Download zur Zeit.
+ *
+ * **Eine Instanz pro Prozess** ([shared]): Der Download läuft in einem Vordergrunddienst ([DownloadService], Benachrichtigung mit Fortschritt) und
+ * überlebt damit App-Wechsel, Bildschirmsperre und das Schließen der Oberfläche; ein neues ViewModel findet den laufenden Download wieder vor.
+ * **Netzwechsel:** Fällt das WLAN weg (oder gibt es nur noch Mobilfunk, den der Nutzer nicht erlaubt hat), wird angehalten und nachgefragt
+ * ([interruption]: Über Mobilfunk fortsetzen, Auf WLAN warten, Abbrechen); ohne jedes Netz wird gewartet. Kommt ein passendes Netz zurück, geht es
+ * von selbst weiter, an der Stelle, wo die angefangene Datei endet. Was nach dem Laden zu tun ist (Modell wählen, Liste neu lesen), erledigt [onInstalled].
  */
-class ModelManager(
-    private val app: Application,
-    private val scope: CoroutineScope,
-    private val storage: AppStorage,
-    private val folders: AppFolders,
-    private val vision: VisionLlm,
-    private val token: () -> String?,
-    private val onInstalled: (CatalogEntry?, File?) -> Unit,
-) {
+class ModelManager private constructor(private val app: Application) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val storage = openStorage(app)
+    private val folders = AppFolders(app)
+    private val vision = VisionLlm(app)
+    private val token: () -> String? = { storage.secrets()["huggingface"] }
+
+    /** Wird nach einem fertigen Download aufgerufen (vom aktuellen ViewModel gesetzt, beim Schließen wieder entfernt). */
+    var onInstalled: ((CatalogEntry?, File?) -> Unit)? = null
+
     var pending by mutableStateOf<PendingDownload?>(null)
         private set
     var active by mutableStateOf<DownloadState?>(null)
+        private set
+    var interruption by mutableStateOf<Interruption?>(null)
         private set
     var note by mutableStateOf("")
     var hf by mutableStateOf(HfState())
         private set
 
     private var job: Job? = null
+    private var current: PendingDownload? = null
+    private var downloader: Downloader? = null
+    private var allowMobile = false
+    private var lastKind: NetKind? = null
+    private var callback: ConnectivityManager.NetworkCallback? = null
+    private var autoRetries = 0
+
+    /** Wer den laufenden Download anhält (der Downloader fragt das Flag laufend ab). */
+    private enum class Stop { USER, NETWORK, SYSTEM }
 
     @Volatile
-    private var cancelled = false
-    private val downloader get() = Downloader(huggingFaceToken = token)
+    private var stop: Stop? = null
     private val api get() = HuggingFaceApi(token = token)
 
+    // --- Netz ------------------------------------------------------------------------------------------
+
     /** Läuft das Gerät über WLAN (oder Kabel)? Mobile Daten und getaktete Verbindungen zählen nicht. */
-    fun onWifi(): Boolean {
-        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
-        return (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    fun onWifi(): Boolean = netKind() == NetKind.WIFI
+
+    private fun netKind(): NetKind {
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return NetKind.NONE
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return NetKind.NONE) ?: return NetKind.NONE
+        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return NetKind.NONE
+        val wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        return if (wifi && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) NetKind.WIFI else NetKind.MOBILE
     }
+
+    /** Beobachtet das Netz, solange ein Download läuft oder angehalten ist. */
+    private fun watchNetwork() {
+        if (callback != null) return
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return
+        lastKind = netKind()
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = changed()
+            override fun onLost(network: Network) = changed()
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = changed()
+        }
+        callback = cb
+        runCatching { cm.registerDefaultNetworkCallback(cb) }.onFailure { callback = null }
+    }
+
+    private fun unwatchNetwork() {
+        val cb = callback ?: return
+        callback = null
+        runCatching { app.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) }
+    }
+
+    private fun changed() {
+        scope.launch { onNetworkChanged(netKind()) }
+    }
+
+    /** Das Netz hat sich geändert (Hauptthread): anhalten, nachfragen oder fortsetzen. Auch von Tests aufrufbar. */
+    internal fun onNetworkChanged(kind: NetKind) {
+        if (kind == lastKind) return
+        lastKind = kind
+        val p = current ?: return
+        val action = NetworkPolicy.action(kind, allowMobile)
+        val waiting = interruption
+        if (waiting == null) {
+            if (action != NetAction.RUN && job?.isActive == true) {
+                stop = Stop.NETWORK
+                downloader?.abort() // ein totes WLAN würde sonst bis zum Lese-Zeitlimit hängen
+            }
+            return
+        }
+        when {
+            action == NetAction.RUN && waiting.reason != InterruptReason.SYSTEM -> resume(p)
+            action == NetAction.ASK && waiting.reason != InterruptReason.WIFI_LOST -> interrupt(p, InterruptReason.WIFI_LOST, ask = true)
+            action == NetAction.WAIT && waiting.reason != InterruptReason.OFFLINE -> interrupt(p, InterruptReason.OFFLINE, ask = false)
+        }
+    }
+
+    // --- Katalog ---------------------------------------------------------------------------------------
 
     fun isInstalled(entry: CatalogEntry): Boolean = when (entry.kind) {
         ModelKind.CHAT -> File(folders.models, entry.files.first().name).isFile
@@ -86,8 +183,6 @@ class ModelManager(
         ModelKind.PIPER -> storage.piper.espeakReady() && storage.piper.list().any { it.name == entry.folder }
     }
 
-    // --- Katalog ---------------------------------------------------------------------------------------
-
     /** Bereitet den Download eines Katalogeintrags vor (Platzprüfung) und wartet auf die Bestätigung. */
     fun ask(entry: CatalogEntry) {
         if (active != null) return
@@ -95,8 +190,8 @@ class ModelManager(
             note = ""
             try {
                 val (files, dir) = withContext(Dispatchers.IO) { filesFor(entry) }
-                val check = withContext(Dispatchers.IO) { downloader.checkStorage(files, dir) }
-                pending = PendingDownload(entry.title, files, dir, check, onWifi()) { onInstalled(entry, null) }
+                val check = withContext(Dispatchers.IO) { Downloader(huggingFaceToken = token).checkStorage(files, dir) }
+                pending = PendingDownload(entry.title, files, dir, check, onWifi()) { onInstalled?.invoke(entry, null) }
             } catch (e: Exception) {
                 note = e.message ?: e::class.simpleName.orEmpty()
             }
@@ -153,8 +248,8 @@ class ModelManager(
         val dir = folders.models
         val files = listOf(file.file.copy(name = file.file.name.substringAfterLast('/')))
         scope.launch {
-            val check = withContext(Dispatchers.IO) { downloader.checkStorage(files, dir) }
-            pending = PendingDownload(files.first().name, files, dir, check, onWifi()) { onInstalled(null, File(dir, files.first().name)) }
+            val check = withContext(Dispatchers.IO) { Downloader(huggingFaceToken = token).checkStorage(files, dir) }
+            pending = PendingDownload(files.first().name, files, dir, check, onWifi()) { onInstalled?.invoke(null, File(dir, files.first().name)) }
         }
     }
 
@@ -164,37 +259,150 @@ class ModelManager(
         pending = null
     }
 
+    /** Startet den bestätigten Download. Ohne WLAN hat der Nutzer die Warnung gesehen: Mobilfunk gilt dann als erlaubt. */
     fun confirm() {
         val p = pending ?: return
         if (!p.check.ok) return
         pending = null
-        cancelled = false
+        current = p
+        allowMobile = !p.onWifi
+        autoRetries = 0
+        interruption = null
+        note = ""
         active = DownloadState(p.title, 0, p.files.sumOf { it.bytes })
+        DownloadService.start(app)
+        watchNetwork()
+        run(p)
+    }
+
+    private fun run(p: PendingDownload) {
+        stop = null
+        interruption = null
+        val dl = Downloader(huggingFaceToken = token)
+        downloader = dl
         var last = 0L
+        var progressed = false
+        val first = active?.doneBytes ?: 0L
         job = scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    downloader.download(p.files, p.dir, isCancelled = { cancelled }) { pr ->
+                    dl.download(p.files, p.dir, isCancelled = { stop != null }) { pr ->
                         val now = System.currentTimeMillis()
                         if (now - last > 250) { // nicht bei jedem Häppchen die Oberfläche neu zeichnen
                             last = now
-                            active = DownloadState(p.title, pr.doneBytes, pr.totalBytes, pr.file)
+                            if (pr.doneBytes > first) progressed = true
+                            scope.launch {
+                                if (downloader === dl) active = DownloadState(p.title, pr.doneBytes, pr.totalBytes, pr.file)
+                                DownloadService.refresh(app, force = false)
+                            }
                         }
                     }
                 }
             }
-            active = null
-            result.onSuccess {
-                note = tNow("\"${p.title}\" is ready.", "„${p.title}“ ist fertig.")
-                p.finish()
-            }.onFailure {
-                note = if (it is DownloadCancelled) tNow("Cancelled (the partial file is kept; a new download continues there).", "Abgebrochen (die angefangene Datei bleibt, ein neuer Download macht dort weiter).") else (it.message ?: it::class.simpleName.orEmpty())
-            }
+            downloader = null
+            result.onSuccess { finished(p) }.onFailure { handleFailure(p, it, progressed) }
         }
     }
 
+    private fun handleFailure(p: PendingDownload, e: Throwable, progressed: Boolean) {
+        when {
+            e is DownloadCancelled && stop == Stop.USER -> end(tNow("Cancelled (the partial file is kept; a new download continues there).", "Abgebrochen (die angefangene Datei bleibt, ein neuer Download macht dort weiter)."))
+            e is DownloadCancelled && stop == Stop.SYSTEM -> interrupt(p, InterruptReason.SYSTEM, ask = true)
+            e is DownloadCancelled || e is DownloadInterrupted -> {
+                val kind = netKind()
+                lastKind = kind
+                when (NetworkPolicy.action(kind, allowMobile)) {
+                    NetAction.ASK -> interrupt(p, InterruptReason.WIFI_LOST, ask = true)
+                    NetAction.WAIT -> interrupt(p, InterruptReason.OFFLINE, ask = false)
+                    NetAction.RUN -> {
+                        // das Netz ist da, der Server oder ein Funkloch hat die Verbindung gekappt: ein paar Mal von selbst wieder versuchen
+                        if (progressed) autoRetries = 0
+                        if (autoRetries < MAX_AUTO_RETRIES) {
+                            autoRetries++
+                            scope.launch {
+                                delay(RETRY_DELAY_MS)
+                                if (current === p && interruption == null && job?.isActive != true) run(p)
+                            }
+                        } else {
+                            interrupt(p, InterruptReason.FAILED, ask = true, detail = e.message.orEmpty())
+                        }
+                    }
+                }
+            }
+            else -> end(e.message ?: e::class.simpleName.orEmpty())
+        }
+    }
+
+    private fun interrupt(p: PendingDownload, reason: InterruptReason, ask: Boolean, detail: String = "") {
+        val left = Downloader(huggingFaceToken = token).remainingBytes(p.files, p.dir)
+        interruption = Interruption(reason, ask, detail, left)
+        DownloadService.refresh(app)
+    }
+
+    /** Das Netz ist zurück oder der Nutzer hat entschieden: dort weitermachen, wo die angefangene Datei endet. */
+    private fun resume(p: PendingDownload) {
+        if (job?.isActive == true) return
+        DownloadService.start(app)
+        run(p)
+    }
+
+    private fun finished(p: PendingDownload) {
+        val title = p.title
+        end(tNow("\"$title\" is ready.", "„$title“ ist fertig."))
+        DownloadService.finished(app, title)
+        p.finish()
+    }
+
+    /** Beendet den Download (fertig, abgebrochen, Fehler): Zustand leeren, Dienst und Netzbeobachtung beenden. */
+    private fun end(message: String) {
+        current = null
+        active = null
+        interruption = null
+        stop = null
+        unwatchNetwork()
+        DownloadService.stop(app)
+        note = message
+    }
+
+    // --- Entscheidungen des Nutzers ---------------------------------------------------------------------
+
+    /** Nach "WLAN weg": ab jetzt auch über Mobilfunk laden (das Datenvolumen zahlt der Nutzer). */
+    fun continueOnMobile() {
+        val p = current ?: return
+        allowMobile = true
+        if (netKind() != NetKind.NONE) resume(p) else interrupt(p, InterruptReason.OFFLINE, ask = false)
+    }
+
+    /** Nach "WLAN weg": nichts laden, bis das WLAN zurück ist (dann geht es von selbst weiter). */
+    fun waitForWifi() {
+        val i = interruption ?: return
+        interruption = i.copy(ask = false)
+        DownloadService.refresh(app)
+    }
+
+    /** Nach einem Verbindungsabbruch: sofort noch einmal versuchen. */
+    fun retry() {
+        val p = current ?: return
+        autoRetries = 0
+        resume(p)
+    }
+
+    /** Android hat die Zeit des Hintergrunddienstes beendet (Android 15: 6 Stunden): anhalten, der Nutzer setzt später fort. */
+    fun pauseBySystem() {
+        if (job?.isActive == true) {
+            stop = Stop.SYSTEM
+            downloader?.abort()
+        } else current?.let { interrupt(it, InterruptReason.SYSTEM, ask = true) }
+    }
+
+    /** Bricht ab (laufend oder angehalten). Die angefangene Datei bleibt liegen, ein neuer Download macht dort weiter. */
     fun cancel() {
-        cancelled = true
+        if (job?.isActive == true) {
+            stop = Stop.USER
+            downloader?.abort()
+        } else if (current != null) {
+            end(tNow("Cancelled (the partial file is kept; a new download continues there).", "Abgebrochen (die angefangene Datei bleibt, ein neuer Download macht dort weiter)."))
+        }
     }
 
     /** Freier Platz im Modellordner (für die Anzeige). */
@@ -202,4 +410,18 @@ class ModelManager(
 
     /** Modelldateien im Modellordner. */
     fun localModels(): List<File> = Folders.models(folders.models)
+
+    companion object {
+        private const val MAX_AUTO_RETRIES = 3
+        private const val RETRY_DELAY_MS = 2500L
+
+        @Volatile
+        private var instance: ModelManager? = null
+
+        /** Die eine Instanz des Prozesses (der Dienst und jedes ViewModel greifen auf dieselbe zu). */
+        fun shared(app: Application): ModelManager = instance ?: synchronized(this) { instance ?: ModelManager(app).also { instance = it } }
+
+        /** Die Instanz, falls es sie schon gibt (der Dienst legt keine neue an). */
+        fun existing(): ModelManager? = instance
+    }
 }

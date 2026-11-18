@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.ui.ChatScreen
+import app.aichatmcp.ui.DownloadQuestion
 import app.aichatmcp.ui.ModelsScreen
 import app.aichatmcp.ui.OnboardingScreen
 import app.aichatmcp.ui.CompanionsScreen
@@ -183,6 +184,8 @@ private fun RootContent(vm: ChatViewModel) {
                 .onSuccess { toast("Chat gespeichert") }.onFailure { toast("Speichern fehlgeschlagen: ${it.message}") }
         }
     }
+
+    DownloadQuestion(vm)
 
     when (screen) {
         Screen.CHAT -> ChatScreen(

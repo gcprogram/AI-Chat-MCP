@@ -28,6 +28,14 @@ class Downloader(
     private val client = http.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).followRedirects(true).followSslRedirects(true).build()
 
+    /** Schließt laufende Verbindungen sofort (sonst bemerkt ein totes WLAN den Abbruch erst nach dem Lese-Zeitlimit). */
+    fun abort() {
+        running?.cancel() // der Dispatcher kennt eine synchrone Anfrage nach den Antwortköpfen nicht mehr, deshalb merken wir sie selbst
+    }
+
+    @Volatile
+    private var running: okhttp3.Call? = null
+
     /** [doneBytes] von [totalBytes] aller Dateien; [file] ist die gerade geladene. */
     data class Progress(val doneBytes: Long, val totalBytes: Long, val file: String)
 
@@ -78,9 +86,10 @@ class Downloader(
                 huggingFaceToken()?.takeIf { it.isNotBlank() && "huggingface.co" in f.url }?.let { header("Authorization", "Bearer $it") }
             }.build()
             val response = try {
-                client.newCall(request).execute()
+                client.newCall(request).also { running = it }.execute()
             } catch (e: IOException) {
-                throw IOException("Keine Verbindung zu ${request.url.host}: ${e.message}")
+                if (isCancelled()) throw DownloadCancelled()
+                throw DownloadInterrupted("Keine Verbindung zu ${request.url.host}: ${e.message}")
             }
             response.use { r ->
                 when (r.code) {
@@ -114,7 +123,12 @@ class Downloader(
                     body.byteStream().use { input ->
                         while (true) {
                             if (isCancelled()) throw DownloadCancelled()
-                            val n = input.read(buffer)
+                            val n = try {
+                                input.read(buffer)
+                            } catch (e: IOException) { // Verbindung weg (oder von abort() geschlossen)
+                                if (isCancelled()) throw DownloadCancelled()
+                                throw DownloadInterrupted("Verbindung unterbrochen bei ${f.name}: ${e.message}. Erneut versuchen setzt fort.")
+                            }
                             if (n < 0) break
                             out.write(buffer, 0, n)
                             written += n
@@ -124,7 +138,7 @@ class Downloader(
                             }
                         }
                     }
-                    if (expected > 0 && written != expected) throw IOException("Download unvollständig: ${f.name} ($written von $expected Bytes). Erneut versuchen setzt fort.")
+                    if (expected > 0 && written != expected) throw DownloadInterrupted("Download unvollständig: ${f.name} ($written von $expected Bytes). Erneut versuchen setzt fort.")
                 }
                 if (!part.renameTo(target)) {
                     target.writeBytes(part.readBytes())
