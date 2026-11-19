@@ -17,6 +17,7 @@ import app.aichatmcp.core.BookWriter
 import app.aichatmcp.core.LANGUAGE_DE
 import app.aichatmcp.core.LlmBackend
 import app.aichatmcp.core.LlmException
+import app.aichatmcp.core.Persona
 import app.aichatmcp.core.Providers
 import app.aichatmcp.local.LocalLlm
 import app.aichatmcp.local.effectiveConfig
@@ -36,6 +37,7 @@ import java.io.File
  */
 class BookViewModel(app: Application) : AndroidViewModel(app) {
     private val storage = openStorage(app)
+    private val appContext = app
     private val store = BookStore(File(app.filesDir, "books"))
     private val localLlm = LocalLlm.shared(app)
 
@@ -64,6 +66,12 @@ class BookViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         projects = store.list()
     }
+
+    /** Aurelia, die Autorin: Name und Bild aus der mitgelieferten Companion-Datei (kein Chat-Companion, taucht in der Companion-Liste nicht auf). */
+    fun aureliaImage(): File? = runCatching {
+        val json = appContext.assets.open("aurelia.json").bufferedReader().use { it.readText() }
+        storage.avatarFile(Persona.parse(json, "aurelia").getOrThrow())
+    }.getOrNull()
 
     fun defaultLanguage(): String = if (storage.loadConfig().uiLanguage == LANGUAGE_DE) "Deutsch" else "English"
 

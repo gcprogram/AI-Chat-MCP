@@ -1,7 +1,19 @@
 package app.aichatmcp.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,11 +57,40 @@ fun BookScreen(vm: BookViewModel, onBack: () -> Unit, onSave: (kind: String, inc
     if (project == null) BookList(vm, onBack) else BookView(vm, project, onBack = { vm.close() }, onSave = onSave)
 }
 
+/** Aurelia, die Autorin: ihr Bild (etwa die halbe Höhe eines Hochkant-Bildschirms) und darunter ein Text, der sich langsam aufbaut, als würde ihn gerade eine KI schreiben. */
+@Composable
+private fun AureliaHeader(vm: BookViewModel) {
+    val image by produceState<ImageBitmap?>(null) { value = withContext(Dispatchers.IO) { vm.aureliaImage()?.let { decodeAvatar(it, target = 1024) } } }
+    image?.let {
+        Image(it, contentDescription = "Aurelia", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)))
+    }
+    val full = tNow("I am Aurelia and I write your stories. Describe your wishes below.", "Ich bin Aurelia und schreibe deine Geschichten. Beschreibe deine Wünsche unten.")
+    var shown by remember(full) { mutableIntStateOf(0) }
+    var cursor by remember { mutableStateOf(true) }
+    LaunchedEffect(full) {
+        delay(600)
+        while (shown < full.length) { // unregelmäßig wie ein erzeugender Text: nach Satzzeichen und Wortenden etwas länger
+            shown++
+            val c = full[shown - 1]
+            delay(if (c == '.' ) 450L else if (c == ' ') 90L else 45L)
+        }
+        repeat(6) { cursor = !cursor; delay(500) }
+        cursor = false
+    }
+    Text(
+        full.take(shown) + if (cursor) "▍" else "",
+        style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    )
+}
+
 @Composable
 private fun BookList(vm: BookViewModel, onBack: () -> Unit) {
     var creating by remember { mutableStateOf(vm.projects.isEmpty()) }
+    var explain by remember { mutableStateOf(false) }
     ScreenFrame(t("Write a book", "Buch schreiben"), onBack) {
-        Text(
+        AureliaHeader(vm)
+        TextButton(onClick = { explain = !explain }) { Text(if (explain) t("Hide how it works", "Ablauf ausblenden") else t("How does it work?", "Wie funktioniert das?")) }
+        if (explain) Text(
             t("Give a topic and some conditions. The model first writes the plot, then the characters with their background, then a short plan for every chapter, and only then the chapters. You can check and change each stage. Writing is slow on a phone (a chapter takes several minutes); it continues in the background and you can stop and resume at any time.",
                 "Gib ein Thema und Rahmenbedingungen vor. Das Modell schreibt zuerst die Handlung, dann die Figuren mit ihrem Hintergrund, dann einen kurzen Plan für jedes Kapitel und erst danach die Kapitel. Jede Stufe kannst du prüfen und ändern. Das Schreiben ist auf dem Handy langsam (ein Kapitel braucht einige Minuten); es läuft im Hintergrund weiter, und du kannst jederzeit anhalten und später fortsetzen."),
             style = MaterialTheme.typography.bodySmall,

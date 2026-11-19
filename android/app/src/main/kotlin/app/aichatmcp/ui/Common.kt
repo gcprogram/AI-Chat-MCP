@@ -176,7 +176,7 @@ fun AvatarFullscreen(file: File, name: String, onClose: () -> Unit) {
 }
 
 /** Lädt das Bild verkleinert (die Dateien sind oft mehrere Megapixel groß, angezeigt werden wenige Dutzend dp). */
-private fun decodeAvatar(file: File, target: Int = 256): ImageBitmap? {
+internal fun decodeAvatar(file: File, target: Int = 256): ImageBitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.path, bounds)
     var sample = 1
