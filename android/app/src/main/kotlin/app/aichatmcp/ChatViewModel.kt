@@ -263,7 +263,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Wird bei jedem Bildimport erhöht, damit angezeigte Avatare neu geladen werden. */
     var avatarVersion by mutableStateOf(0)
         private set
-    private val localLlm = LocalLlm(app)
+    private val localLlm = LocalLlm.shared(app)
     private val vision = VisionLlm(app)
     val visionAvailable: Boolean get() = visionVersion >= 0 && vision.available
     private var visionVersion by mutableStateOf(0) // ändert sich beim Import/Entfernen, damit die Oberfläche neu liest

@@ -161,6 +161,14 @@ class LocalLlm(private val context: Context) {
         key = ""
     }
 
+    companion object {
+        @Volatile
+        private var instance: LocalLlm? = null
+
+        /** Das eine Modell des Prozesses: Chat und Autorenmodus teilen es (zwei Instanzen würden das Modell doppelt in den Speicher laden). */
+        fun shared(context: Context): LocalLlm = instance ?: synchronized(this) { instance ?: LocalLlm(context.applicationContext).also { instance = it } }
+    }
+
     fun backend(config: Config): LlmBackend = object : LlmBackend {
         override fun streamChat(
             model: String, messages: List<WireMessage>, temperature: Double, maxTokens: Int,

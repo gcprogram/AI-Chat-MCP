@@ -23,7 +23,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /** Streaming-Client für OpenAI-kompatible Chat-Endpunkte (LM Studio, OpenAI, OpenRouter, ...). */
-class LlmException(message: String) : Exception(message)
+open class LlmException(message: String) : Exception(message)
 
 sealed interface StreamEvent {
     data class Content(val text: String) : StreamEvent

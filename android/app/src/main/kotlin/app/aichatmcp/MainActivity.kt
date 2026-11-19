@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aichatmcp.core.ChatLog
+import app.aichatmcp.ui.BookScreen
 import app.aichatmcp.ui.ChatScreen
 import app.aichatmcp.ui.DownloadQuestion
 import app.aichatmcp.ui.FolderActions
@@ -183,6 +184,15 @@ private fun RootContent(vm: ChatViewModel) {
         }
     }
 
+    val bookVm: BookViewModel = viewModel()
+    var bookSave by remember { mutableStateOf(false) }
+    fun writeBytes(uri: Uri, bytes: ByteArray) =
+        runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } }.onSuccess { toast("Gespeichert") }.onFailure { toast("Speichern fehlgeschlagen: ${it.message}") }
+    val saveMarkdown = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> uri?.let { writeBytes(it, bookVm.markdown(bookSave)) } }
+    val saveDocx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) { uri ->
+        uri?.let { writeBytes(it, bookVm.docx(bookSave)) }
+    }
+
     DownloadQuestion(vm)
 
     when (screen) {
@@ -204,6 +214,10 @@ private fun RootContent(vm: ChatViewModel) {
             onOpenModels = { screen = Screen.MODELS }, folders = folders, onReplayIntro = { screen = Screen.INTRO },
         )
         Screen.MODELS -> ModelsScreen(vm, onBack = { screen = Screen.SETTINGS }, folders = folders)
+        Screen.BOOK -> BookScreen(
+            bookVm, onBack = { screen = Screen.CHAT },
+            onSave = { kind, plan -> bookSave = plan; if (kind == "md") saveMarkdown.launch(bookVm.fileName("md")) else saveDocx.launch(bookVm.fileName("docx")) },
+        )
         Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
