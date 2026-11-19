@@ -60,6 +60,22 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
                 File(personasDir, "companion.json").writeText(it)
             }
         }
+        mergeNewPersonas()
+    }
+
+    /** Neue mitgelieferte Companions (z. B. Aurelia) werden einmal angelegt; wer sie löscht, bekommt sie nicht wieder (gleiche Merkdatei wie bei den Werkzeugen). */
+    private fun mergeNewPersonas() {
+        val offered = offeredFile.takeIf { it.isFile }?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+        val pending = NEW_PERSONAS.filter { "persona:$it" !in offered }
+        if (pending.isEmpty()) return
+        for (id in pending) {
+            val target = File(personasDir, "$id.json")
+            if (!target.exists()) asset("$id.json")?.let {
+                personasDir.mkdirs()
+                target.writeText(it)
+            }
+        }
+        offeredFile.writeText((offered + pending.map { "persona:$it" }).joinToString("\n") + "\n")
     }
 
     // --- Avatare (Bilder der Companions, relativ zum Companion-Ordner: "avatars/name.png") -------------------
@@ -212,6 +228,7 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
 
     private companion object {
         /** Standard-Einträge, die nachträglich in bestehende Konfigurationen übernommen werden (Server und Aliase). */
+        val NEW_PERSONAS = listOf("aurelia")
         val NEW_DEFAULTS = listOf("organizer", "todo-add", "todo-list", "todo-done", "cal-add", "cal-list", "alarm", "timer", "messages")
     }
 }

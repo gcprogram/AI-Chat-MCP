@@ -3,6 +3,8 @@ package app.aichatmcp.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
@@ -57,14 +59,29 @@ fun BookScreen(vm: BookViewModel, onBack: () -> Unit, onSave: (kind: String, inc
     if (project == null) BookList(vm, onBack) else BookView(vm, project, onBack = { vm.close() }, onSave = onSave)
 }
 
+/** Eine Schreibsprache: Anzeigename, Name im Prompt (die Anweisungen an das Modell sind englisch, nur Deutsch hat deutsche) und Aurelias Begrüßung in dieser Sprache. */
+private data class WriteLanguage(val label: String, val brief: String, val greeting: String)
+
+private val WRITE_LANGUAGES = listOf(
+    WriteLanguage("Deutsch", "Deutsch", "Ich bin Aurelia und schreibe deine Geschichten. Beschreibe deine Wünsche unten."),
+    WriteLanguage("English", "English", "I am Aurelia and I write your stories. Describe your wishes below."),
+    WriteLanguage("Français", "French", "Je suis Aurélia et j'écris vos histoires. Décrivez vos souhaits ci-dessous."),
+    WriteLanguage("Español", "Spanish", "Soy Aurelia y escribo tus historias. Describe tus deseos abajo."),
+    WriteLanguage("Italiano", "Italian", "Sono Aurelia e scrivo le tue storie. Descrivi i tuoi desideri qui sotto."),
+)
+
 /** Aurelia, die Autorin: ihr Bild (etwa die halbe Höhe eines Hochkant-Bildschirms) und darunter ein Text, der sich langsam aufbaut, als würde ihn gerade eine KI schreiben. */
 @Composable
-private fun AureliaHeader(vm: BookViewModel) {
+private fun AureliaHeader(vm: BookViewModel, language: WriteLanguage, onLanguage: (WriteLanguage) -> Unit) {
     val image by produceState<ImageBitmap?>(null) { value = withContext(Dispatchers.IO) { vm.aureliaImage()?.let { decodeAvatar(it, target = 1024) } } }
     image?.let {
         Image(it, contentDescription = "Aurelia", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)))
     }
-    val full = tNow("I am Aurelia and I write your stories. Describe your wishes below.", "Ich bin Aurelia und schreibe deine Geschichten. Beschreibe deine Wünsche unten.")
+    DropdownField(
+        t("Language of the book", "Sprache des Buches"), WRITE_LANGUAGES.map { it.label }, language.label,
+        { label -> WRITE_LANGUAGES.firstOrNull { it.label == label }?.let(onLanguage) }, raw = true,
+    )
+    val full = language.greeting // ändert der Nutzer die Sprache, tippt Aurelia den Text neu (in dieser Sprache)
     var shown by remember(full) { mutableIntStateOf(0) }
     var cursor by remember { mutableStateOf(true) }
     LaunchedEffect(full) {
@@ -77,18 +94,20 @@ private fun AureliaHeader(vm: BookViewModel) {
         repeat(6) { cursor = !cursor; delay(500) }
         cursor = false
     }
-    Text(
-        full.take(shown) + if (cursor) "▍" else "",
-        style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    )
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        // der fertige Text reserviert unsichtbar die Höhe, damit die Felder darunter beim Tippen nicht springen
+        Text(full + " ", style = MaterialTheme.typography.titleMedium, color = Color.Transparent)
+        Text(full.take(shown) + if (cursor) "▍" else "", style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable
 private fun BookList(vm: BookViewModel, onBack: () -> Unit) {
     var creating by remember { mutableStateOf(vm.projects.isEmpty()) }
     var explain by remember { mutableStateOf(false) }
+    var language by remember { mutableStateOf(WRITE_LANGUAGES.firstOrNull { it.brief == vm.defaultLanguage() } ?: WRITE_LANGUAGES[0]) }
     ScreenFrame(t("Write a book", "Buch schreiben"), onBack) {
-        AureliaHeader(vm)
+        AureliaHeader(vm, language) { language = it }
         TextButton(onClick = { explain = !explain }) { Text(if (explain) t("Hide how it works", "Ablauf ausblenden") else t("How does it work?", "Wie funktioniert das?")) }
         if (explain) Text(
             t("Give a topic and some conditions. The model first writes the plot, then the characters with their background, then a short plan for every chapter, and only then the chapters. You can check and change each stage. Writing is slow on a phone (a chapter takes several minutes); it continues in the background and you can stop and resume at any time.",
@@ -112,12 +131,12 @@ private fun BookList(vm: BookViewModel, onBack: () -> Unit) {
             }
         }
         if (!creating) OutlinedButton(onClick = { creating = true }) { Text(t("New book…", "Neues Buch…")) }
-        else NewBookForm(vm)
+        else NewBookForm(vm, language.brief)
     }
 }
 
 @Composable
-private fun NewBookForm(vm: BookViewModel) {
+private fun NewBookForm(vm: BookViewModel, language: String) {
     var topic by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("") }
     var chapters by remember { mutableStateOf("8") }
@@ -125,7 +144,6 @@ private fun NewBookForm(vm: BookViewModel) {
     var perspective by remember { mutableStateOf("") }
     var style by remember { mutableStateOf("") }
     var constraints by remember { mutableStateOf("") }
-    var language by remember { mutableStateOf(vm.defaultLanguage()) }
     SectionTitle(t("New book", "Neues Buch"))
     TextSetting(t("Topic / idea", "Thema / Idee"), topic, { topic = it }, minLines = 3, maxLines = 8)
     TextSetting(t("Genre (optional)", "Genre (optional)"), genre, { genre = it })
@@ -136,12 +154,11 @@ private fun NewBookForm(vm: BookViewModel) {
     TextSetting(t("Point of view (optional, e.g. first person)", "Perspektive (optional, z. B. Ich-Erzähler)"), perspective, { perspective = it })
     TextSetting(t("Style (optional)", "Stil (optional)"), style, { style = it })
     TextSetting(t("Conditions (places, time, characters, taboos)", "Rahmenbedingungen (Orte, Zeit, Figuren, Tabus)"), constraints, { constraints = it }, minLines = 2, maxLines = 6)
-    TextSetting(t("Language", "Sprache"), language, { language = it })
     Button(
         onClick = {
             vm.create(
                 BookBrief(
-                    topic.trim(), genre.trim(), chapters.toIntOrNull() ?: 8, words.toIntOrNull() ?: 1000, perspective.trim(), style.trim(), language.trim().ifEmpty { "Deutsch" }, constraints.trim(),
+                    topic.trim(), genre.trim(), chapters.toIntOrNull() ?: 8, words.toIntOrNull() ?: 1000, perspective.trim(), style.trim(), language, constraints.trim(),
                 ),
             )
         },

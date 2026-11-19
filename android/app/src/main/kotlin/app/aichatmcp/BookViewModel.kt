@@ -69,8 +69,10 @@ class BookViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Aurelia, die Autorin: Name und Bild aus der mitgelieferten Companion-Datei (kein Chat-Companion, taucht in der Companion-Liste nicht auf). */
     fun aureliaImage(): File? = runCatching {
-        val json = appContext.assets.open("aurelia.json").bufferedReader().use { it.readText() }
-        storage.avatarFile(Persona.parse(json, "aurelia").getOrThrow())
+        // Ist Aurelia als Companion angelegt, gilt ihr Bild dort (der Nutzer kann es ändern); sonst die mitgelieferte Datei
+        val own = storage.personas.takeIf { "aurelia" in it.list() }?.load("aurelia")?.takeIf { it.avatarData.isNotBlank() || it.avatar.isNotBlank() }
+        val persona = own ?: Persona.parse(appContext.assets.open("aurelia.json").bufferedReader().use { it.readText() }, "aurelia").getOrThrow()
+        storage.avatarFile(persona)
     }.getOrNull()
 
     fun defaultLanguage(): String = if (storage.loadConfig().uiLanguage == LANGUAGE_DE) "Deutsch" else "English"

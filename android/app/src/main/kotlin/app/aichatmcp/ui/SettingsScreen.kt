@@ -34,8 +34,8 @@ import app.aichatmcp.core.ENGINE_GOOGLE
 import app.aichatmcp.core.ENGINE_WHISPER
 import app.aichatmcp.local.LOCAL_MAX_CONTEXT
 import kotlinx.coroutines.launch
-private const val SERVER_LABEL = "Server (LM Studio, OpenAI, …)"
-private const val LOCAL_LABEL = "Auf dem Gerät (llama.cpp)"
+private fun serverLabel() = tNow("External model (URL and API key)", "Externes Modell (URL und API-Schlüssel)")
+private fun localLabel() = tNow("On this phone (llama.cpp)", "Auf diesem Handy (llama.cpp)")
 
 @Composable
 fun SettingsScreen(
@@ -115,10 +115,13 @@ fun SettingsScreen(
         when (tab) {
             0 -> {
                 DropdownField(
-                    t("Run the model", "Modell ausführen"), listOf(LOCAL_LABEL, SERVER_LABEL), if (backend == BACKEND_LOCAL) LOCAL_LABEL else SERVER_LABEL,
-                    { backend = if (it == LOCAL_LABEL) BACKEND_LOCAL else BACKEND_SERVER },
+                    t("Where does the model run?", "Wo läuft das Modell?"), listOf(localLabel(), serverLabel()), if (backend == BACKEND_LOCAL) localLabel() else serverLabel(),
+                    { backend = if (it == localLabel()) BACKEND_LOCAL else BACKEND_SERVER },
                 )
                 if (backend == BACKEND_LOCAL) {
+                    OutlinedButton(onClick = { backend = BACKEND_SERVER }, modifier = Modifier.fillMaxWidth()) {
+                        Text(t("Use an external model instead (URL / API key)…", "Stattdessen ein externes Modell nutzen (URL / API-Schlüssel)…"))
+                    }
                     LaunchedEffect(Unit) { vm.refreshModelFiles() }
                     Text(
                         if (vm.config.localModel.isEmpty()) "Noch keine Modelldatei gewählt."
