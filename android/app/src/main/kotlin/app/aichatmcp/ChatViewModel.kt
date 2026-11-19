@@ -86,6 +86,7 @@ import app.aichatmcp.speech.ReaderFocus
 import app.aichatmcp.reminder.DailyReminder
 import app.aichatmcp.work.GenerationService
 import app.aichatmcp.report.ReportAction
+import app.aichatmcp.messages.MessageHub
 import app.aichatmcp.core.ReportText
 import app.aichatmcp.core.DirStore
 import app.aichatmcp.core.StoredFile
@@ -949,7 +950,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         status = "Schlüsselwort „${hit.keyword}“ ($source): ${outcome.status}"
-        if (outcome.mode == RESULT_SHOW || outcome.mode == RESULT_BOTH) messages += UiMessage(UiKind.SHOWN, outcome.text)
+        if (outcome.mode == RESULT_SHOW || outcome.mode == RESULT_BOTH) {
+            messages += UiMessage(UiKind.SHOWN, outcome.text)
+            if (spec?.speak == true) speakAlways(outcome.text)
+        }
     }
 
     // --- Stimmen der Sprachausgabe ------------------------------------------------------------------------
@@ -1208,6 +1212,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Womit die letzte Spracherkennung lief (für die Statuszeile). */
     private var speechMode = "offline"
 
+    /** Liest einen Text vor, auch wenn "Antworten vorlesen" aus ist (der Nutzer hat ausdrücklich darum gebeten, z. B. "lies meine Nachrichten vor"). */
+    private fun speakAlways(text: String) {
+        if (docReading) return
+        val spoken = Speech.spokenText(text)
+        if (spoken.isNotEmpty()) speechOut.speak(spoken, languageTag()) { status = it }
+    }
+
     private fun speak(reply: String) {
         if (docReading) return // ein Text wird gerade vorgelesen: die Antwort nicht dazwischenreden lassen
         val text = Speech.spokenText(reply)
@@ -1235,6 +1246,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 messages += toUi(event.message)
+                // Ergebnisse, die vorgelesen werden sollen (z. B. neue Nachrichten): "speak": true im Alias
+                if (event.message.kind == TOOL_SHOWN && session.registry.tools[event.message.tool]?.speak == true) speakAlways(event.message.content)
             }
             is ChatEvent.Notice -> messages += UiMessage(
                 when (event.kind) { NoticeKind.ERROR -> UiKind.ERROR; NoticeKind.TOOL -> UiKind.TOOL; NoticeKind.INFO -> UiKind.INFO },
@@ -1288,6 +1301,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveConfig(newConfig: Config) {
         config = newConfig.sanitize()
+        MessageHub.enabled = config.catchMessages
         speechOut.rate = config.speechRate.toFloat()
         speechOut.piperNoise = config.piperNoise.toFloat() to config.piperNoiseW.toFloat()
         storage.saveConfig(config)
@@ -1599,6 +1613,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         todos = storage.todos,
                         calendar = deviceCalendar,
                         clock = deviceClock,
+                        messages = MessageHub.inbox,
+                        messagesState = { MessageHub.state(getApplication()) },
+                        german = { persona.isGerman() },
                     ))
                 } catch (e: Exception) {
                     fresh.errors += "Werkzeuge konnten nicht geladen werden: ${e.message}"
@@ -1640,6 +1657,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Hinweis nach dem Melden (z. B. "Text kopiert"); die Oberfläche zeigt ihn kurz und leert ihn. */
     var reportNotice by mutableStateOf<String?>(null)
+
+    /** Hat der Nutzer den Benachrichtigungszugriff erlaubt (Einstellungen > Organizer > Nachrichten)? */
+    fun messagesAccess(): Boolean = MessageHub.accessGranted(getApplication())
 
     fun dismissNotice() {
         modelNotice = null
@@ -1843,6 +1863,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         storage.ensureDefaults()
         config = storage.loadConfig()
+        MessageHub.enabled = config.catchMessages
         refreshModelFiles()
         localLlm.onMeasured = { m -> viewModelScope.launch { record(m) } }
         speechOut.rate = config.speechRate.toFloat()

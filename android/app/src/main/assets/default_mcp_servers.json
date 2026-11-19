@@ -20,6 +20,10 @@
       },
       "cert": "remote.pem",
       "raw": false
+    },
+    "messages": {
+      "builtin": "messages",
+      "raw": false
     }
   },
   "aliases": {
@@ -338,6 +342,23 @@
       "example": "[[mcp:timer|10 min|Pasta]]",
       "result": "both",
       "confirm": true
+    },
+    "messages": {
+      "server": "messages",
+      "tool": "messages_unread",
+      "params": [
+        "app"
+      ],
+      "hint": "Reads out the user's new WhatsApp and Telegram messages (also: 'neue Nachrichten', 'lies meine Nachrichten vor', 'was gibt es Neues', 'habe ich Post'; optional app: whatsapp or telegram)",
+      "example": "[[mcp:messages]]",
+      "result": "show",
+      "speak": true,
+      "confirm": false,
+      "keywords": [
+        "^\\s*(?:lies|lese|les)\\b.{0,25}?nachrichten",
+        "^\\s*(?:neue|ungelesene)\\s+nachrichten\\s*[?.!]?\\s*$",
+        "^\\s*(?:habe ich|hab ich|gibt es)\\b.{0,20}?(?:neue\\s+)?(?:nachrichten|post)\\b"
+      ]
     }
   }
 }

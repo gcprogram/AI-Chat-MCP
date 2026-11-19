@@ -65,6 +65,7 @@ fun SettingsScreen(
     var whisperModel by remember { mutableStateOf(c.whisperModel) }
     var whisperLanguage by remember { mutableStateOf(c.whisperLanguage) }
     var dailyReminder by remember { mutableStateOf(c.dailyReminder) }
+    var catchMessages by remember { mutableStateOf(c.catchMessages) }
     var dailyReminderTime by remember { mutableStateOf(c.dailyReminderTime) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
@@ -97,7 +98,7 @@ fun SettingsScreen(
                         presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                         repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                         confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
-                        dailyReminder = dailyReminder, dailyReminderTime = dailyReminderTime.trim(), speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
+                        dailyReminder = dailyReminder, catchMessages = catchMessages, dailyReminderTime = dailyReminderTime.trim(), speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
                         speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                         piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
                         piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,
@@ -380,6 +381,25 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
             if (!vm.calendarAllowed) OutlinedButton(onClick = onRequestCalendar) { Text("Kalender-Zugriff erlauben") }
+            SectionTitle(t("Messages (WhatsApp, Telegram)", "Nachrichten (WhatsApp, Telegram)"))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("Read incoming messages (for the companion to read out)", "Eingehende Nachrichten mitlesen (damit der Companion sie vorlesen kann)"), modifier = Modifier.weight(1f))
+                Switch(checked = catchMessages, onCheckedChange = { catchMessages = it })
+            }
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val access = vm.messagesAccess()
+            Text(
+                t("The app reads the notifications of WhatsApp and Telegram (sender and text), keeps them only in memory and forgets them when you read the chat. It never opens the chats, so the messages stay unread in the messenger. Add the tool “messages” to a companion, then say “Read my messages”. Nothing is sent anywhere. Applies after “Save”.",
+                    "Die App liest die Benachrichtigungen von WhatsApp und Telegram (Absender und Text), behält sie nur im Arbeitsspeicher und vergisst sie, sobald du den Chat gelesen hast. Sie öffnet die Chats nie, die Nachrichten bleiben im Messenger also ungelesen. Gib einem Companion das Werkzeug „messages“ und sage dann „Lies meine Nachrichten vor“. Es wird nichts weitergeschickt. Gilt nach „Speichern“."),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                if (access) t("System access: allowed.", "Systemzugriff: erlaubt.") else t("System access: not allowed yet. You have to allow it yourself in the system settings.", "Systemzugriff: noch nicht erlaubt. Das musst du selbst in den Systemeinstellungen tun."),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(onClick = { runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } }) {
+                Text(t("Open notification access settings…", "Einstellungen für den Benachrichtigungszugriff öffnen…"))
+            }
             }
             6 -> {
             SectionTitle("Werkzeuge")

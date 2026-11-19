@@ -369,6 +369,10 @@ class DefaultServerFactory(
     private val calendar: CalendarBackend? = null,
     /** Uhr-App des Geräts für alarm_set und timer_set im Server "organizer". */
     private val clock: ClockBackend? = null,
+    /** Die mitgelesenen Nachrichten für den eingebauten Server "messages" und ob das Mitlesen gerade möglich ist. */
+    private val messages: MessageInbox? = null,
+    private val messagesState: () -> MessagesServer.State = { MessagesServer.State.NO_ACCESS },
+    private val german: () -> Boolean = { true },
 ) : ServerFactory {
     override fun create(name: String, entry: JsonObject): McpClient {
         val builtin = entry.string("builtin") ?: scriptBuiltin(entry)
@@ -376,8 +380,9 @@ class DefaultServerFactory(
             "weather" -> return WeatherServer(name, fetcher)
             "websearch" -> return WebsearchServer(name, fetcher)
             "organizer" -> return OrganizerServer(name, todos ?: throw McpException("Der Server 'organizer' braucht einen Speicher für die Todos."), calendar = calendar, clock = clock)
+            "messages" -> return MessagesServer(name, messages ?: throw McpException("Der Server 'messages' ist auf diesem Gerät nicht verfügbar."), messagesState, german)
             null -> {}
-            else -> throw McpException("Eingebauter Server '$builtin' unbekannt (weather, websearch, organizer).")
+            else -> throw McpException("Eingebauter Server '$builtin' unbekannt (weather, websearch, organizer, messages).")
         }
         val url = entry.string("url")
             ?: throw McpException("Server mit 'command' lassen sich auf Android nicht starten; 'url' oder 'builtin' verwenden.")

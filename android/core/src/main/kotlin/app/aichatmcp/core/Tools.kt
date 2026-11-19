@@ -157,6 +157,7 @@ data class ToolSpec(
     val keywords: List<Keyword> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
     val macro: List<MacroStep> = emptyList(), // Makro: mehrere Aufrufe nacheinander (dann ohne eigenen Server-Aufruf)
     val buttons: List<String> = emptyList(), // Tastensatz einer Fernbedienung ("buttons": true): erlaubte Beschriftungen (Argument "button"), zuletzt "off"
+    val speak: Boolean = false, // das angezeigte Ergebnis (show/both) wird vorgelesen
 ) {
     val usage: String get() = "[[mcp:" + (listOf(alias) + params.map { "<${it.name}>" }).joinToString("|") + "]]"
 
@@ -546,6 +547,7 @@ class ToolRegistry {
             description = entry.string("hint")?.takeIf { it.isNotEmpty() } ?: base.description,
             example = entry.string("example").orEmpty(), fixed = fixed, defaults = defaults, result = mode,
             status = entry.string("status").orEmpty(), confirm = confirm, remember = remember, keywords = keywords,
+            speak = (entry["speak"] as? JsonPrimitive)?.booleanOrNull ?: false,
         )
     }
 
