@@ -35,6 +35,8 @@ data class Config(
     /** Lokales Modell: Pfad zu einer GGUF-Datei oder eine content://-URI (vom Dateiauswahldialog). */
     @SerialName("local_model") val localModel: String = "",
     @SerialName("local_model_name") val localModelName: String = "",
+    /** Rollenspiel mit Buchvorlage: nach so vielen Antworten kommt die Szene zum Ende und die nächste beginnt (0 = nur von Hand weiter). */
+    @SerialName("roleplay_turns") val roleplayTurns: Int = 8,
     /** Benachrichtigungen von WhatsApp und Telegram mitlesen (nur im Arbeitsspeicher), damit der Companion sie vorlesen kann. Zusätzlich braucht es den Benachrichtigungszugriff des Systems. */
     @SerialName("catch_messages") val catchMessages: Boolean = false,
     /** Nachdenken (Reasoning) von Qwen3-Modellen auf dem Gerät. Aus = schneller und weniger Gerede über die Regeln; Qwen3 "Instruct" denkt ohnehin nie. */

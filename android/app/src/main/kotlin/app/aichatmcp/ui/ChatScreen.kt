@@ -90,6 +90,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
     Column(Modifier.fillMaxSize()) {
         TopBar(vm, open, onExport, onImport)
         HorizontalDivider()
+        RoleplayBar(vm)
         vm.modelNotice?.let { text ->
             Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -283,6 +284,8 @@ private fun withToolCalls(text: String) = buildAnnotatedString {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
+    var roleplayDialog by remember { mutableStateOf(false) }
+    if (roleplayDialog) RoleplayDialog(doc, vm) { roleplayDialog = false }
     Surface(
         shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
@@ -319,6 +322,7 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
                     if (mark != null) OutlinedButton(onClick = { vm.docRead() }) { Text("Von vorn vorlesen") }
                     else Button(onClick = { vm.docRead() }) { Text("2 · Vorlesen") }
                     if (!doc.image) Button(onClick = vm::docSummarize, enabled = !vm.streaming) { Text("3 · Zusammenfassen") }
+                    if (!doc.image) OutlinedButton(onClick = { roleplayDialog = true }, enabled = !vm.streaming) { Text(t("Role play…", "Rollenspiel…")) }
                     TextButton(onClick = vm::dismissDoc) { Text("Verwerfen") }
                 }
             }

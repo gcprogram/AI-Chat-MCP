@@ -40,6 +40,11 @@ data class Persona(
     @SerialName("voice_female") val voiceFemale: String = "",
     /** Beim ersten Start des Tages ein Tagesupdate (offene Todos, Termine) im Chat anzeigen; von der App zusammengestellt, ohne Modell. */
     @SerialName("daily_update") val dailyUpdate: Boolean = false,
+    /**
+     * Ersetzt den ganzen System-Prompt (nur für das Buch-Rollenspiel, Android; [systemPrompt] setzt "{user}" ein). Leer = der gewohnte Prompt aus
+     * Beschreibung und Regeln.
+     */
+    @SerialName("prompt_override") val promptOverride: String = "",
     /** Dateiname ohne .json; wird beim Laden gesetzt, nicht in der Datei gespeichert. */
     @Transient val id: String = "",
 ) {
@@ -65,6 +70,7 @@ data class Persona(
         }
 
     fun systemPrompt(userName: String, toolsSection: String = ""): String {
+        if (promptOverride.isNotEmpty()) return promptOverride.replace("{user}", userName)
         val lines = mutableListOf(
             "Du bist $name. $description",
             "",

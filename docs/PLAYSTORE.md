@@ -25,6 +25,7 @@ Stand der Vorbereitung (Android-App, Ordner `android/`). Was hier steht, ist gep
 | `POST_NOTIFICATIONS` | Fortschritt von Downloads, "Download fertig", tägliche Erinnerung (optional) |
 | `FOREGROUND_SERVICE`, `…_DATA_SYNC` | Große Modelle laden, auch wenn die App im Hintergrund ist |
 | `FOREGROUND_SERVICE_SPECIAL_USE`, `WAKE_LOCK` | Das lokale Sprachmodell rechnet eine Antwort; bei gesperrtem Bildschirm soll sie fertig werden |
+| Benachrichtigungszugriff (`BIND_NOTIFICATION_LISTENER_SERVICE`, vom Nutzer in den Systemeinstellungen erlaubt) | Optional: neue WhatsApp- und Telegram-Nachrichten vorlesen. Es werden nur diese zwei Apps gelesen (Absender und Text), nur im Arbeitsspeicher, nichts wird gespeichert oder gesendet; die Chats werden nie geöffnet. In der Datenschutzerklärung nennen und in der Play Console als Kernfunktion "Nachrichten vorlesen" erklären |
 | `RECEIVE_BOOT_COMPLETED` | Tägliche Erinnerung nach einem Neustart wieder einplanen |
 
 **Erklärung für den Vordergrunddienst-Typ `specialUse`** (Feld in der Play Console): "On-device language model inference. The user sends a chat message; the model runs locally for seconds to minutes and the reply must finish even if the screen turns off. The service runs only while a reply is being generated and shows an ongoing notification."

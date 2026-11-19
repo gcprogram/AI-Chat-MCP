@@ -18,6 +18,9 @@ Die App sammelt keine Daten über dich und hat keinen eigenen Server. Chats, Com
 - **Werkzeuge** (Wetter, Websuche) senden die Suchanfrage (Ort bzw. Suchbegriff) an die jeweiligen Dienste, wenn du sie benutzt.
 - Die App enthält **keine** Werbung, **keine** Analyse-Werkzeuge und **keine** Absturzberichte an den Entwickler.
 
+## Nachrichten vorlesen (optional)
+Schaltest du in den Einstellungen „Nachrichten mitlesen“ ein und erlaubst der App in den Systemeinstellungen den Benachrichtigungszugriff, liest sie die Benachrichtigungen von WhatsApp und Telegram (Absender und Text), damit der Companion sie vorlesen kann. Sie werden nur im Arbeitsspeicher gehalten (nicht gespeichert, nicht gesendet) und vergessen, sobald du den Chat liest oder die App beendet wird. Die Chats werden nie geöffnet. Alle anderen Benachrichtigungen werden sofort verworfen.
+
 ## Berechtigungen
 Mikrofon (Spracheingabe), Kalender (Termine lesen und auf Wunsch anlegen), Wecker/Timer, Benachrichtigungen (Downloads, Erinnerung) werden erst gefragt, wenn du die Funktion nutzt. Die Spracheingabe mit Google nutzt den Spracherkenner deines Geräts; mit Whisper bleibt die Aufnahme auf dem Gerät.
 

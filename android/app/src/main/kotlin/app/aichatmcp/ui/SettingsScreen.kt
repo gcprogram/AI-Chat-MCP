@@ -66,6 +66,7 @@ fun SettingsScreen(
     var whisperLanguage by remember { mutableStateOf(c.whisperLanguage) }
     var dailyReminder by remember { mutableStateOf(c.dailyReminder) }
     var catchMessages by remember { mutableStateOf(c.catchMessages) }
+    var roleplayTurns by remember { mutableStateOf(c.roleplayTurns.toString()) }
     var dailyReminderTime by remember { mutableStateOf(c.dailyReminderTime) }
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
@@ -98,7 +99,7 @@ fun SettingsScreen(
                         presencePenalty = presence.toDoubleOrNull() ?: c.presencePenalty,
                         repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                         confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
-                        dailyReminder = dailyReminder, catchMessages = catchMessages, dailyReminderTime = dailyReminderTime.trim(), speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
+                        dailyReminder = dailyReminder, catchMessages = catchMessages, roleplayTurns = roleplayTurns.toIntOrNull() ?: c.roleplayTurns, dailyReminderTime = dailyReminderTime.trim(), speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
                         speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
                         piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
                         piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,
@@ -159,6 +160,7 @@ fun SettingsScreen(
             NumberSetting("Temperatur", temperature) { temperature = it }
             NumberSetting("Max. Antwort-Tokens", maxReply) { maxReply = it }
             NumberSetting("Kontext-Tokens (Fenster des Modells)", contextTokens) { contextTokens = it }
+            TextSetting(t("Replies per scene in a book role play (0 = move on by hand)", "Antworten je Szene im Buch-Rollenspiel (0 = nur von Hand weiter)"), roleplayTurns, { roleplayTurns = it }, keyboard = KeyboardType.Number)
             SectionTitle("Gegen Wiederholungen (kleine Modelle)")
             NumberSetting("Top-P", topP) { topP = it }
             NumberSetting("Frequency-Penalty", frequency) { frequency = it }
