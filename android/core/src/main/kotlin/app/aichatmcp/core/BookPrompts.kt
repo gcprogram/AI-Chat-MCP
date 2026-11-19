@@ -7,7 +7,7 @@ package app.aichatmcp.core
 object BookPrompts {
     /** Höchstzahl neuer Tokens je Stufe. */
     fun maxTokens(step: BookStep): Int = when (step) {
-        BookStep.Premise -> 600
+        BookStep.Premise -> 800
         BookStep.Characters -> 1100
         BookStep.Plan -> 1100
         is BookStep.ChapterPlan -> 350
@@ -46,8 +46,8 @@ object BookPrompts {
         WireMessage("system", author(p)),
         WireMessage(
             "user",
-            if (p.german) "${briefLines(p)}\n\nEntwirf die Grundlage des Buches. Schreibe genau diese Abschnitte:\nTITEL: (ein Arbeitstitel)\nPRÄMISSE: (3 bis 4 Sätze)\nAKT 1: (3 bis 5 Sätze: Ausgangslage, Auslöser)\nAKT 2: (3 bis 5 Sätze: Verwicklungen, Wendepunkt)\nAKT 3: (3 bis 5 Sätze: Höhepunkt, Ende)\nKein Markdown, keine Erklärungen."
-            else "${briefLines(p)}\n\nDesign the foundation of the book. Write exactly these sections:\nTITLE: (a working title)\nPREMISE: (3 to 4 sentences)\nACT 1: (3 to 5 sentences: setup, inciting incident)\nACT 2: (3 to 5 sentences: complications, turning point)\nACT 3: (3 to 5 sentences: climax, ending)\nNo markdown, no explanations.",
+            if (p.german) "${briefLines(p)}\n\nEntwirf die Grundlage des Buches als Inhaltsangabe des fertigen Buches, nicht als Klappentext: Erzähle sachlich, was geschieht, wer was tut und warum, und verrate Wendungen und das Ende. Nichts bleibt offen, keine Andeutungen und keine Fragen an den Leser. Schreibe genau diese Abschnitte:\nTITEL: (ein Arbeitstitel)\nPRÄMISSE: (3 bis 4 Sätze: Ausgangslage und worum es im Kern geht)\nAKT 1: (4 bis 6 Sätze: Ausgangslage, Auslöser, erste Entscheidung)\nAKT 2: (4 bis 6 Sätze: konkrete Verwicklungen, Rückschläge, Wendepunkt)\nAKT 3: (4 bis 6 Sätze: Höhepunkt, Auflösung, wie es endet und was sich verändert hat)\nKein Markdown, keine Erklärungen."
+            else "${briefLines(p)}\n\nDesign the foundation of the book as a synopsis of the finished book, not as a blurb: state plainly what happens, who does what and why, and reveal twists and the ending. Leave nothing open, no hints and no questions to the reader. Write exactly these sections:\nTITLE: (a working title)\nPREMISE: (3 to 4 sentences: the setup and what the story is about)\nACT 1: (4 to 6 sentences: setup, inciting incident, first decision)\nACT 2: (4 to 6 sentences: concrete complications, setbacks, turning point)\nACT 3: (4 to 6 sentences: climax, resolution, how it ends and what has changed)\nNo markdown, no explanations.",
         ),
     )
 
@@ -64,8 +64,8 @@ object BookPrompts {
         WireMessage("system", author(p)),
         WireMessage(
             "user",
-            if (p.german) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1500)}\n\nFIGUREN:\n${trim(p.characters, 1800)}\n\nGliedere das Buch in genau ${p.brief.chapters} Kapitel. Schreibe je Kapitel genau eine Zeile in diesem Format (der Inhalt darf mehrere Sätze lang sein, aber ohne Zeilenumbruch):\nKAPITEL 1: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nKein Markdown, nichts außer den Kapitelzeilen."
-            else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1500)}\n\nCHARACTERS:\n${trim(p.characters, 1800)}\n\nDivide the book into exactly ${p.brief.chapters} chapters. Write exactly one line per chapter in this format (the content may be several sentences but without line breaks):\nCHAPTER 1: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nNo markdown, nothing except the chapter lines.",
+            if (p.german) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1500)}\n\nFIGUREN:\n${trim(p.characters, 1800)}\n\nGliedere das Buch in genau ${p.brief.chapters} Kapitel. Schreibe je Kapitel genau eine Zeile in diesem Format (der Inhalt darf mehrere Sätze lang sein, aber ohne Zeilenumbruch):\nKAPITEL 1: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nDer Inhalt ist eine sachliche Zusammenfassung des Kapitels (Handlung in der Gegenwart erzählt), kein Auszug aus dem Text und keine Ausschmückung. Kein Markdown, nichts außer den Kapitelzeilen."
+            else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1500)}\n\nCHARACTERS:\n${trim(p.characters, 1800)}\n\nDivide the book into exactly ${p.brief.chapters} chapters. Write exactly one line per chapter in this format (the content may be several sentences but without line breaks):\nCHAPTER 1: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nThe content is a plain summary of the chapter (plot told in the present tense), not an excerpt of the text and not embellished. No markdown, nothing except the chapter lines.",
         ),
     )
 
@@ -77,8 +77,8 @@ object BookPrompts {
             WireMessage("system", author(p)),
             WireMessage(
                 "user",
-                if (g) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1200)}\n\nFIGUREN:\n${trim(p.characters, 1200)}\n\nSCHON GEPLANTE KAPITEL:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(noch keine)" }}\n\nSchreibe den Plan für Kapitel ${chapter + 1} von ${p.chapters.size}, passend zu den anderen. Genau eine Zeile in diesem Format:\nKAPITEL ${chapter + 1}: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nKein Markdown, nichts außer dieser Zeile."
-                else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1200)}\n\nCHARACTERS:\n${trim(p.characters, 1200)}\n\nALREADY PLANNED CHAPTERS:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(none yet)" }}\n\nWrite the plan for chapter ${chapter + 1} of ${p.chapters.size}, consistent with the others. Exactly one line in this format:\nCHAPTER ${chapter + 1}: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nNo markdown, nothing except this line.",
+                if (g) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1200)}\n\nFIGUREN:\n${trim(p.characters, 1200)}\n\nSCHON GEPLANTE KAPITEL:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(noch keine)" }}\n\nSchreibe den Plan für Kapitel ${chapter + 1} von ${p.chapters.size}, passend zu den anderen. Genau eine Zeile in diesem Format:\nKAPITEL ${chapter + 1}: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nDer Inhalt ist eine sachliche Zusammenfassung (Handlung in der Gegenwart erzählt), kein Auszug aus dem Text. Kein Markdown, nichts außer dieser Zeile."
+                else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1200)}\n\nCHARACTERS:\n${trim(p.characters, 1200)}\n\nALREADY PLANNED CHAPTERS:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(none yet)" }}\n\nWrite the plan for chapter ${chapter + 1} of ${p.chapters.size}, consistent with the others. Exactly one line in this format:\nCHAPTER ${chapter + 1}: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nThe content is a plain summary (plot told in the present tense), not an excerpt of the text. No markdown, nothing except this line.",
             ),
         )
     }
