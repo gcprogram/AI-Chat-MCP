@@ -142,7 +142,7 @@ object BookParse {
             // "Titel | Inhalt" in einer Zeile; sonst ist die Kopfzeile der Titel und der folgende Text der Inhalt
             val (t, rawPlan) = if ('|' in first) first.split('|', limit = 2).let { it[0] to (it[1] + "\n" + body) } else first to body.toString()
             val clean = t.replace(Regex("[*_#]"), "").trim().ifEmpty { "Kapitel ${result.size + 1}" }
-            val plan = rawPlan.replace(Regex("[*_#]"), "").replace(Regex("""\s*\n\s*"""), " ").trim().let { cutAtSentence(it, MAX_PLAN_CHARS) }
+            val plan = rawPlan.replace(Regex("[*_#]"), "").replace(Regex("""\s*\n\s*"""), " ").trim().let { Documents.completeSentences(cutAtSentence(it, MAX_PLAN_CHARS)) }
             result += BookChapter(clean, plan.ifEmpty { clean })
             title = null
             body.setLength(0)
@@ -161,6 +161,16 @@ object BookParse {
     }
 
     private const val MAX_PLAN_CHARS = 900
+
+    /** Der Plan besteht nur aus dem Titel oder ist ein Bruchstück (an der Token-Grenze abgebrochen). */
+    fun planTooShort(c: BookChapter): Boolean = c.plan.length < 60 || c.plan == c.title
+
+    /** Entfernt am Ende eines Textblocks eine Feldzeile ohne Inhalt ("Beziehungen:") und einen abgebrochenen Satz. */
+    fun dropDangling(text: String): String {
+        val lines = text.lines().toMutableList()
+        while (lines.isNotEmpty() && (lines.last().isBlank() || lines.last().trimEnd().endsWith(":"))) lines.removeAt(lines.lastIndex)
+        return Documents.completeSentences(lines.joinToString("\n"))
+    }
 
     /** Kürzt auf höchstens [max] Zeichen am Ende eines Satzes (Modelle schreiben statt eines Plans manchmal das ganze Kapitel). */
     fun cutAtSentence(text: String, max: Int): String {

@@ -6,15 +6,19 @@ package app.aichatmcp.core
  */
 object BookPrompts {
     /** Höchstzahl neuer Tokens je Stufe. */
-    fun maxTokens(step: BookStep): Int = when (step) {
-        BookStep.Premise -> 800
-        BookStep.Characters -> 1100
-        BookStep.Plan -> 1100
+    fun maxTokens(step: BookStep, chapters: Int = 8): Int = when (step) {
+        BookStep.Premise -> 900
+        BookStep.Characters -> 1300
+        BookStep.Plan -> (160 * chapters + 200).coerceIn(600, 2400) // ein Kapitel = eine Zeile von etwa 100 Tokens
         is BookStep.ChapterPlan -> 350
         is BookStep.Part -> 900
         is BookStep.Summary -> 400
         BookStep.Done -> 0
     }
+
+    /** Die Namenszeile aus dem Figurenblatt ("Elira – Hexe; Kaelen – Wolfsfürst"): Die Blöcke werden im Prompt gekürzt, die Namen dürfen nie fehlen. */
+    fun castLine(characters: String): String = characters.lines().map { it.trim() }
+        .filter { Regex("""^\p{L}[^:\n]{1,40}\s[–—-]\s.{3,90}$""").matches(it) }.take(6).joinToString("; ")
 
     fun trim(text: String, max: Int): String = if (text.length <= max) text.trim() else text.take(max).trimEnd() + " …"
 
@@ -46,8 +50,8 @@ object BookPrompts {
         WireMessage("system", author(p)),
         WireMessage(
             "user",
-            if (p.german) "${briefLines(p)}\n\nEntwirf die Grundlage des Buches als Inhaltsangabe des fertigen Buches, nicht als Klappentext: Erzähle sachlich, was geschieht, wer was tut und warum, und verrate Wendungen und das Ende. Nichts bleibt offen, keine Andeutungen und keine Fragen an den Leser. Schreibe genau diese Abschnitte:\nTITEL: (ein Arbeitstitel)\nPRÄMISSE: (3 bis 4 Sätze: Ausgangslage und worum es im Kern geht)\nAKT 1: (4 bis 6 Sätze: Ausgangslage, Auslöser, erste Entscheidung)\nAKT 2: (4 bis 6 Sätze: konkrete Verwicklungen, Rückschläge, Wendepunkt)\nAKT 3: (4 bis 6 Sätze: Höhepunkt, Auflösung, wie es endet und was sich verändert hat)\nKein Markdown, keine Erklärungen."
-            else "${briefLines(p)}\n\nDesign the foundation of the book as a synopsis of the finished book, not as a blurb: state plainly what happens, who does what and why, and reveal twists and the ending. Leave nothing open, no hints and no questions to the reader. Write exactly these sections:\nTITLE: (a working title)\nPREMISE: (3 to 4 sentences: the setup and what the story is about)\nACT 1: (4 to 6 sentences: setup, inciting incident, first decision)\nACT 2: (4 to 6 sentences: concrete complications, setbacks, turning point)\nACT 3: (4 to 6 sentences: climax, resolution, how it ends and what has changed)\nNo markdown, no explanations.",
+            if (p.german) "${briefLines(p)}\n\nEntwirf die Grundlage des Buches als Inhaltsangabe des fertigen Buches, nicht als Klappentext: Erzähle sachlich, was geschieht, wer was tut und warum, und verrate Wendungen und das Ende. Nichts bleibt offen, keine Andeutungen und keine Fragen an den Leser. Schreibe konsequent in der dritten Person und im Präsens (auch wenn das Buch später in der Ich-Form erzählt wird), nenne die Hauptfiguren mit Namen und erzähle konkrete Ereignisse, Handlungen und Entscheidungen statt Stimmungen. Setze die Vorgaben in Ereignisse um: Was die Gegenspieler konkret planen, wer wen wann verrät, was geopfert wird. Jeder Abschnitt höchstens 90 Wörter. Schreibe genau diese Abschnitte:\nTITEL: (ein Arbeitstitel)\nPRÄMISSE: (3 bis 4 Sätze: Ausgangslage und worum es im Kern geht)\nAKT 1: (4 bis 6 Sätze: Ausgangslage, Auslöser, erste Entscheidung)\nAKT 2: (4 bis 6 Sätze: konkrete Verwicklungen, Rückschläge, Wendepunkt)\nAKT 3: (4 bis 6 Sätze: Höhepunkt, Auflösung, wie es endet und was sich verändert hat)\nKein Markdown, keine Erklärungen."
+            else "${briefLines(p)}\n\nDesign the foundation of the book as a synopsis of the finished book, not as a blurb: state plainly what happens, who does what and why, and reveal twists and the ending. Leave nothing open, no hints and no questions to the reader. Write consistently in the third person and present tense (even if the book will later be told in the first person), name the main characters, and tell concrete events, actions and decisions instead of moods. Turn the brief into events: what the antagonists concretely plan, who betrays whom and when, what is sacrificed. Each section at most 90 words. Write exactly these sections:\nTITLE: (a working title)\nPREMISE: (3 to 4 sentences: the setup and what the story is about)\nACT 1: (4 to 6 sentences: setup, inciting incident, first decision)\nACT 2: (4 to 6 sentences: concrete complications, setbacks, turning point)\nACT 3: (4 to 6 sentences: climax, resolution, how it ends and what has changed)\nNo markdown, no explanations.",
         ),
     )
 
@@ -55,8 +59,8 @@ object BookPrompts {
         WireMessage("system", author(p)),
         WireMessage(
             "user",
-            if (p.german) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1500)}\n\nErstelle die Dramatis Personae: 4 bis 6 wichtige Figuren. Je Figur ein Block, so:\nNAME – Rolle in der Geschichte\nHintergrund und Vergangenheit: …\nZiele und Wünsche: …\nStärken: …\nSchwächen: …\nTrauma: …\nBeziehungen: …\nSprechweise: …\nKurz und konkret, kein Markdown. Beginne direkt mit der ersten Figur, ohne Einleitung."
-            else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1500)}\n\nCreate the dramatis personae: 4 to 6 important characters. One block per character, like this:\nNAME – role in the story\nBackground and past: …\nGoals and wishes: …\nStrengths: …\nWeaknesses: …\nTrauma: …\nRelationships: …\nWay of speaking: …\nShort and concrete, no markdown. Start directly with the first character, no introduction.",
+            if (p.german) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1500)}\n\nErstelle die Dramatis Personae: 4 bis 5 wichtige Figuren, mit denselben Namen wie in der Handlung. Je Figur ein Block, so:\nNAME – Rolle in der Geschichte\nHintergrund und Vergangenheit: …\nZiele und Wünsche: …\nStärken: …\nSchwächen: …\nTrauma: …\nBeziehungen: …\nSprechweise: …\nKonkreter Plan oder Geheimnis: …\nJede Figur höchstens 100 Wörter, in der dritten Person, konkret statt poetisch, kein Markdown. Beginne direkt mit der ersten Figur, ohne Einleitung."
+            else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1500)}\n\nCreate the dramatis personae: 4 to 5 important characters, with the same names as in the plot. One block per character, like this:\nNAME – role in the story\nBackground and past: …\nGoals and wishes: …\nStrengths: …\nWeaknesses: …\nTrauma: …\nRelationships: …\nWay of speaking: …\nConcrete plan or secret: …\nEach character at most 100 words, in the third person, concrete rather than poetic, no markdown. Start directly with the first character, no introduction.",
         ),
     )
 
@@ -64,8 +68,8 @@ object BookPrompts {
         WireMessage("system", author(p)),
         WireMessage(
             "user",
-            if (p.german) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1500)}\n\nFIGUREN:\n${trim(p.characters, 1800)}\n\nGliedere das Buch in genau ${p.brief.chapters} Kapitel. Schreibe je Kapitel genau eine Zeile in diesem Format (der Inhalt darf mehrere Sätze lang sein, aber ohne Zeilenumbruch):\nKAPITEL 1: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nDer Inhalt ist eine sachliche Zusammenfassung des Kapitels (Handlung in der Gegenwart erzählt), kein Auszug aus dem Text und keine Ausschmückung. Kein Markdown, nichts außer den Kapitelzeilen."
-            else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1500)}\n\nCHARACTERS:\n${trim(p.characters, 1800)}\n\nDivide the book into exactly ${p.brief.chapters} chapters. Write exactly one line per chapter in this format (the content may be several sentences but without line breaks):\nCHAPTER 1: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nThe content is a plain summary of the chapter (plot told in the present tense), not an excerpt of the text and not embellished. No markdown, nothing except the chapter lines.",
+            if (p.german) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1500)}\n\nFIGUREN:\n${trim(p.characters, 1800)}\n\nGliedere das Buch in genau ${p.brief.chapters} Kapitel. Schreibe je Kapitel genau eine Zeile in diesem Format (der Inhalt darf mehrere Sätze lang sein, aber ohne Zeilenumbruch):\nKAPITEL 1: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nDer Inhalt ist eine sachliche Zusammenfassung des Kapitels in der dritten Person und im Präsens, höchstens 60 Wörter, mit Namen der Figuren und mindestens einem konkreten Ereignis, das die Handlung voranbringt (keine Stimmung, kein Auszug aus dem Text). Die Kapitel führen der Reihe nach durch alle Ereignisse der Handlung bis zum Ende. Kein Markdown, nichts außer den Kapitelzeilen."
+            else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1500)}\n\nCHARACTERS:\n${trim(p.characters, 1800)}\n\nDivide the book into exactly ${p.brief.chapters} chapters. Write exactly one line per chapter in this format (the content may be several sentences but without line breaks):\nCHAPTER 1: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nThe content is a plain summary of the chapter in the third person and present tense, at most 60 words, naming the characters and with at least one concrete event that moves the plot forward (no mood, no excerpt of the text). The chapters lead in order through all events of the plot to the end. No markdown, nothing except the chapter lines.",
         ),
     )
 
@@ -77,8 +81,8 @@ object BookPrompts {
             WireMessage("system", author(p)),
             WireMessage(
                 "user",
-                if (g) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1200)}\n\nFIGUREN:\n${trim(p.characters, 1200)}\n\nSCHON GEPLANTE KAPITEL:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(noch keine)" }}\n\nSchreibe den Plan für Kapitel ${chapter + 1} von ${p.chapters.size}, passend zu den anderen. Genau eine Zeile in diesem Format:\nKAPITEL ${chapter + 1}: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nDer Inhalt ist eine sachliche Zusammenfassung (Handlung in der Gegenwart erzählt), kein Auszug aus dem Text. Kein Markdown, nichts außer dieser Zeile."
-                else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1200)}\n\nCHARACTERS:\n${trim(p.characters, 1200)}\n\nALREADY PLANNED CHAPTERS:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(none yet)" }}\n\nWrite the plan for chapter ${chapter + 1} of ${p.chapters.size}, consistent with the others. Exactly one line in this format:\nCHAPTER ${chapter + 1}: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nThe content is a plain summary (plot told in the present tense), not an excerpt of the text. No markdown, nothing except this line.",
+                if (g) "${briefLines(p)}\n\nHANDLUNG:\n${trim(p.premise, 1200)}\n\nFIGUREN:\n${trim(p.characters, 1200)}\n\nSCHON GEPLANTE KAPITEL:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(noch keine)" }}\n\nSchreibe den Plan für Kapitel ${chapter + 1} von ${p.chapters.size}, passend zu den anderen. Genau eine Zeile in diesem Format:\nKAPITEL ${chapter + 1}: Titel | Inhalt in 3 bis 5 Sätzen: Ort, beteiligte Figuren, was geschieht und was sich ändert, wie das Kapitel endet\nDer Inhalt ist eine sachliche Zusammenfassung in der dritten Person und im Präsens, höchstens 60 Wörter, mit Namen der Figuren und mindestens einem konkreten Ereignis (keine Stimmung, kein Auszug aus dem Text). Kein Markdown, nichts außer dieser Zeile."
+                else "${briefLines(p)}\n\nPLOT:\n${trim(p.premise, 1200)}\n\nCHARACTERS:\n${trim(p.characters, 1200)}\n\nALREADY PLANNED CHAPTERS:\n${tail(known.joinToString("\n"), 1400).ifEmpty { "(none yet)" }}\n\nWrite the plan for chapter ${chapter + 1} of ${p.chapters.size}, consistent with the others. Exactly one line in this format:\nCHAPTER ${chapter + 1}: Title | Content in 3 to 5 sentences: place, characters involved, what happens and what changes, how the chapter ends\nThe content is a plain summary in the third person and present tense, at most 60 words, naming the characters and with at least one concrete event (no mood, no excerpt of the text). No markdown, nothing except this line.",
             ),
         )
     }
@@ -95,11 +99,13 @@ object BookPrompts {
         val system = if (g) {
             "${author(p)}\nStil: ${b.style.ifBlank { "klar, bildhaft, ohne Floskeln" }}. Perspektive: ${b.perspective.ifBlank { "dritte Person, Vergangenheit" }}.\n" +
                 "Schreibe ausschließlich den Erzähltext des Buches: keine Überschriften, keine Listen, kein Markdown, keine Kommentare an den Leser, keine Zusammenfassung am Ende. " +
-                "Zeige statt zu erklären: Handlung, Dialoge, Sinneseindrücke. Wiederhole keine Formulierungen. Halte dich an Namen und Fakten unten."
+                "Zeige statt zu erklären: Handlung, Dialoge zwischen Figuren, körperliche Reaktionen, Sinneseindrücke. Nenne die Figuren beim Namen. Vermeide abstrakte Gedanken über Bedeutung, Erinnerung oder Schicksal und schließe nicht mit einem Merksatz oder einer Erkenntnis. " +
+                "Wiederhole keine Sätze, Bilder oder Refrains aus dem bisherigen Text: Jeder Teil bringt neue Ereignisse. Halte dich an Namen und Fakten unten."
         } else {
             "${author(p)}\nStyle: ${b.style.ifBlank { "clear, vivid, no clichés" }}. Point of view: ${b.perspective.ifBlank { "third person, past tense" }}.\n" +
                 "Write only the narrative text of the book: no headings, no lists, no markdown, no comments to the reader, no summary at the end. " +
-                "Show, don't tell: action, dialogue, sensory detail. Do not repeat phrases. Stick to the names and facts below."
+                "Show, don't tell: action, dialogue between characters, physical reactions, sensory detail. Name the characters. Avoid abstract thoughts about meaning, memory or fate and do not end with a moral or a realization. " +
+                "Do not repeat sentences, images or refrains from the text so far: every part brings new events. Stick to the names and facts below."
         }
         val words = (b.wordsPerChapter / step.parts).coerceAtLeast(150)
         val previous = if (step.part > 1) tail(c.text, 700) else ""
@@ -114,20 +120,22 @@ object BookPrompts {
         val user = if (g) buildString {
             append("BUCH: ").append(p.displayTitle).append('\n')
             append("HANDLUNG (kurz): ").append(trim(p.premise, 700)).append('\n')
+            castLine(p.characters).takeIf { it.isNotEmpty() }?.let { append("NAMEN: ").append(it).append('\n') }
             append("FIGUREN:\n").append(trim(p.characters, 1100)).append('\n')
             append("BISHER:\n").append(recap(p, step.chapter)).append('\n')
             if (p.facts.isNotBlank()) append("FESTE FAKTEN:\n").append(tail(p.facts, 600)).append('\n')
             append("KAPITEL ${step.chapter + 1} von ${p.chapters.size}: ${c.title}\nPLAN DES KAPITELS: ${trim(c.plan, 600)}\n")
-            if (previous.isNotEmpty()) append("ENDE DES BISHERIGEN KAPITELTEXTS:\n").append(previous).append('\n')
+            if (previous.isNotEmpty()) append("ENDE DES BISHERIGEN KAPITELTEXTS (nur anknüpfen, nicht wiederholen):\n").append(previous).append('\n')
             append("AUFGABE: Schreibe Teil ${step.part} von ${step.parts} dieses Kapitels (etwa $words Wörter). $task")
         } else buildString {
             append("BOOK: ").append(p.displayTitle).append('\n')
             append("PLOT (short): ").append(trim(p.premise, 700)).append('\n')
+            castLine(p.characters).takeIf { it.isNotEmpty() }?.let { append("NAMES: ").append(it).append('\n') }
             append("CHARACTERS:\n").append(trim(p.characters, 1100)).append('\n')
             append("SO FAR:\n").append(recap(p, step.chapter)).append('\n')
             if (p.facts.isNotBlank()) append("FIXED FACTS:\n").append(tail(p.facts, 600)).append('\n')
             append("CHAPTER ${step.chapter + 1} of ${p.chapters.size}: ${c.title}\nCHAPTER PLAN: ${trim(c.plan, 600)}\n")
-            if (previous.isNotEmpty()) append("END OF THE CHAPTER TEXT SO FAR:\n").append(previous).append('\n')
+            if (previous.isNotEmpty()) append("END OF THE CHAPTER TEXT SO FAR (only continue from it, do not repeat it):\n").append(previous).append('\n')
             append("TASK: Write part ${step.part} of ${step.parts} of this chapter (about $words words). $task")
         }
         return listOf(WireMessage("system", system), WireMessage("user", user))

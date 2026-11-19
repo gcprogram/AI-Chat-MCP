@@ -36,7 +36,7 @@ class BookWriter(
             is BookStep.Summary -> BookPrompts.summary(p, step.chapter)
             BookStep.Done -> return p
         }
-        val raw = complete(messages, BookPrompts.maxTokens(step), t, onText) ?: return null
+        val raw = complete(messages, BookPrompts.maxTokens(step, p.brief.chapters), t, onText) ?: return null
         return apply(p, step, raw)
     }
 
@@ -63,17 +63,19 @@ class BookWriter(
             val text = raw.trim()
             return when (step) {
                 BookStep.Premise -> {
-                    val (title, rest) = BookParse.premise(BookParse.cleanBlock(text))
+                    val (title, premiseRaw) = BookParse.premise(BookParse.cleanBlock(text))
+                    val rest = Documents.completeSentences(premiseRaw) // an der Token-Grenze abgebrochener letzter Satz fällt weg
                     if (rest.length < 40) throw BookFormatException("Die Antwort für die Handlung war zu kurz. Bitte noch einmal versuchen.")
                     p.copy(title = p.title.ifBlank { title }, premise = rest)
                 }
                 BookStep.Characters -> {
-                    val cleaned = BookParse.cleanBlock(text)
+                    val cleaned = BookParse.dropDangling(BookParse.cleanBlock(text))
                     if (cleaned.length < 80) throw BookFormatException("Die Antwort für die Figuren war zu kurz. Bitte noch einmal versuchen.")
                     p.copy(characters = cleaned)
                 }
                 BookStep.Plan -> {
-                    val chapters = BookParse.chapters(text, p.brief.chapters)
+                    // Ein an der Token-Grenze abgebrochener letzter Plan (nur Titel oder ein halber Satz) gilt als fehlend und wird einzeln nachgeholt
+                    val chapters = BookParse.chapters(text, p.brief.chapters).let { all -> if (all.size > 1 && BookParse.planTooShort(all.last())) all.dropLast(1) else all }
                     if (chapters.isEmpty()) throw BookFormatException("Der Kapitelplan war nicht lesbar (erwartet: Zeilen \"KAPITEL 1: Titel | Inhalt\"). Bitte noch einmal versuchen.")
                     // Hat das Modell nicht alle Kapitel geliefert, bleiben leere Pläne; sie werden einzeln nachgeholt (BookStep.ChapterPlan)
                     val padded = chapters + List((p.brief.chapters - chapters.size).coerceAtLeast(0)) { i -> BookChapter("${if (p.german) "Kapitel" else "Chapter"} ${chapters.size + i + 1}", "") }
@@ -107,5 +109,6 @@ class BookWriter(
         fun cleanProse(text: String): String = text.lines()
             .filterNot { it.trimStart().startsWith("#") || Regex("""(?i)^\s*\**\s*(teil|part|kapitel|chapter)\s+\d+.{0,40}$""").matches(it) }
             .joinToString("\n").replace("**", "").replace(Regex("\n{3,}"), "\n\n").trim()
+            .split("\n").joinToString("\n") { line -> if (line.count { it == '*' } % 2 == 1) line.replace("*", "") else line } // ungepaarte Betonungs-Sterne (abgebrochener Satz) weg
     }
 }

@@ -21,9 +21,9 @@ private class ScriptedBackend(val seen: MutableList<List<WireMessage>> = mutable
         val answer = when {
             "Entwirf die Grundlage" in user -> "TITEL: Der Leuchtturm\nPRÄMISSE: Eine Wärterin findet ein Logbuch, das die Zukunft beschreibt, und muss entscheiden, ob sie es glaubt.\nAKT 1: Sie zieht ein.\nAKT 2: Das Logbuch trifft ein.\nAKT 3: Sie stellt sich dem Sturm."
             "Erstelle die Dramatis Personae" in user -> "MARA – Leuchtturmwärterin\nHintergrund und Vergangenheit: Tochter eines Fischers, der auf See blieb.\nZiele und Wünsche: Ruhe finden.\nStärken: besonnen.\nSchwächen: misstrauisch.\nTrauma: der Verlust des Vaters.\nBeziehungen: allein.\nSprechweise: knapp."
-            "Schreibe den Plan für Kapitel" in user -> "KAPITEL 2: Der Sturm | Das Logbuch sagt den Sturm voraus und Mara handelt."
+            "Schreibe den Plan für Kapitel" in user -> "KAPITEL 2: Der Sturm | Das Logbuch sagt den Sturm voraus und Mara handelt entschlossen."
             "Gliedere das Buch" in user && shortPlan -> "**KAPITEL 1: Ankunft**\nMara zieht in den Leuchtturm und findet das Logbuch. Sie liest die erste Seite."
-            "Gliedere das Buch" in user -> "KAPITEL 1: Ankunft | Mara zieht in den Leuchtturm und findet das Logbuch.\nKAPITEL 2: Der Sturm | Das Logbuch sagt den Sturm voraus und Mara handelt.\nKAPITEL 3: Überzählig | Ein dritter Eintrag."
+            "Gliedere das Buch" in user -> "KAPITEL 1: Ankunft | Mara zieht in den Leuchtturm und findet das Logbuch.\nKAPITEL 2: Der Sturm | Das Logbuch sagt den Sturm voraus und Mara handelt entschlossen.\nKAPITEL 3: Überzählig | Ein dritter Eintrag."
             "Fasse das Kapitel" in user -> "ZUSAMMENFASSUNG: Mara kommt an und entdeckt das Logbuch.\nFAKTEN:\n- Mara ist die Wärterin\n- Der Turm steht auf Kell Rock"
             else -> "Mara stieg die Wendeltreppe hinauf, und jeder Schritt hallte im kalten Stein wider, bis sie oben die Lampe erreichte. Draußen schlug das Meer gegen die Felsen, und sie wusste, dass sie hier bleiben würde."
         }
@@ -161,5 +161,33 @@ class BookTest {
         val p = project().copy(title = "A & B <C>", chapters = listOf(BookChapter("T", "p", text = "Er sagte: \"x < y & z\"")))
         val text = Documents.docxText(BookExport.docx(p))
         assertTrue("A & B <C>" in text && "x < y & z" in text, text)
+    }
+
+    @Test
+    fun truncatedModelAnswersAreCutCleanly() {
+        // an der Token-Grenze abgebrochene Handlung: der halbe letzte Satz fällt weg
+        val p = project()
+        val premise = BookWriter.apply(p, BookStep.Premise, "TITEL: X\nAKT 3: Mara flieht aus dem brennenden Turm und trifft ihre Schwester am Fluss. Sie kehrt zurück, aber als der Morgen kam, nur ein einziger Fa").premise
+        assertTrue(premise.endsWith("am Fluss."), premise)
+        // Figurenblatt: leere Feldzeile am Ende ("Beziehungen:") weg
+        val chars = BookWriter.apply(p, BookStep.Characters, "Mara – Hauptfigur\nZiele: Sie will die Wahrheit finden und den Leuchtturm retten.\nBeziehungen:").characters
+        assertTrue(chars.endsWith("retten."), chars)
+        // abgebrochener letzter Kapitelplan (nur Titel) gilt als fehlend und wird einzeln nachgeholt
+        val plan = BookWriter.apply(project(chapters = 2), BookStep.Plan, "KAPITEL 1: Ankunft | Mara zieht in den Leuchtturm und findet dort das Logbuch ihres Vaters.\nKAPITEL 2: Der Sturm")
+        assertEquals(2, plan.chapters.size)
+        assertTrue(plan.chapters[1].plan.isBlank() && plan.copy(premise = "P", characters = "C").nextStep() is BookStep.ChapterPlan)
+        // ungepaarte Sterne eines abgebrochenen Satzes verschwinden, gepaarte Betonung bleibt
+        val prose = BookWriter.cleanProse("Der Wind sagte: *Wir erinnern uns.\n\nSie sah *ihn* an und schwieg.")
+        assertTrue("*Wir" !in prose && "*ihn*" in prose, prose)
+    }
+
+    @Test
+    fun theNamesOfTheCharactersAlwaysReachTheChapterPrompt() {
+        val characters = "Elira – Die Hexe\nHintergrund: " + "x".repeat(1500) + "\nKaelen – Der Wolfsfürst\nHintergrund: y\nSeraphine – Die Vampirkönigin\nZiele: z"
+        assertEquals("Elira – Die Hexe; Kaelen – Der Wolfsfürst; Seraphine – Die Vampirkönigin", BookPrompts.castLine(characters))
+        val p = project().copy(characters = characters, chapters = listOf(BookChapter("T", "Plan genug lang für den Test eines Kapitels, das beginnt.")))
+        val prompt = BookPrompts.part(p, BookStep.Part(0, 1, 2))[1].content
+        assertTrue("NAMEN: Elira – Die Hexe; Kaelen" in prompt && "Seraphine" in prompt)
+        assertTrue(BookPrompts.maxTokens(BookStep.Plan, 8) > BookPrompts.maxTokens(BookStep.Plan, 3) && BookPrompts.maxTokens(BookStep.Plan, 40) <= 2400)
     }
 }
