@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import app.aichatmcp.BookStop
 import app.aichatmcp.BookViewModel
 import app.aichatmcp.core.BookBrief
 import app.aichatmcp.core.BookProject
@@ -69,6 +70,34 @@ private val WRITE_LANGUAGES = listOf(
     WriteLanguage("Español", "Spanish", "Soy Aurelia y escribo tus historias. Describe tus deseos abajo."),
     WriteLanguage("Italiano", "Italian", "Sono Aurelia e scrivo le tue storie. Descrivi i tuoi desideri qui sotto."),
 )
+
+/** Welches Modell die Planung und welches den Kapiteltext schreibt: wie im Chat, auf dem Handy oder das externe Modell aus den Einstellungen. */
+@Composable
+private fun ModelChoices(vm: BookViewModel) {
+    val same = t("As in the settings", "Wie in den Einstellungen")
+    val local = tNow("On this phone", "Auf diesem Handy") + vm.localLabel().let { if (it.isNotBlank()) ": $it" else "" }
+    val server = tNow("External model", "Externes Modell") + vm.externalLabel().let { if (it.isNotBlank()) ": $it" else "" }
+    val options = listOf("" to same, "local" to local, "server" to server)
+    fun label(code: String) = options.firstOrNull { it.first == code }?.second ?: same
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(t("Models for this book", "Modelle für das Buch"), style = MaterialTheme.typography.titleSmall)
+            Text(
+                t("Plot, characters, chapter plans and scenes are short texts where a strong model plans much better. The chapter text is long and can be written by a smaller model. The external model is the one entered in the settings.",
+                    "Handlung, Figuren, Kapitelpläne und Szenen sind kurze Texte, die ein starkes Modell deutlich besser plant. Der Kapiteltext ist lang und kann von einem kleineren Modell geschrieben werden. Das externe Modell ist das in den Einstellungen eingetragene."),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            DropdownField(
+                t("Planning (plot, characters, plan, scenes, summaries)", "Planung (Handlung, Figuren, Plan, Szenen, Zusammenfassungen)"), options.map { it.second }, label(vm.planChoice),
+                { chosen -> vm.setModelChoices(options.first { it.second == chosen }.first, vm.writeChoice) }, raw = true,
+            )
+            DropdownField(
+                t("Chapter text", "Kapiteltext"), options.map { it.second }, label(vm.writeChoice),
+                { chosen -> vm.setModelChoices(vm.planChoice, options.first { it.second == chosen }.first) }, raw = true,
+            )
+        }
+    }
+}
 
 /** Aurelia, die Autorin: ihr Bild (etwa die halbe Höhe eines Hochkant-Bildschirms) und darunter ein Text, der sich langsam aufbaut, als würde ihn gerade eine KI schreiben. */
 @Composable
@@ -130,6 +159,7 @@ private fun BookList(vm: BookViewModel, onBack: () -> Unit) {
                 }
             }
         }
+        ModelChoices(vm)
         if (!creating) OutlinedButton(onClick = { creating = true }) { Text(t("New book…", "Neues Buch…")) }
         else NewBookForm(vm, language.brief)
     }
@@ -169,7 +199,7 @@ private fun NewBookForm(vm: BookViewModel, language: String) {
 @Composable
 private fun BookView(vm: BookViewModel, project: BookProject, onBack: () -> Unit, onSave: (String, Boolean) -> Unit) {
     val (done, total) = project.progress()
-    val planReady = project.chapters.isNotEmpty()
+    val chaptersExist = project.chapters.isNotEmpty()
     var includePlan by remember { mutableStateOf(false) }
     ScreenFrame(project.displayTitle, onBack) {
         LinearProgressIndicator(progress = { if (total == 0) 0f else done.toFloat() / total }, modifier = Modifier.fillMaxWidth())
@@ -182,14 +212,19 @@ private fun BookView(vm: BookViewModel, project: BookProject, onBack: () -> Unit
             when {
                 vm.running -> Button(onClick = vm::stop) { Text(t("Stop", "Anhalten")) }
                 project.finished -> Text(t("The book is finished. Save it below.", "Das Buch ist fertig. Speichere es unten."), style = MaterialTheme.typography.bodyMedium)
-                !planReady -> Button(onClick = { vm.start(true) }) { Text(t("Create the plan", "Planung erzeugen")) }
-                else -> Button(onClick = { vm.start(false) }) { Text(if (project.chapters.any { it.parts > 0 }) t("Continue writing", "Weiterschreiben") else t("Write the chapters", "Kapitel schreiben")) }
+                project.premise.isBlank() -> Button(onClick = { vm.start(BookStop.PLOT) }) { Text(t("Write the plot", "Handlung schreiben")) }
+                !project.planReady -> Button(onClick = { vm.start(BookStop.PLAN) }) {
+                    Text(if (project.characters.isBlank()) t("Create characters and plan", "Figuren und Plan erzeugen") else t("Continue the plan", "Plan fortsetzen"))
+                }
+                else -> Button(onClick = { vm.start(BookStop.END) }) { Text(if (project.chapters.any { it.parts > 0 }) t("Continue writing", "Weiterschreiben") else t("Write the chapters", "Kapitel schreiben")) }
             }
         }
-        if (!planReady && !vm.running) {
+        if (!project.planReady && !vm.running) {
             Text(
-                t("First the plot, the characters and the chapter plan are written. Then you can check and change them before the chapters are written.",
-                    "Zuerst entstehen Handlung, Figuren und Kapitelplan. Dann kannst du sie prüfen und ändern, bevor die Kapitel geschrieben werden."),
+                if (project.premise.isBlank()) t("First only the plot is written. Then you read it, change it or let it be written again, before anything is built on it.",
+                    "Zuerst entsteht nur die Handlung. Dann liest du sie, änderst sie oder lässt sie neu schreiben, bevor etwas darauf aufbaut.")
+                else t("The plot is ready. If it is right, create the characters and the plan (chapter plans and scenes); you can check and change those too before the chapters are written.",
+                    "Die Handlung steht. Wenn sie stimmt, erzeuge Figuren und Plan (Kapitelpläne und Szenen); auch die kannst du prüfen und ändern, bevor die Kapitel geschrieben werden."),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -204,8 +239,11 @@ private fun BookView(vm: BookViewModel, project: BookProject, onBack: () -> Unit
             TextSetting("", project.characters, { v -> vm.edit { it.copy(characters = v) } }, minLines = 6, maxLines = 24)
             if (!vm.running) TextButton(onClick = { vm.redo(BookStep.Characters) }) { Text(t("Rewrite (clears the chapters)", "Neu schreiben (leert die Kapitel)")) }
         }
-        if (planReady) {
+        if (chaptersExist) {
             SectionTitle(t("Chapters", "Kapitel"))
+            if (!vm.running && project.chapters.none { it.text.isNotBlank() }) {
+                TextButton(onClick = { vm.redo(BookStep.Plan) }) { Text(t("Rewrite all chapter plans and scenes", "Alle Kapitelpläne und Szenen neu schreiben")) }
+            }
             project.chapters.forEachIndexed { i, c ->
                 var open by remember(i) { mutableStateOf(false) }
                 Card(Modifier.fillMaxWidth()) {
@@ -218,6 +256,15 @@ private fun BookView(vm: BookViewModel, project: BookProject, onBack: () -> Unit
                         Text("${i + 1}. $state", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                         TextSetting(t("Title", "Titel"), c.title, { v -> vm.edit { p -> p.copy(chapters = p.chapters.mapIndexed { j, ch -> if (j == i) ch.copy(title = v) else ch }) } })
                         TextSetting(t("Plan", "Plan"), c.plan, { v -> vm.edit { p -> p.copy(chapters = p.chapters.mapIndexed { j, ch -> if (j == i) ch.copy(plan = v) else ch }) } }, minLines = 2, maxLines = 8)
+                        if (c.beats.isNotBlank()) {
+                            TextSetting(t("Scenes (beats), each part of the chapter writes its share", "Szenen (Beats), jeder Teil des Kapitels schreibt seinen Anteil"), c.beats, { v -> vm.edit { p -> p.copy(chapters = p.chapters.mapIndexed { j, ch -> if (j == i) ch.copy(beats = v) else ch }) } }, minLines = 3, maxLines = 12)
+                        }
+                        if (!vm.running && c.plan.isNotBlank() && c.text.isBlank()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = { vm.redo(BookStep.ChapterPlan(i)) }) { Text(t("Rewrite plan and scenes", "Plan und Szenen neu")) }
+                                if (c.beats.isNotBlank()) TextButton(onClick = { vm.redo(BookStep.Beats(i)) }) { Text(t("Rewrite scenes", "Szenen neu")) }
+                            }
+                        }
                         if (c.text.isNotBlank()) {
                             TextButton(onClick = { open = !open }) { Text(if (open) t("Hide text", "Text ausblenden") else t("Show text (${c.text.split(Regex("\\s+")).size} words)", "Text anzeigen (${c.text.split(Regex("\\s+")).size} Wörter)")) }
                             if (open) SelectionContainer { Text(c.text, style = MaterialTheme.typography.bodyMedium) }

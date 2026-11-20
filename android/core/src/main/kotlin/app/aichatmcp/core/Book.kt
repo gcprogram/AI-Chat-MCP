@@ -31,6 +31,8 @@ data class BookChapter(
     /** Wie viele Teile des Kapitels schon geschrieben sind (ein Teil = eine Anfrage an das Modell). */
     val parts: Int = 0,
     val summary: String = "",
+    /** Szenen-Beats des Kapitels: 3 bis 9 Zeilen "1. Ort; wer; was geschieht; Ergebnis". Jeder Teil des Kapitels schreibt nur seine Beats aus. */
+    val beats: String = "",
 )
 
 @Serializable
@@ -58,6 +60,7 @@ data class BookProject(
         characters.isBlank() -> BookStep.Characters
         chapters.isEmpty() -> BookStep.Plan
         chapters.any { it.plan.isBlank() } -> BookStep.ChapterPlan(chapters.indexOfFirst { it.plan.isBlank() })
+        chapters.any { it.beats.isBlank() } -> BookStep.Beats(chapters.indexOfFirst { it.beats.isBlank() })
         else -> {
             val i = chapters.indexOfFirst { it.summary.isBlank() }
             when {
@@ -68,13 +71,22 @@ data class BookProject(
         }
     }
 
+    /** Handlung, Figuren, Kapitelpläne und Beats liegen vor: ab hier schreibt das Modell nur noch Text. */
+    val planReady: Boolean get() = nextStep().let { it is BookStep.Part || it is BookStep.Summary || it == BookStep.Done }
+
     /** Wie viele Schritte es insgesamt gibt und wie viele erledigt sind (für die Fortschrittsanzeige). */
     fun progress(): Pair<Int, Int> {
         val n = chapters.size.takeIf { it > 0 } ?: brief.chapters
-        val total = 3 + n * (partsPerChapter + 1)
-        val done = (if (premise.isNotBlank()) 1 else 0) + (if (characters.isNotBlank()) 1 else 0) + (if (chapters.isNotEmpty() && chapters.all { it.plan.isNotBlank() }) 1 else 0) +
-            chapters.sumOf { it.parts.coerceAtMost(partsPerChapter) + (if (it.summary.isNotBlank()) 1 else 0) }
+        val total = 2 + n * (partsPerChapter + 3)
+        val done = (if (premise.isNotBlank()) 1 else 0) + (if (characters.isNotBlank()) 1 else 0) +
+            chapters.sumOf { (if (it.plan.isNotBlank()) 1 else 0) + (if (it.beats.isNotBlank()) 1 else 0) + it.parts.coerceAtMost(partsPerChapter) + (if (it.summary.isNotBlank()) 1 else 0) }
         return done to total
+    }
+
+    /** Zu welchem Akt (1 bis 3) das Kapitel [chapter] von [count] gehört: das erste Viertel Akt 1, die Mitte Akt 2, das letzte Viertel Akt 3. */
+    fun actOf(chapter: Int, count: Int): Int {
+        val pos = (chapter + 0.5) / count.coerceAtLeast(1)
+        return if (pos < 0.25) 1 else if (pos < 0.75) 2 else 3
     }
 
     val finished: Boolean get() = nextStep() == BookStep.Done
@@ -87,10 +99,14 @@ data class BookProject(
 sealed interface BookStep {
     data object Premise : BookStep
     data object Characters : BookStep
+    /** Legt die leeren Kapitel an (ohne Modell); die Pläne kommen danach Kapitel für Kapitel ([ChapterPlan]). */
     data object Plan : BookStep
 
-    /** Der Plan eines einzelnen Kapitels, wenn das Modell im Gesamtplan nicht alle geliefert hat. */
+    /** Der Plan eines einzelnen Kapitels, geschrieben in Kenntnis aller schon geplanten (damit sich nichts wiederholt). */
     data class ChapterPlan(val chapter: Int) : BookStep
+
+    /** Die Szenen-Beats eines Kapitels (aus seinem Plan und den Nachbarkapiteln). */
+    data class Beats(val chapter: Int) : BookStep
     data class Part(val chapter: Int, val part: Int, val parts: Int) : BookStep
     data class Summary(val chapter: Int) : BookStep
     data object Done : BookStep
@@ -186,6 +202,52 @@ object BookParse {
         while (lines.isNotEmpty() && lines.first().isBlank()) lines.removeAt(0)
         if (lines.isNotEmpty() && Regex("""(?i)^(absolut|gerne|klar|natürlich|sicher|hier (sind|ist|kommt)|sure|certainly|here (are|is)|okay)\b.{0,160}[:.!]$""").matches(lines.first())) lines.removeAt(0)
         return lines.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
+    }
+
+    private val ACT_HEADER = Regex("""(?im)^\s*[#*_\s]*(?:akt|act)\s*(1|2|3|iii|ii|i)\s*[*_]*\s*[:.\-–—]""")
+
+    private fun actNumber(label: String): Int = when (label.lowercase()) { "1", "i" -> 1; "2", "ii" -> 2; else -> 3 }
+
+    /** Wie viele der drei Akte ("AKT 1:" … "AKT 3:") die Handlung enthält (fehlt einer, wurde die Antwort an der Token-Grenze abgeschnitten). */
+    fun actCount(premise: String): Int = ACT_HEADER.findAll(premise).map { actNumber(it.groupValues[1]) }.toSet().size
+
+    /** Der Text des Aktes [n] (1 bis 3) aus der Handlung, leer wenn er fehlt. */
+    fun act(premise: String, n: Int): String {
+        val marks = ACT_HEADER.findAll(premise).toList()
+        val i = marks.indexOfFirst { actNumber(it.groupValues[1]) == n }
+        if (i < 0) return ""
+        val end = if (i + 1 < marks.size) marks[i + 1].range.first else premise.length
+        return premise.substring(marks[i].range.last + 1, end).trim()
+    }
+
+    private val BEAT_LINE = Regex("""(?im)^\s*[#*_\s\-]*(?:beat|szene|scene)?\s*(\d{1,2})\s*[*_]*\s*[:.)\-–—]\s*(.+)$""")
+
+    /** Die Beats aus der Antwort ("BEAT 1: …" oder "1. …"), höchstens [max], als nummerierte Zeilen; leer, wenn nichts erkannt wurde. */
+    fun beats(text: String, max: Int = 9): String {
+        val found = BEAT_LINE.findAll(text).map { it.groupValues[2].replace(Regex("[*_#]"), "").trim() }.filter { it.length >= 10 }.toList()
+        return found.take(max).mapIndexed { i, b -> "${i + 1}. ${cutAtSentence(b, 320)}" }.joinToString("\n")
+    }
+
+    /** Die Beats eines Kapitels als Liste ohne Nummer. */
+    fun beatList(beats: String): List<String> = beats.lines().map { it.trim().replace(Regex("""^\d{1,2}\s*[.:)]\s*"""), "") }.filter { it.isNotEmpty() }
+
+    /** Die Beats für Teil [part] von [parts]: gleichmäßig verteilt (der letzte Teil bekommt den Rest). Leer, wenn es keine Beats gibt. */
+    fun beatsForPart(beats: String, part: Int, parts: Int): List<String> {
+        val all = beatList(beats)
+        if (all.isEmpty()) return emptyList()
+        val size = (all.size + parts - 1) / parts.coerceAtLeast(1)
+        return all.drop((part - 1) * size).take(size)
+    }
+
+    private fun words(s: String): List<String> = Regex("""[\p{L}\p{N}']+""").findAll(s.lowercase()).map { it.value }.toList()
+
+    private fun grams(w: List<String>, n: Int = 5): Set<List<String>> = if (w.size < n) emptySet() else (0..w.size - n).map { w.subList(it, it + n) }.toSet()
+
+    /** Wiederholt [plan] mindestens zu 30 % (Folgen von fünf Wörtern) einen der [others]? Kleine Modelle kopieren sonst frühere Kapitelpläne. */
+    fun repeats(plan: String, others: List<String>): Boolean {
+        val mine = grams(words(plan))
+        if (mine.isEmpty()) return false
+        return others.any { o -> grams(words(o)).let { og -> og.isNotEmpty() && mine.count { it in og }.toDouble() / mine.size >= 0.3 } }
     }
 
     /** Titel und Rest ("TITEL: …" und die übrigen Abschnitte) der Grundlage. */
