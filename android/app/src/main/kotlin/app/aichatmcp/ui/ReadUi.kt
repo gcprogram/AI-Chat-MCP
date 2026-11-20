@@ -1,13 +1,18 @@
 package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -15,13 +20,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +38,9 @@ import app.aichatmcp.PendingDoc
 import app.aichatmcp.core.PIPER_PREFIX
 import app.aichatmcp.core.ReadMark
 import app.aichatmcp.core.ReaderState
+import app.aichatmcp.core.SummaryLevel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.aichatmcp.speech.SpeechOutput
 
 /**
@@ -37,8 +48,14 @@ import app.aichatmcp.speech.SpeechOutput
  * unter dem Bild. Darunter die Stimmen: Erzähler, Männer und Frauen in wörtlicher Rede. Die Stimmen gehören zum Companion Vorleser.
  */
 @Composable
-fun ReadScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit) {
+fun ReadScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onSaveText: (fileName: String, text: String) -> Unit) {
     LaunchedEffect(Unit) { vm.openReadBook() }
+    // Während das Modell zusammenfasst, soll der Bildschirm nicht ausgehen (bei dunklem Bildschirm drosselt Samsung die Rechenleistung stark)
+    val view = LocalView.current
+    DisposableEffect(vm.summary.busy) {
+        view.keepScreenOn = vm.summary.busy
+        onDispose { view.keepScreenOn = false }
+    }
     val doc = vm.pendingDoc?.takeIf { !it.image }
     val mark = doc?.let { vm.markFor(it) }
     val image = remember { vm.companionImage("vorleser") }
@@ -47,6 +64,7 @@ fun ReadScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit) {
         HeroImage(image, "Vorleser")
         ReadTransport(vm, doc, mark)
         BookSection(vm, doc, mark, onLoad)
+        if (doc != null) SummarySection(vm, doc, onSaveText)
         TypewriterText(t("Load a book and I will read it to you, with a voice for every role.", "Lade ein Buch, und ich lese es dir vor, mit einer Stimme für jede Rolle."))
         VoiceSection(vm)
         TextButton(onClick = { explain = !explain }) { Text(if (explain) t("Hide how it works", "Ablauf ausblenden") else t("How does it work?", "Wie funktioniert das?")) }
@@ -129,6 +147,71 @@ private fun BookSection(vm: ChatViewModel, doc: PendingDoc?, mark: ReadMark?, on
         if (mark != null && !vm.docReading) OutlinedButton(onClick = { vm.docRead() }) { Text(t("From the beginning", "Von vorn")) }
         OutlinedButton(onClick = onLoad, enabled = !vm.docReading) { Text(t("Another book…", "Anderes Buch…")) }
         TextButton(onClick = vm::dismissDoc) { Text(t("Discard", "Verwerfen")) }
+    }
+}
+
+/**
+ * Zusammenfassung des geladenen Buches in drei Stufen: 6 Sätze, ausführlich (ein bis zwei Seiten) und Kapitel für Kapitel mit den wesentlichen Elementen.
+ * Lange Bücher brauchen viele Anfragen (Teil für Teil); der Stand wird gespeichert, ein Abbruch kostet nichts.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SummarySection(vm: ChatViewModel, doc: PendingDoc, onSaveText: (String, String) -> Unit) {
+    val runner = vm.summary
+    LaunchedEffect(doc.name, doc.text.length) { runner.show(doc.name, doc.text) }
+    val short = t("6 sentences", "6 Sätze")
+    val detailed = t("Detailed (1–2 pages)", "Ausführlich (1–2 Seiten)")
+    val chapters = t("Chapter by chapter", "Kapitel für Kapitel")
+    SectionTitle(t("Summary", "Zusammenfassung"))
+    val estimate by produceState<Int?>(null, doc.name, doc.text.length, runner.data, runner.busy) {
+        value = withContext(Dispatchers.Default) { runner.requests(doc.name, doc.text, SummaryLevel.DETAILED) }
+    }
+    estimate?.let { n ->
+        Text(
+            if (n == 0) t("Everything needed is already summarised; the levels appear at once.", "Alles Nötige ist schon zusammengefasst; die Stufen erscheinen sofort.")
+            else t("About $n requests to the model for the whole book (part by part). The model for planning from “Write a book” is used; a long book takes long on a phone, a strong model on the PC is much faster. What is done is kept.",
+                "Etwa $n Anfragen an das Modell für das ganze Buch (Teil für Teil). Es wird das Modell für die Planung aus „Buch schreiben“ benutzt; ein langes Buch dauert auf dem Handy lange, ein starkes Modell am PC geht viel schneller. Was fertig ist, bleibt erhalten."),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+        )
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(onClick = { vm.summarize(SummaryLevel.SHORT) }, enabled = !runner.busy) { Text(short) }
+        Button(onClick = { vm.summarize(SummaryLevel.DETAILED) }, enabled = !runner.busy) { Text(detailed) }
+        Button(onClick = { vm.summarize(SummaryLevel.CHAPTERS) }, enabled = !runner.busy) { Text(chapters) }
+    }
+    if (runner.busy) {
+        LinearProgressIndicator(progress = { if (runner.total == 0) 0f else runner.done.toFloat() / runner.total }, modifier = Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                t("Request ${runner.done.coerceAtMost(runner.total) + 1} of ${runner.total.coerceAtLeast(1)}", "Anfrage ${runner.done.coerceAtMost(runner.total) + 1} von ${runner.total.coerceAtLeast(1)}") +
+                    (if (runner.what.isNotBlank()) ": ${runner.what}" else ""),
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            TextButton(onClick = runner::cancel) { Text(t("Stop", "Anhalten")) }
+        }
+    }
+    if (runner.error.isNotEmpty()) Text(runner.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    val d = runner.data
+    val title = doc.name.substringBeforeLast('.')
+    if (d != null) {
+        SummaryResult(short, d.short, vm, "$title – ${short}.md", onSaveText)
+        SummaryResult(detailed, d.detailed, vm, "$title – ${detailed}.md", onSaveText)
+        SummaryResult(chapters, d.perChapter, vm, "$title – ${chapters}.md", onSaveText)
+    }
+}
+
+@Composable
+private fun SummaryResult(title: String, text: String, vm: ChatViewModel, fileName: String, onSaveText: (String, String) -> Unit) {
+    if (text.isBlank()) return
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            SelectionContainer { Text(text, style = MaterialTheme.typography.bodyMedium) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onSaveText(fileName.replace(Regex("""[\\/:*?"<>|]"""), "_"), "# ${fileName.removeSuffix(".md")}\n\n$text\n") }) { Text(t("Save…", "Speichern…")) }
+                OutlinedButton(onClick = { vm.speakText(text) }, enabled = !vm.docReading) { Text(t("Read aloud", "Vorlesen")) }
+            }
+        }
     }
 }
 

@@ -91,7 +91,10 @@ import app.aichatmcp.core.BookCast
 import app.aichatmcp.core.BookScenes
 import app.aichatmcp.core.Consequence
 import app.aichatmcp.core.Decision
+import app.aichatmcp.core.BookEnd
+import app.aichatmcp.core.BookPicture
 import app.aichatmcp.core.RoleplayPrompt
+import app.aichatmcp.core.SummaryLevel
 import app.aichatmcp.core.WireMessage
 import app.aichatmcp.core.Solo
 import app.aichatmcp.core.SoloEnd
@@ -745,6 +748,40 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return Speech.RESPONSE_LANGUAGES.firstOrNull { Speech.languageTag(it)?.startsWith(tag.substringBefore('-')) == true } ?: persona.language.ifBlank { "Deutsch" }
     }
 
+    // --- Zusammenfassung eines Buches in Stufen -----------------------------------------------------------------------
+
+    private fun summaryChoice(): String = getApplication<Application>().getSharedPreferences("book_models", android.content.Context.MODE_PRIVATE).getString("plan", "").orEmpty()
+
+    /** Fasst das geladene Buch zusammen: 6 Sätze, ausführlich oder Kapitel für Kapitel. Benutzt das Modell für die Planung aus "Modelle für das Buch". */
+    val summary = SummaryRunner(
+        viewModelScope, storage,
+        ask = { prompt, max -> askModel(prompt, max, 0.3, summaryChoice()) },
+        budgetChars = { level ->
+            val out = if (level == SummaryLevel.DETAILED) 1200 else 400
+            ((effectiveConfig(configFor(summaryChoice())).contextTokens - out - 350) * 3).coerceAtLeast(2500)
+        },
+        keepAlive = { on -> if (on) GenerationService.start(getApplication()) else syncKeepAlive() },
+    )
+
+    fun summarize(level: SummaryLevel) {
+        val doc = pendingDoc?.takeIf { !it.image } ?: return
+        val cfg = configFor(summaryChoice())
+        if (cfg.backend == BACKEND_LOCAL && cfg.localModel.isEmpty()) {
+            status = "Bitte zuerst in den Einstellungen ein Modell wählen."
+            return
+        }
+        summary.start(doc.name, doc.text, level, readerLanguageName())
+    }
+
+    /** Liest einen Text (z. B. eine Zusammenfassung) mit der Stimme des Companions vor. */
+    fun speakText(text: String) {
+        if (docReading) return
+        val spoken = Speech.spokenText(text)
+        if (spoken.isEmpty()) return
+        val tag = Speech.languageTag(readerLanguageName()) ?: languageTag()
+        speechOut.speak(spoken, tag, persona.voice) { status = it }
+    }
+
     fun confirmVoicePrompt() {
         val prompt = voicePrompt ?: return
         voicePrompt = null
@@ -760,6 +797,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         readerDoc = doc
         val describer = DescribedPictures(
             viewModelScope, getApplication(), vision, doc.doc?.readable, { config.localThreads }, IMAGE_PROMPT,
+            language = { tag },
+            // das Bildmodell beschreibt englisch: das Modell für die Planung (oder der Chat) übersetzt in die Sprache des Buches
+            translate = { text, target -> askModel(BookPicture.translatePrompt(text, languageName(target)), 320, 0.2, summaryChoice()) },
         ) { description -> triggerKeywords(description, "Bildbeschreibung") }
         pictures = describer
         val events = object : ReaderEvents {
@@ -788,6 +828,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = "Vorlesen beendet."
                 endReading()
                 pendingDoc = null
+                speechOut.speak(BookEnd.phrase(tag), tag, persona.voice) { } // "Ende des Buches" in der Sprache des Buches
             }
         }
         val r = Reader(plan, SpeechReaderOutput(speechOut) { status = it }, describer, events, tag, "en-US", start)
@@ -1543,9 +1584,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return (answer?.let { BookCast.parseNames(it, candidates) }.orEmpty()).ifEmpty { candidates.take(8) }
     }
 
+    /** Die Einstellungen für eine Modellwahl: "" = wie im Chat, "local" = auf dem Handy, "server" = das externe Modell (gleiche Wahl wie "Modelle für das Buch"). */
+    private fun configFor(choice: String) = when (choice) {
+        "local" -> config.copy(backend = BACKEND_LOCAL)
+        "server" -> config.copy(backend = BACKEND_SERVER)
+        else -> config
+    }
+
     /** Eine einzelne Anfrage an das gewählte Modell außerhalb des Chat-Verlaufs (Namen prüfen, Entscheidungen vorschlagen); null bei Fehler oder ohne Modell. */
-    private suspend fun askModel(prompt: List<WireMessage>, maxTokens: Int, temperature: Double): String? {
-        val cfg = effectiveConfig(config)
+    private suspend fun askModel(prompt: List<WireMessage>, maxTokens: Int, temperature: Double, choice: String = ""): String? {
+        val cfg = effectiveConfig(configFor(choice))
         if (cfg.backend == BACKEND_LOCAL && cfg.localModel.isEmpty()) return null
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -1931,7 +1979,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Solange das Modell rechnet (Antwort oder Vorbereitung): Vordergrunddienst mit Wake-Lock, sonst schläft die CPU bei gesperrtem Bildschirm ein. */
     private fun syncKeepAlive() {
-        if (streaming || warming) GenerationService.start(getApplication()) else GenerationService.stop(getApplication())
+        if (streaming || warming || summary.busy) GenerationService.start(getApplication()) else GenerationService.stop(getApplication())
     }
 
     /**

@@ -187,6 +187,10 @@ private fun RootContent(vm: ChatViewModel) {
     }
 
     val bookVm: BookViewModel = viewModel()
+    var summaryText by remember { mutableStateOf("") }
+    val saveSummary = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        uri?.let { runCatching { context.contentResolver.openOutputStream(it)?.use { out -> out.write(summaryText.toByteArray(Charsets.UTF_8)) } }.onSuccess { toast("Gespeichert") }.onFailure { e -> toast("Speichern fehlgeschlagen: ${e.message}") } }
+    }
     var bookSave by remember { mutableStateOf(false) }
     fun writeBytes(uri: Uri, bytes: ByteArray) =
         runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } }.onSuccess { toast("Gespeichert") }.onFailure { toast("Speichern fehlgeschlagen: ${it.message}") }
@@ -220,7 +224,10 @@ private fun RootContent(vm: ChatViewModel) {
             bookVm, onBack = { screen = Screen.CHAT },
             onSave = { kind, plan -> bookSave = plan; if (kind == "md") saveMarkdown.launch(bookVm.fileName("md")) else saveDocx.launch(bookVm.fileName("docx")) },
         )
-        Screen.READ -> ReadScreen(vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) })
+        Screen.READ -> ReadScreen(
+            vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) },
+            onSaveText = { fileName, text -> summaryText = text; saveSummary.launch(fileName) },
+        )
         Screen.PLAY -> PlayScreen(vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) }, onStarted = { screen = Screen.CHAT })
         Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(

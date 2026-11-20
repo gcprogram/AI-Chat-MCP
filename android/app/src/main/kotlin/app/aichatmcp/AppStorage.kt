@@ -12,6 +12,7 @@ import app.aichatmcp.core.ModelTimings
 import app.aichatmcp.core.PersonaStore
 import app.aichatmcp.core.PiperStore
 import app.aichatmcp.core.ReadMarks
+import app.aichatmcp.core.SummaryData
 import app.aichatmcp.core.TodoStore
 import app.aichatmcp.core.WhisperStore
 import app.aichatmcp.core.string
@@ -213,6 +214,22 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
         (chatFile(personaId).takeIf { it.isFile } ?: legacyChatFile(personaId).takeIf { it.isFile })?.let { ChatLog.fromJson(it.readText()) }
     } catch (_: ChatFileException) {
         null
+    }
+
+    // --- Zusammenfassungen von Büchern (Zwischenstand je Buch) ---------------------------------------------------
+
+    private val summariesDir get() = File(root, "summaries")
+
+    fun loadSummary(key: String): SummaryData? =
+        runCatching { AppJson.decodeFromString(SummaryData.serializer(), File(summariesDir, "$key.json").readText(Charsets.UTF_8)) }.getOrNull()
+
+    fun saveSummary(data: SummaryData) {
+        if (data.key.isBlank()) return
+        summariesDir.mkdirs()
+        val target = File(summariesDir, "${data.key}.json")
+        val temp = File(summariesDir, "${data.key}.json.tmp")
+        temp.writeText(AppJson.encodeToString(SummaryData.serializer(), data), Charsets.UTF_8)
+        if (!temp.renameTo(target)) target.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
     }
 
     fun saveChat(personaId: String, json: String) {

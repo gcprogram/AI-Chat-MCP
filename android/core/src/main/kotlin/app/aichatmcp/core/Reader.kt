@@ -24,6 +24,9 @@ interface ReaderPictures {
     /** Liefert die Beschreibung (null = nicht möglich) und ruft [done] danach auf dem Hauptthread auf. */
     fun describe(picture: ReadItem.Picture, done: (String?) -> Unit)
 
+    /** In welcher Sprache der Text der Beschreibung von [picture] gesprochen wird (nach [describe]); null = die Standardsprache der Bilder des Readers. */
+    fun language(picture: ReadItem.Picture): String? = null
+
     /** Beschreibung schon während des vorigen Abschnitts berechnen (ohne Rückruf), damit hinterher keine Pause entsteht. */
     fun prefetch(picture: ReadItem.Picture)
 
@@ -335,7 +338,7 @@ class Reader(
             if (spoken == null) {
                 advanceFrom(i) // nichts zu sagen: weiter im Text
             } else {
-                speak(i, spoken, if (text != null) pictureLanguage else textLanguage, flush = true, fromImage = text != null)
+                speak(i, spoken, if (text != null) (pictures.language(picture) ?: pictureLanguage) else textLanguage, flush = true, fromImage = text != null)
             }
         }
     }

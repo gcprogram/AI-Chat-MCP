@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import app.aichatmcp.ImagePrep
+import app.aichatmcp.core.BookPicture
 import app.aichatmcp.core.Decorative
 import app.aichatmcp.core.Documents
 import app.aichatmcp.core.ReadItem
@@ -94,8 +95,13 @@ class DescribedPictures(
     private val doc: ReadableDoc?,
     private val threads: () -> Int,
     private val prompt: String,
+    /** Sprache des Buches (Tag, z. B. "de-DE"): Die Beschreibung wird dorthin übersetzt und mit dem Einleitungssatz gesprochen. null = englisch lassen. */
+    private val language: () -> String? = { null },
+    /** Übersetzt die englische Beschreibung in die Sprache [Tag]; null = geht nicht (dann bleibt es englisch, auch der Einleitungssatz). */
+    private val translate: suspend (String, String) -> String? = { _, _ -> null },
     private val onDescribed: (String) -> Unit = {},
 ) : ReaderPictures {
+    private val languages = HashMap<String, String>()
     private val cache = HashMap<String, String?>()
     private val waiting = HashMap<String, MutableList<(String?) -> Unit>>()
     private val running = HashSet<String>()
@@ -108,6 +114,8 @@ class DescribedPictures(
         waiting.getOrPut(ref) { mutableListOf() } += done
         start(ref)
     }
+
+    override fun language(picture: ReadItem.Picture): String? = languages[picture.ref]
 
     override fun prefetch(picture: ReadItem.Picture) {
         val ref = picture.ref
@@ -131,11 +139,25 @@ class DescribedPictures(
                     }
                 }.getOrNull()?.takeIf { it.isNotBlank() }
             }
+            // Beschreibung in die Sprache des Buches bringen und den Einleitungssatz davorsetzen ("An dieser Stelle gibt es ein Bild, welches Folgendes zeigt")
+            var described = text
+            var spokenLanguage: String? = null
+            var content = text
+            val tag = language()
+            if (text != null && text != ReaderPictures.SKIP) {
+                val translated = if (tag != null && !tag.startsWith("en", ignoreCase = true) && mine == epoch) {
+                    runCatching { translate(text, tag) }.getOrNull()?.takeIf { it.isNotBlank() }?.let { Documents.completeSentences(it) }
+                } else null
+                content = translated ?: text
+                spokenLanguage = if (translated != null) tag else "en-US"
+                described = BookPicture.intro(spokenLanguage) + " " + content
+            }
             running.remove(ref)
             if (mine != epoch) return@launch // abgebrochen (Pause oder Sprung): ein unvollständiges Ergebnis nicht merken
-            cache[ref] = text
-            if (text != null && text != ReaderPictures.SKIP) onDescribed(text)
-            waiting.remove(ref)?.forEach { it(text) }
+            cache[ref] = described
+            if (spokenLanguage != null) languages[ref] = spokenLanguage
+            if (text != null && text != ReaderPictures.SKIP) onDescribed(content.orEmpty())
+            waiting.remove(ref)?.forEach { it(described) }
         }
     }
 

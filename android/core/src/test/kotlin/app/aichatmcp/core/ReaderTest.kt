@@ -24,7 +24,9 @@ class ReaderTest {
 
         override fun speak(text: String, id: String, language: String?, flush: Boolean) { spoken += Spoken(text, id, language, flush) }
         override fun stopSpeaking() { stops++ }
+        val pictureLanguages = mutableMapOf<String, String>()
         override fun describe(picture: ReadItem.Picture, done: (String?) -> Unit) { pending += picture to done }
+        override fun language(picture: ReadItem.Picture): String? = pictureLanguages[picture.ref]
         override fun prefetch(picture: ReadItem.Picture) { prefetched += picture.ref }
         override fun cancel() { cancels++ }
         override fun onState(state: ReaderState) { states += state }
@@ -133,6 +135,18 @@ class ReaderTest {
         assertEquals(1, f.finished)
         assertEquals(2, r.index)
         assertEquals(2, f.positions.last()) // Stelle hinter dem Ende: die Marke wird gelöscht
+    }
+
+    @Test
+    fun aDescriptionInTheLanguageOfTheBookIsSpokenInThatLanguage() {
+        val items = listOf(ReadItem.Speech("vor dem Bild"), ReadItem.Picture("img1", "Hafen"), ReadItem.Speech("nach dem Bild"))
+        val f = Fakes()
+        f.pictureLanguages["img1"] = "de-DE" // übersetzt: Einleitung und Beschreibung deutsch
+        val (r, _) = reader(items, f = f)
+        r.play()
+        r.utteranceDone(f.spoken[0].id)
+        f.pending[0].second("An dieser Stelle gibt es ein Bild, welches Folgendes zeigt: Ein großer Hafen.")
+        assertEquals("An dieser Stelle gibt es ein Bild, welches Folgendes zeigt: Ein großer Hafen." to "de-DE", f.spoken.last().text to f.spoken.last().language)
     }
 
     @Test
