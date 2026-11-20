@@ -35,6 +35,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.ui.BookScreen
+import app.aichatmcp.ui.PlayScreen
+import app.aichatmcp.ui.ReadScreen
 import app.aichatmcp.ui.ChatScreen
 import app.aichatmcp.ui.DownloadQuestion
 import app.aichatmcp.ui.FolderActions
@@ -218,6 +220,8 @@ private fun RootContent(vm: ChatViewModel) {
             bookVm, onBack = { screen = Screen.CHAT },
             onSave = { kind, plan -> bookSave = plan; if (kind == "md") saveMarkdown.launch(bookVm.fileName("md")) else saveDocx.launch(bookVm.fileName("docx")) },
         )
+        Screen.READ -> ReadScreen(vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) })
+        Screen.PLAY -> PlayScreen(vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) }, onStarted = { screen = Screen.CHAT })
         Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },

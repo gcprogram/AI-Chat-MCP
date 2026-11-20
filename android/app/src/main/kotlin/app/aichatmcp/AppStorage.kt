@@ -228,7 +228,7 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
 
     private companion object {
         /** Standard-Einträge, die nachträglich in bestehende Konfigurationen übernommen werden (Server und Aliase). */
-        val NEW_PERSONAS = listOf("aurelia")
+        val NEW_PERSONAS = listOf("aurelia", "vorleser", "story_game")
         val NEW_DEFAULTS = listOf("organizer", "todo-add", "todo-list", "todo-done", "cal-add", "cal-list", "alarm", "timer", "messages")
     }
 }

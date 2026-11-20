@@ -112,9 +112,9 @@ val fetchSherpa by tasks.registering {
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(fetchSherpa) }
 android.sourceSets["main"].jniLibs.srcDir(sherpaDir)
 
-// Aurelia (Autorin im Buchmodus): die Companion-Datei vom PC wird als Asset mitgeliefert, damit Name und Bild an einer Stelle gepflegt werden
+// Aurelia (Autorin), Vorleser und Story-Game: die Companion-Dateien vom PC werden als Assets mitgeliefert, damit Name und Bild an einer Stelle gepflegt werden
 val copyAurelia by tasks.registering(Copy::class) {
-    from("../../personas") { include("aurelia.json") }
+    from("../../personas") { include("aurelia.json", "vorleser.json", "story_game.json") }
     into(layout.buildDirectory.dir("generated/aurelia-assets"))
 }
 android.sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/aurelia-assets"))

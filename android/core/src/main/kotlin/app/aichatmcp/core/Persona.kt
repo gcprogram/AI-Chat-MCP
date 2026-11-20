@@ -26,6 +26,8 @@ data class Persona(
     val avatar: String = "",
     /** Das Bild in der Datei (Base64, kleines JPEG, siehe [EmbeddedAvatar]); hat Vorrang vor [avatar]. */
     @SerialName("avatar_data") val avatarData: String = "",
+    /** Beim Vorlesen von Dokumenten wechselt die Stimme bei wörtlicher Rede (Stimmen für männliche und weibliche Rede), sofern welche gewählt sind. */
+    @SerialName("dialogue_voices") val dialogueVoices: Boolean = true,
     /** Freigeschaltete Werkzeuge (Aliase aus mcp_servers.json). */
     val tools: List<String> = emptyList(),
     /** Davon vorab genehmigt: laufen ohne Rückfrage. */

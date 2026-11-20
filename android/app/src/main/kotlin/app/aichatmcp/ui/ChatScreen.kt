@@ -66,7 +66,7 @@ private val ToolGreen = Color(0xFF0B6B3A)
 private val ErrorRed = Color(0xFFC0392B)
 private val InfoBlue = Color(0xFF1A56C4)
 
-enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO, BOOK }
+enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO, BOOK, READ, PLAY }
 
 @Composable
 fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {
@@ -137,25 +137,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
             else Button(onClick = vm::send, enabled = vm.input.isNotBlank()) { Text("Senden") }
         }
     }
-    vm.voicePrompt?.let { prompt ->
-        AlertDialog(
-            onDismissRequest = vm::dismissVoicePrompt,
-            title = { Text("Stimme fehlt") },
-            text = {
-                Text(
-                    "Der Text ist vermutlich ${prompt.name}, aber dafür ist keine Sprachstimme installiert. Du kannst die Stimmen laden " +
-                        "(danach noch einmal auf Vorlesen tippen) oder jetzt trotzdem mit der vorhandenen Stimme vorlesen lassen.",
-                )
-            },
-            confirmButton = { TextButton(onClick = { vm.dismissVoicePrompt(); vm.installVoices() }) { Text("Stimmen laden…") } },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = vm::confirmVoicePrompt) { Text("Trotzdem vorlesen") }
-                    TextButton(onClick = vm::dismissVoicePrompt) { Text("Abbrechen") }
-                }
-            },
-        )
-    }
+    VoicePromptDialog(vm)
     vm.pendingConfirm?.let { pending ->
         AlertDialog(
             onDismissRequest = { pending.answer(false) },
@@ -203,6 +185,8 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
                 DropdownMenuItem(text = { Text("Companions") }, onClick = { moreMenu = false; open(Screen.COMPANIONS) })
                 DropdownMenuItem(text = { Text("Werkzeuge") }, onClick = { moreMenu = false; open(Screen.TOOLS) })
                 DropdownMenuItem(text = { Text(t("Write a book", "Buch schreiben")) }, onClick = { moreMenu = false; open(Screen.BOOK) })
+                DropdownMenuItem(text = { Text(t("Read a book", "Buch vorlesen")) }, onClick = { moreMenu = false; open(Screen.READ) })
+                DropdownMenuItem(text = { Text(t("Play a book", "Buch spielen")) }, onClick = { moreMenu = false; open(Screen.PLAY) })
                 DropdownMenuItem(text = { Text("Einstellungen") }, onClick = { moreMenu = false; open(Screen.SETTINGS) })
                 HorizontalDivider()
                 vm.markList.take(5).forEach { mark ->
@@ -330,13 +314,37 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
     }
 }
 
+/** Rückfrage, wenn für die Sprache des Textes keine Stimme installiert ist (Chat und "Read a book"). */
+@Composable
+internal fun VoicePromptDialog(vm: ChatViewModel) {
+    vm.voicePrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = vm::dismissVoicePrompt,
+            title = { Text("Stimme fehlt") },
+            text = {
+                Text(
+                    "Der Text ist vermutlich ${prompt.name}, aber dafür ist keine Sprachstimme installiert. Du kannst die Stimmen laden " +
+                        "(danach noch einmal auf Vorlesen tippen) oder jetzt trotzdem mit der vorhandenen Stimme vorlesen lassen.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.dismissVoicePrompt(); vm.installVoices() }) { Text("Stimmen laden…") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = vm::confirmVoicePrompt) { Text("Trotzdem vorlesen") }
+                    TextButton(onClick = vm::dismissVoicePrompt) { Text("Abbrechen") }
+                }
+            },
+        )
+    }
+}
+
 /**
  * Tasten im Vorlese-Modus: << Seite zurück (ohne Seiten 10 Abschnitte), < ein Abschnitt zurück, ■ Stopp, ▶/|| Play und Pause in einer Taste,
  * > ein Abschnitt vor, >> Seite vor (ohne Seiten 10 Abschnitte). Ein Abschnitt dauert etwa 25 Sekunden zum Hören: Das ist als
  * Schritt klein genug zum Wiederholen und kostet keine Wartezeit (nur bei Bildern, die erst beschrieben werden müssen).
  */
 @Composable
-private fun ReaderControls(vm: ChatViewModel) {
+internal fun ReaderControls(vm: ChatViewModel) {
     val playing = vm.readerState == ReaderState.PLAYING
     Text(
         buildString {
@@ -363,7 +371,7 @@ private fun ReaderControls(vm: ChatViewModel) {
 }
 
 @Composable
-private fun ReaderKey(label: String, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun ReaderKey(label: String, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     FilledTonalButton(onClick = onClick, enabled = enabled, modifier = modifier, contentPadding = PaddingValues(horizontal = 0.dp)) {
         Text(label, maxLines = 1)
     }

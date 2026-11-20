@@ -705,7 +705,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val source = doc.doc ?: DocText(doc.name, doc.kind, doc.text)
         val tag = LanguageDetect.detect(source.text)?.tag ?: languageTag() ?: Locale.getDefault().toLanguageTag()
         // Wörtliche Rede mit eigenen Stimmen: nur mit Piper-Erzählerstimme und mindestens einer Stimme für männliche oder weibliche Rede
-        val dialogue = (persona.voiceMale.isNotEmpty() || persona.voiceFemale.isNotEmpty()) && speechOut.piperFor(persona.voice, tag) != null
+        val dialogue = persona.dialogueVoices && (persona.voiceMale.isNotEmpty() || persona.voiceFemale.isNotEmpty()) && speechOut.piperFor(persona.voice, tag) != null
         val plan = ReadPlan.of(source, dialogue = dialogue)
         if (plan.size == 0) {
             status = "Es gibt nichts zum Vorlesen."
@@ -717,6 +717,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if (installed[tag] == true || speechOut.piperFor(persona.voice, tag) != null) beginReading(doc, plan, tag, start)
             else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, plan, tag, start) }
         }
+    }
+
+    /** "Read a book": Die Stimmen gehören zum Companion Vorleser; er wird der aktive Companion (falls er angelegt ist), damit Vorlesen und Stimmenwahl zu ihm gehören. */
+    fun openReadBook() {
+        if (!streaming && "vorleser" in personaIds && persona.id != "vorleser") selectPersona("vorleser")
+    }
+
+    /** Das Bild eines mitgelieferten Companions (Vorleser, Story-Game) für die Kopf-Bilder der Bildschirme; null, wenn er nicht angelegt ist. */
+    fun companionImage(id: String): File? = if (id in personaIds) storage.avatarFile(storage.personas.load(id)) else null
+
+    /** Sprache des geladenen Buches (aus dem Text erkannt), sonst die Sprache des Companions: danach richtet sich die Liste der Stimmen. */
+    fun readerLanguageName(): String {
+        val doc = pendingDoc ?: return persona.language.ifBlank { "Deutsch" }
+        val tag = LanguageDetect.detect(doc.text)?.tag ?: return persona.language.ifBlank { "Deutsch" }
+        return Speech.RESPONSE_LANGUAGES.firstOrNull { Speech.languageTag(it)?.startsWith(tag.substringBefore('-')) == true } ?: persona.language.ifBlank { "Deutsch" }
     }
 
     fun confirmVoicePrompt() {
@@ -1552,7 +1567,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyRoleplayPersona() {
         val run = roleplay ?: return
-        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing)
+        // Bild und Stimme des Spielleiters kommen vom Companion "Story-Game" (wenn er angelegt ist)
+        val host = if ("story_game" in personaIds) storage.personas.load("story_game") else null
+        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing).let { if (host == null) it else it.copy(avatarData = host.avatarData, voice = host.voice) }
         session.persona = persona
         syncVoice()
         updateContext()

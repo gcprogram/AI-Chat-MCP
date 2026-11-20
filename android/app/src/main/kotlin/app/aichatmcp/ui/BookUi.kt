@@ -102,32 +102,12 @@ private fun ModelChoices(vm: BookViewModel) {
 /** Aurelia, die Autorin: ihr Bild (etwa die halbe Höhe eines Hochkant-Bildschirms) und darunter ein Text, der sich langsam aufbaut, als würde ihn gerade eine KI schreiben. */
 @Composable
 private fun AureliaHeader(vm: BookViewModel, language: WriteLanguage, onLanguage: (WriteLanguage) -> Unit) {
-    val image by produceState<ImageBitmap?>(null) { value = withContext(Dispatchers.IO) { vm.aureliaImage()?.let { decodeAvatar(it, target = 1024) } } }
-    image?.let {
-        Image(it, contentDescription = "Aurelia", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)))
-    }
+    HeroImage(remember { vm.aureliaImage() }, "Aurelia")
     DropdownField(
         t("Language of the book", "Sprache des Buches"), WRITE_LANGUAGES.map { it.label }, language.label,
         { label -> WRITE_LANGUAGES.firstOrNull { it.label == label }?.let(onLanguage) }, raw = true,
     )
-    val full = language.greeting // ändert der Nutzer die Sprache, tippt Aurelia den Text neu (in dieser Sprache)
-    var shown by remember(full) { mutableIntStateOf(0) }
-    var cursor by remember { mutableStateOf(true) }
-    LaunchedEffect(full) {
-        delay(600)
-        while (shown < full.length) { // unregelmäßig wie ein erzeugender Text: nach Satzzeichen und Wortenden etwas länger
-            shown++
-            val c = full[shown - 1]
-            delay(if (c == '.' ) 450L else if (c == ' ') 90L else 45L)
-        }
-        repeat(6) { cursor = !cursor; delay(500) }
-        cursor = false
-    }
-    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        // der fertige Text reserviert unsichtbar die Höhe, damit die Felder darunter beim Tippen nicht springen
-        Text(full + " ", style = MaterialTheme.typography.titleMedium, color = Color.Transparent)
-        Text(full.take(shown) + if (cursor) "▍" else "", style = MaterialTheme.typography.titleMedium)
-    }
+    TypewriterText(language.greeting) // ändert der Nutzer die Sprache, tippt Aurelia den Text neu (in dieser Sprache)
 }
 
 @Composable

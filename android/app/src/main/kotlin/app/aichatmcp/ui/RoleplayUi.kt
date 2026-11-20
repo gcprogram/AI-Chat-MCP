@@ -34,18 +34,62 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Rollenspiel mit der geladenen Datei als Vorlage: Figur wählen (oder "Ich"), dann startet der Spielleiter die erste Szene. */
+/** Die Wahl für ein Buch-Rollenspiel: Zahl der Szenen, Ich-Erzählung, Namenskandidaten und die gewählte Spielerfigur. */
+class RoleplayChoice(val scenes: Int, val firstPerson: Boolean, val found: List<String>) {
+    var names by mutableStateOf(found.take(12))
+    var player by mutableStateOf(if (firstPerson) "" else found.firstOrNull().orEmpty())
+    var custom by mutableStateOf("")
+    var checking by mutableStateOf(false)
+
+    /** Name der Spielerfigur; leer = der Ich-Erzähler. */
+    val playerName: String get() = custom.trim().ifEmpty { player }
+    val asFirstPerson: Boolean get() = firstPerson && custom.isBlank() && player.isEmpty()
+}
+
+/** Untersucht das Buch (Szenen, Erzählform, Namen) im Hintergrund; bis dahin null. */
+@Composable
+fun rememberRoleplayChoice(doc: PendingDoc): RoleplayChoice? {
+    val data by produceState<Triple<Int, Boolean, List<String>>?>(null, doc) {
+        value = withContext(Dispatchers.Default) { Triple(BookScenes.split(doc.text).size, BookCast.firstPerson(doc.text), BookCast.candidates(doc.text)) }
+    }
+    return data?.let { d -> remember(d) { RoleplayChoice(d.first, d.second, d.third) } }
+}
+
+/** Die Felder zur Wahl der Spielerfigur (Ich, Namen aus dem Buch, eigener Name) samt Namensprüfung durch das Modell. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RoleplayDialog(doc: PendingDoc, vm: ChatViewModel, onClose: () -> Unit) {
+fun RoleplayChoiceFields(choice: RoleplayChoice, vm: ChatViewModel) {
     val scope = rememberCoroutineScope()
-    val scenes by produceState<Int?>(null, doc) { value = withContext(Dispatchers.Default) { BookScenes.split(doc.text).size } }
-    val firstPerson by produceState(false, doc) { value = withContext(Dispatchers.Default) { BookCast.firstPerson(doc.text) } }
-    val found by produceState(emptyList<String>(), doc) { value = withContext(Dispatchers.Default) { BookCast.candidates(doc.text) } }
-    var names by remember(found) { mutableStateOf(found.take(12)) }
-    var player by remember(firstPerson) { mutableStateOf(if (firstPerson) "" else found.firstOrNull().orEmpty()) }
-    var custom by remember { mutableStateOf("") }
-    var checking by remember { mutableStateOf(false) }
+    Text(
+        t("${choice.scenes} scenes found. ", "${choice.scenes} Szenen gefunden. ") +
+            if (choice.firstPerson) t("The book is told in the first person: you can play the “I”.", "Das Buch ist in der Ich-Form erzählt: du kannst das „Ich“ spielen.") else "",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text(t("Your character:", "Deine Figur:"), style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = choice.player.isEmpty() && choice.custom.isBlank(), onClick = { choice.player = ""; choice.custom = "" }, label = { Text(t("I (narrator)", "Ich (Erzähler)")) })
+        choice.names.forEach { n -> FilterChip(selected = choice.player == n && choice.custom.isBlank(), onClick = { choice.player = n; choice.custom = "" }, label = { Text(n) }) }
+    }
+    TextSetting(t("or another name", "oder ein anderer Name"), choice.custom, { choice.custom = it })
+    if (choice.found.isNotEmpty()) {
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    choice.checking = true
+                    choice.names = vm.detectCast(choice.found)
+                    if (choice.player !in choice.names && choice.player.isNotEmpty()) choice.player = choice.names.firstOrNull().orEmpty()
+                    choice.checking = false
+                }
+            },
+            enabled = !choice.checking && !vm.streaming,
+        ) { Text(if (choice.checking) t("Checking…", "Prüfe…") else t("Check the names with the model", "Namen mit dem Modell prüfen")) }
+    }
+}
+
+/** Rollenspiel mit der geladenen Datei als Vorlage: Figur wählen (oder "Ich"), dann startet der Spielleiter die erste Szene. */
+@Composable
+fun RoleplayDialog(doc: PendingDoc, vm: ChatViewModel, onClose: () -> Unit) {
+    val choice = rememberRoleplayChoice(doc)
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(t("Role play with this book", "Rollenspiel mit diesem Buch")) },
@@ -56,29 +100,13 @@ fun RoleplayDialog(doc: PendingDoc, vm: ChatViewModel, onClose: () -> Unit) {
                         "Der Companion wird zum Spielleiter und spielt die Ereignisse des Buches Szene für Szene nach: den Erzähler und alle Figuren außer deiner. Weichst du von der Handlung ab, lenkt er dich zurück. Du entscheidest, was deine Figur tut."),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                Text(
-                    scenes?.let { t("$it scenes found. ", "$it Szenen gefunden. ") }.orEmpty() +
-                        if (firstPerson) t("The book is told in the first person: you can play the “I”.", "Das Buch ist in der Ich-Form erzählt: du kannst das „Ich“ spielen.") else "",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(t("Your character:", "Deine Figur:"), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = player.isEmpty() && custom.isBlank(), onClick = { player = ""; custom = "" }, label = { Text(t("I (narrator)", "Ich (Erzähler)")) })
-                    names.forEach { n -> FilterChip(selected = player == n && custom.isBlank(), onClick = { player = n; custom = "" }, label = { Text(n) }) }
-                }
-                TextSetting(t("or another name", "oder ein anderer Name"), custom, { custom = it })
-                if (found.isNotEmpty()) {
-                    OutlinedButton(
-                        onClick = { scope.launch { checking = true; names = vm.detectCast(found); if (player !in names && player.isNotEmpty()) player = names.firstOrNull().orEmpty(); checking = false } },
-                        enabled = !checking && !vm.streaming,
-                    ) { Text(if (checking) t("Checking…", "Prüfe…") else t("Check the names with the model", "Namen mit dem Modell prüfen")) }
-                }
+                if (choice == null) Text(t("Reading the book…", "Lese das Buch…"), style = MaterialTheme.typography.bodySmall) else RoleplayChoiceFields(choice, vm)
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { vm.startRoleplay(doc, custom.trim().ifEmpty { player }, firstPerson && custom.isBlank() && player.isEmpty()); onClose() },
-                enabled = scenes != null && scenes != 0 && !vm.streaming,
+                onClick = { choice?.let { vm.startRoleplay(doc, it.playerName, it.asFirstPerson) }; onClose() },
+                enabled = choice != null && choice.scenes != 0 && !vm.streaming,
             ) { Text(t("Start", "Starten")) }
         },
         dismissButton = { TextButton(onClick = onClose) { Text(t("Cancel", "Abbrechen")) } },
