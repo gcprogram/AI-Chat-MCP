@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -30,6 +31,8 @@ import app.aichatmcp.ChatViewModel
 import app.aichatmcp.PendingDoc
 import app.aichatmcp.core.BookCast
 import app.aichatmcp.core.BookScenes
+import app.aichatmcp.core.Solo
+import app.aichatmcp.core.SoloEnd
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -113,18 +116,88 @@ fun RoleplayDialog(doc: PendingDoc, vm: ChatViewModel, onClose: () -> Unit) {
     )
 }
 
-/** Leiste über dem Chat während eines Buch-Rollenspiels: Szene, nächste Szene, beenden. */
+/** Leiste über dem Chat während eines Buch-Rollenspiels: Szene, nächste Szene (im Solo-Abenteuer: Szene beenden und entscheiden), beenden; im Solo-Abenteuer der Spielstand. */
 @Composable
 fun RoleplayBar(vm: ChatViewModel) {
     val run = vm.roleplay ?: return
+    val solo = run.setup.solo
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${run.setup.title} · " + t("scene ${run.sceneIndex + 1}/${run.setup.scenes.size}", "Szene ${run.sceneIndex + 1}/${run.setup.scenes.size}") + ": ${run.setup.scenes[run.sceneIndex].title}",
-                style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 2,
-            )
-            TextButton(onClick = vm::nextScene, enabled = !vm.streaming && run.sceneIndex + 1 < run.setup.scenes.size) { Text(t("Next scene", "Nächste Szene")) }
-            TextButton(onClick = vm::stopRoleplay, enabled = !vm.streaming) { Text(t("End", "Beenden")) }
+        Column {
+            Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = if (solo) 0.dp else 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${run.setup.title} · " + t("scene ${run.sceneIndex + 1}/${run.setup.scenes.size}", "Szene ${run.sceneIndex + 1}/${run.setup.scenes.size}") + ": ${run.setup.scenes[run.sceneIndex].title}",
+                    style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 2,
+                )
+                if (solo) {
+                    TextButton(
+                        onClick = vm::nextScene,
+                        enabled = !vm.streaming && !run.asking && run.decisions.isEmpty() && run.solo.end == null && run.turns >= 1,
+                    ) { Text(t("End scene", "Szene beenden")) }
+                } else {
+                    TextButton(onClick = vm::nextScene, enabled = !vm.streaming && run.sceneIndex + 1 < run.setup.scenes.size) { Text(t("Next scene", "Nächste Szene")) }
+                }
+                TextButton(onClick = vm::stopRoleplay, enabled = !vm.streaming) { Text(t("End", "Beenden")) }
+            }
+            if (solo) {
+                Text(
+                    Solo.statusLine(run.solo, run.setup.german), style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Solo-Abenteuer: nach jeder Szene die Entscheidungen (ohne Angabe, welche der Handlung folgt, welche riskant ist und welche ein Umweg: die Reihenfolge ist gemischt),
+ * am Spielende die Karte mit "Noch einmal" und "Beenden".
+ */
+@Composable
+fun SoloPanel(vm: ChatViewModel) {
+    val run = vm.roleplay ?: return
+    if (!run.setup.solo) return
+    val end = run.solo.end
+    when {
+        end != null && !vm.streaming -> {
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        when (end) {
+                            SoloEnd.DEAD -> t("Your character has died. The adventure is over.", "Deine Figur ist gestorben. Das Abenteuer ist zu Ende.")
+                            SoloEnd.LOST -> t("The story is lost: you strayed too far from it.", "Die Geschichte ist verloren: Du bist zu weit von ihr abgewichen.")
+                            SoloEnd.WON -> t("You played the story to its end.", "Du hast die Geschichte bis zum Ende gespielt.")
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(Solo.statusLine(run.solo, run.setup.german), style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = vm::restartGame) { Text(t("Play again", "Noch einmal")) }
+                        OutlinedButton(onClick = vm::stopRoleplay) { Text(t("End", "Beenden")) }
+                    }
+                }
+            }
+        }
+        run.asking -> Text(
+            t("The game master is thinking of your options…", "Der Spielleiter überlegt deine Möglichkeiten…"),
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+        run.decisions.isNotEmpty() && !vm.streaming -> {
+            // gemischt, aber stabil für diese Szene: sonst stünde die Entscheidung der Handlung immer oben
+            val order = remember(run.decisions) { run.decisions.indices.shuffled() }
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(t("What do you do?", "Wie entscheidest du?"), style = MaterialTheme.typography.titleSmall)
+                    order.forEach { i ->
+                        OutlinedButton(onClick = { vm.chooseDecision(i) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(run.decisions[i].text, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    Text(
+                        t("Careful: a decision away from the story can hurt or kill your character. You can also write freely and decide later.", "Vorsicht: Eine Entscheidung abseits der Geschichte kann deine Figur verletzen oder töten. Du kannst auch frei schreiben und später entscheiden."),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+            }
         }
     }
 }

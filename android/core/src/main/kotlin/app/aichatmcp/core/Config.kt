@@ -37,6 +37,10 @@ data class Config(
     @SerialName("local_model_name") val localModelName: String = "",
     /** Rollenspiel mit Buchvorlage: nach so vielen Antworten kommt die Szene zum Ende und die nächste beginnt (0 = nur von Hand weiter). */
     @SerialName("roleplay_turns") val roleplayTurns: Int = 8,
+    /** Buch-Rollenspiel als Solo-Abenteuer (Entscheidungen, Verwundungen, Beziehungen): zuletzt gewählt. */
+    @SerialName("solo_adventure") val soloAdventure: Boolean = false,
+    /** Solo-Abenteuer: nach so vielen Szenen vergeht eine Nacht (eine Verwundung heilt, die falschen Entscheidungen des Tages beginnen von vorn). */
+    @SerialName("solo_scenes_per_day") val soloScenesPerDay: Int = Solo.DEFAULT_SCENES_PER_DAY,
     /** Benachrichtigungen von WhatsApp und Telegram mitlesen (nur im Arbeitsspeicher), damit der Companion sie vorlesen kann. Zusätzlich braucht es den Benachrichtigungszugriff des Systems. */
     @SerialName("catch_messages") val catchMessages: Boolean = false,
     /** Nachdenken (Reasoning) von Qwen3-Modellen auf dem Gerät. Aus = schneller und weniger Gerede über die Regeln; Qwen3 "Instruct" denkt ohnehin nie. */

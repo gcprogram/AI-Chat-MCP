@@ -116,6 +116,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
         HorizontalDivider()
         vm.pendingImage?.let { ImageCard(it, vm) }
         vm.pendingDoc?.let { DocCard(it, vm) }
+        SoloPanel(vm)
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(vm.status, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text(vm.contextLabel, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))

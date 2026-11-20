@@ -89,7 +89,13 @@ import app.aichatmcp.report.ReportAction
 import app.aichatmcp.messages.MessageHub
 import app.aichatmcp.core.BookCast
 import app.aichatmcp.core.BookScenes
+import app.aichatmcp.core.Consequence
+import app.aichatmcp.core.Decision
 import app.aichatmcp.core.RoleplayPrompt
+import app.aichatmcp.core.WireMessage
+import app.aichatmcp.core.Solo
+import app.aichatmcp.core.SoloEnd
+import app.aichatmcp.core.SoloState
 import app.aichatmcp.core.RoleplaySetup
 import app.aichatmcp.core.StreamEvent
 import app.aichatmcp.core.ThinkSplitter
@@ -143,7 +149,11 @@ enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, T
 data class UiMessage(val kind: UiKind, val text: String)
 
 /** Ein laufendes Buch-Rollenspiel: Szene, Zahl der Antworten in dieser Szene und der Companion, zu dem man danach zurückkehrt. */
-data class RoleplayRun(val setup: RoleplaySetup, val sceneIndex: Int, val turns: Int, val returnTo: String, val closing: Boolean = false)
+data class RoleplayRun(
+    val setup: RoleplaySetup, val sceneIndex: Int, val turns: Int, val returnTo: String, val closing: Boolean = false,
+    /** Solo-Abenteuer: Spielstand, die gerade angebotenen Entscheidungen, ob sie gerade abgefragt werden, und die Folge der letzten Entscheidung (gilt für eine Antwort). */
+    val solo: SoloState = SoloState(), val decisions: List<Decision> = emptyList(), val asking: Boolean = false, val outcome: String = "",
+)
 
 class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: String, private val answer: CompletableDeferred<Boolean>, val preview: String? = null) {
     fun answer(ok: Boolean) {
@@ -361,6 +371,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         speechOut.stop()
         userStopped = false
+        roleplay?.let { if (it.decisions.isNotEmpty()) roleplay = it.copy(decisions = emptyList()) } // wer frei weiterspielt, entscheidet erst am nächsten Szenenende
         input = ""
         session.config = effectiveConfig(config)
         modelNotice = if (config.backend == BACKEND_LOCAL && (warming || !localLlm.isLoaded(effectiveConfig(config)))) loadNoticeText() else null
@@ -1527,24 +1538,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Filtert die Namenskandidaten eines Buches mit dem Modell (nur Personennamen); ohne Modell oder bei einem Fehler die häufigsten Kandidaten. */
     suspend fun detectCast(candidates: List<String>): List<String> {
+        if (candidates.isEmpty()) return candidates
+        val answer = askModel(BookCast.filterPrompt(candidates, persona.isGerman()), 120, 0.2)
+        return (answer?.let { BookCast.parseNames(it, candidates) }.orEmpty()).ifEmpty { candidates.take(8) }
+    }
+
+    /** Eine einzelne Anfrage an das gewählte Modell außerhalb des Chat-Verlaufs (Namen prüfen, Entscheidungen vorschlagen); null bei Fehler oder ohne Modell. */
+    private suspend fun askModel(prompt: List<WireMessage>, maxTokens: Int, temperature: Double): String? {
         val cfg = effectiveConfig(config)
-        if (candidates.isEmpty() || (cfg.backend == BACKEND_LOCAL && cfg.localModel.isEmpty())) return candidates.take(8)
-        val names = withContext(Dispatchers.IO) {
+        if (cfg.backend == BACKEND_LOCAL && cfg.localModel.isEmpty()) return null
+        return withContext(Dispatchers.IO) {
             runCatching {
                 val backend = if (cfg.backend == BACKEND_LOCAL) localLlm.backend(cfg) else Providers.client(cfg.baseUrl, cfg.apiKey)
                 val splitter = ThinkSplitter()
                 val out = StringBuilder()
-                backend.streamChat(cfg.model, BookCast.filterPrompt(candidates, persona.isGerman()), 0.2, 120, emptyList(), CancelToken(), emptyMap()).collect { event ->
+                backend.streamChat(cfg.model, prompt, temperature, maxTokens, emptyList(), CancelToken(), emptyMap()).collect { event ->
                     if (event is StreamEvent.Content) splitter.feed(event.text).filter { !it.reasoning }.forEach { out.append(it.text) }
                 }
-                BookCast.parseNames(out.toString(), candidates)
-            }.getOrDefault(emptyList())
+                out.toString()
+            }.getOrNull()
         }
-        return names.ifEmpty { candidates.take(8) }
     }
 
     /** Startet das Rollenspiel mit der geladenen Datei; [player] leer = der Ich-Erzähler. Der bisherige Chat des Companions bleibt erhalten. */
-    fun startRoleplay(doc: PendingDoc, player: String, firstPerson: Boolean) {
+    fun startRoleplay(doc: PendingDoc, player: String, firstPerson: Boolean, solo: Boolean = false, characters: List<String> = emptyList()) {
         if (streaming) return
         val scenes = BookScenes.split(doc.text)
         if (scenes.isEmpty()) {
@@ -1553,23 +1570,39 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         saveChat()
         val returnTo = roleplay?.returnTo ?: persona.id
-        val setup = RoleplaySetup(doc.name.substringBeforeLast('.'), scenes, player, firstPerson, persona.isGerman())
-        roleplay = RoleplayRun(setup, 0, 0, returnTo)
+        val setup = RoleplaySetup(
+            doc.name.substringBeforeLast('.'), scenes, player, firstPerson, persona.isGerman(),
+            solo = solo, scenesPerDay = config.soloScenesPerDay, known = characters.filter { it != player },
+        )
         dismissDoc()
+        beginGame(setup, returnTo)
+    }
+
+    /** Beginnt ein Spiel mit [setup] von vorn (auch für "Noch einmal" nach einem Spielende). */
+    private fun beginGame(setup: RoleplaySetup, returnTo: String) {
+        roleplay = RoleplayRun(setup, 0, 0, returnTo)
         applyRoleplayPersona()
         session.reset()
         storage.deleteChat("roleplay") // ein neues Spiel beginnt immer von vorn
         renderHistory()
+        val scenes = setup.scenes
         messages += UiMessage(UiKind.INFO, tNow("Role play: ${scenes[0].title} (scene 1/${scenes.size})", "Rollenspiel: ${scenes[0].title} (Szene 1/${scenes.size})"))
         input = if (setup.german) "(Das Spiel beginnt. Beschreibe die erste Szene und was meine Figur gerade sieht und hört.)" else "(The game begins. Describe the first scene and what my character sees and hears.)"
         send()
+    }
+
+    /** Nach einem Spielende (Tod, verlorene Geschichte, Ende des Buches): dasselbe Buch mit derselben Figur noch einmal. */
+    fun restartGame() {
+        val run = roleplay ?: return
+        if (streaming) return
+        beginGame(run.setup, run.returnTo)
     }
 
     private fun applyRoleplayPersona() {
         val run = roleplay ?: return
         // Bild und Stimme des Spielleiters kommen vom Companion "Story-Game" (wenn er angelegt ist)
         val host = if ("story_game" in personaIds) storage.personas.load("story_game") else null
-        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing).let { if (host == null) it else it.copy(avatarData = host.avatarData, voice = host.voice) }
+        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing, run.solo, run.outcome).let { if (host == null) it else it.copy(avatarData = host.avatarData, voice = host.voice) }
         session.persona = persona
         syncVoice()
         updateContext()
@@ -1578,6 +1611,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Weiter zur nächsten Szene: Der Spielleiter bekommt die neue Szene und eröffnet sie. */
     fun nextScene() {
         val run = roleplay ?: return
+        if (run.setup.solo) { // im Solo-Abenteuer führt nur eine Entscheidung weiter: "Weiter" fragt sie jetzt ab
+            requestDecisions()
+            return
+        }
         if (streaming || run.sceneIndex + 1 >= run.setup.scenes.size) return
         val next = run.sceneIndex + 1
         roleplay = run.copy(sceneIndex = next, turns = 0, closing = false)
@@ -1599,6 +1636,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun afterRoleplayTurn() {
         val run = roleplay ?: return
         if (userStopped) return
+        if (run.setup.solo) {
+            afterSoloTurn(run)
+            return
+        }
         val limit = config.roleplayTurns
         val turns = run.turns + 1
         roleplay = run.copy(turns = turns)
@@ -1608,6 +1649,76 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             roleplay = roleplay?.copy(closing = true)
             applyRoleplayPersona()
         }
+    }
+
+    // --- Solo-Abenteuer: Entscheidungen nach jeder Szene -------------------------------------------------------------
+
+    /** Nach einer Antwort im Solo-Abenteuer: Folge der letzten Entscheidung ist erzählt; am Szenenende die Entscheidungen abfragen, nach der letzten Szene ist das Buch zu Ende. */
+    private fun afterSoloTurn(run: RoleplayRun) {
+        val limit = config.roleplayTurns
+        val turns = run.turns + 1
+        roleplay = run.copy(turns = turns, outcome = "") // die Folge galt nur für diese Antwort
+        val r = roleplay ?: return
+        if (r.solo.end != null || r.asking || r.decisions.isNotEmpty()) {
+            applyRoleplayPersona()
+            return
+        }
+        val last = r.sceneIndex + 1 >= r.setup.scenes.size
+        when {
+            limit > 0 && turns >= limit -> {
+                applyRoleplayPersona()
+                if (last) finishGame(SoloEnd.WON) else requestDecisions()
+            }
+            limit > 0 && turns == limit - 1 && !r.closing -> {
+                roleplay = r.copy(closing = true)
+                applyRoleplayPersona()
+            }
+            else -> applyRoleplayPersona()
+        }
+    }
+
+    private fun finishGame(end: SoloEnd) {
+        val run = roleplay ?: return
+        roleplay = run.copy(solo = run.solo.copy(end = end), decisions = emptyList(), asking = false)
+    }
+
+    /** Fragt das Modell nach den Entscheidungen zum Ende der Szene (1 bis 3: Handlung, Risiko, Umweg); ohne brauchbare Antwort bleibt der Weg der Handlung. */
+    fun requestDecisions() {
+        val run = roleplay ?: return
+        if (!run.setup.solo || streaming || run.asking || run.solo.end != null) return
+        if (run.sceneIndex + 1 >= run.setup.scenes.size) { // die letzte Szene hat keine Entscheidung mehr: das Buch ist zu Ende gespielt
+            finishGame(SoloEnd.WON)
+            return
+        }
+        roleplay = run.copy(asking = true, decisions = emptyList())
+        viewModelScope.launch {
+            val lastReply = session.history.lastOrNull { it.role == "assistant" }?.content.orEmpty()
+            val raw = askModel(RoleplayPrompt.decisions(run.setup, run.sceneIndex, lastReply, run.solo), 350, 0.7)
+            val parsed = Solo.withStory(Solo.parseDecisions(raw.orEmpty(), run.setup.known), run.setup.german)
+            val current = roleplay ?: return@launch
+            if (current.sceneIndex != run.sceneIndex || current.setup !== run.setup) return@launch // inzwischen beendet oder neu gestartet
+            roleplay = current.copy(asking = false, decisions = parsed)
+        }
+    }
+
+    /** Der Spieler wählt eine der angebotenen Entscheidungen: Die App legt die Folge fest (Würfel, Verwundungen, Nacht, Beziehungen), das Modell erzählt sie und führt weiter. */
+    fun chooseDecision(index: Int) {
+        val run = roleplay ?: return
+        if (streaming) return
+        val decision = run.decisions.getOrNull(index) ?: return
+        val res = Solo.resolve(run.solo, decision, (0..99).random(), run.setup.scenesPerDay)
+        val german = run.setup.german
+        val over = res.state.end != null
+        val next = if (over) run.sceneIndex else run.sceneIndex + 1
+        roleplay = run.copy(
+            sceneIndex = next, turns = 0, closing = false, decisions = emptyList(), asking = false, solo = res.state, outcome = Solo.outcomeNote(decision, res, german),
+        )
+        applyRoleplayPersona()
+        val line = Solo.resultLine(decision, res, german)
+        if (line.isNotEmpty()) messages += UiMessage(UiKind.INFO, line)
+        if (!over) messages += UiMessage(UiKind.INFO, tNow("Scene ${next + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}", "Szene ${next + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}"))
+        input = decision.text
+        send()
     }
 
     fun selectPersona(id: String) {

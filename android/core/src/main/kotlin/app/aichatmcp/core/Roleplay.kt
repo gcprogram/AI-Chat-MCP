@@ -134,12 +134,70 @@ object BookCast {
     }
 }
 
-/** Die Einstellungen eines laufenden Buch-Rollenspiels. [player] leer = der Ich-Erzähler. */
-data class RoleplaySetup(val title: String, val scenes: List<Scene>, val player: String, val firstPerson: Boolean, val german: Boolean)
+/**
+ * Die Einstellungen eines laufenden Buch-Rollenspiels. [player] leer = der Ich-Erzähler. [solo]: Solo-Abenteuer mit Entscheidungen nach jeder Szene
+ * (Regeln in [Solo]); [scenesPerDay]: nach so vielen Szenen vergeht eine Nacht; [known]: die Hauptfiguren, für die es Beziehungspunkte gibt.
+ */
+data class RoleplaySetup(
+    val title: String, val scenes: List<Scene>, val player: String, val firstPerson: Boolean, val german: Boolean,
+    val solo: Boolean = false, val scenesPerDay: Int = Solo.DEFAULT_SCENES_PER_DAY, val known: List<String> = emptyList(),
+)
 
 object RoleplayPrompt {
     /** Der Spielleiter-Prompt für die Szene [index]; [closing]: die Szene soll jetzt zum Ende kommen. */
-    fun system(setup: RoleplaySetup, index: Int, closing: Boolean): String {
+    fun system(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = ""): String =
+        base(setup, index, closing) + soloBlock(setup, solo, outcome, closing)
+
+    /** Zusatz im Solo-Abenteuer: Spielstand, Regeln (die App legt die Folgen fest) und die verbindliche Folge der letzten Entscheidung. */
+    private fun soloBlock(setup: RoleplaySetup, solo: SoloState?, outcome: String, closing: Boolean): String {
+        if (!setup.solo || solo == null) return ""
+        val g = setup.german
+        return buildString {
+            append(if (g) "\nSOLO-ABENTEUER: Nach jeder Szene entscheidet der Spieler. Die Folgen legt die App fest: Erfinde nie selbst Verletzungen, Heilungen oder Tode.\n" else "\nSOLO ADVENTURE: After every scene the player decides. The app fixes the consequences: never invent injuries, healing or deaths yourself.\n")
+            append(if (g) "SPIELSTAND: " else "GAME STATE: ").append(Solo.stateText(solo, g)).append('\n')
+            if (outcome.isNotBlank()) append(if (g) "FOLGE DER LETZTEN ENTSCHEIDUNG (verbindlich): " else "RESULT OF THE LAST DECISION (binding): ").append(outcome).append('\n')
+            if (closing) append(if (g) "Beende die Szene so, dass der Spieler vor einer Entscheidung steht. Schreibe die Möglichkeiten nicht selbst auf: Die App fragt sie danach ab.\n" else "End the scene so that the player faces a decision. Do not write the options yourself: the app asks for them afterwards.\n")
+        }
+    }
+
+    /**
+     * Die Anfrage nach den Entscheidungen am Ende einer Szene: höchstens eine je Art (Handlung, Risiko, Umweg), jede in einer Zeile, optional mit Beziehungspunkten
+     * für Hauptfiguren. [lastReply] ist das Ende der Szene.
+     */
+    fun decisions(setup: RoleplaySetup, index: Int, lastReply: String, solo: SoloState): List<WireMessage> {
+        val scene = setup.scenes[index]
+        val next = setup.scenes.getOrNull(index + 1)
+        val g = setup.german
+        val names = (setup.known + setup.player).filter { it.isNotBlank() }.distinct()
+        val cast = setup.known.filter { it != setup.player }.take(8).joinToString(", ")
+        val user = if (g) buildString {
+            append("Buch: „${setup.title}“. Die Szene „${scene.title}“ ist zu Ende gespielt. Die Handlung der Szene:\n${scene.text.trim().take(900)}\n\n")
+            append("Zuletzt erzählt:\n${lastReply.trim().takeLast(700)}\n\n")
+            if (next != null) append("Danach folgt (Handlung des Buches):\n${next.text.trim().take(400)} …\n\n")
+            append("Schlage der Spielerfigur ${if (setup.player.isBlank()) "(dem Ich-Erzähler)" else setup.player} jetzt Entscheidungen vor, jeweils ein Satz in der Ich-Form der Spielerfigur, passend zur Situation:\n")
+            append("STORY: eine Entscheidung, die der Handlung des Buches folgt\n")
+            append("RISIKO: eine Entscheidung, die von der Handlung abweicht und gefährlich werden kann (Verletzung oder Tod)\n")
+            append("UMWEG: eine Variante, die anders verläuft, aber zur Handlung zurückführt\n")
+            if (cast.isNotEmpty()) append("Wirkt eine Entscheidung auf das Verhältnis zu einer Hauptfigur ($cast), hänge ans Zeilenende [Name +1] oder [Name -1].\n")
+            append("Genau diese Zeilen, nichts anderes, kein Markdown.")
+        } else buildString {
+            append("Book: \"${setup.title}\". The scene \"${scene.title}\" has been played to its end. The plot of the scene:\n${scene.text.trim().take(900)}\n\n")
+            append("Last told:\n${lastReply.trim().takeLast(700)}\n\n")
+            if (next != null) append("What follows (plot of the book):\n${next.text.trim().take(400)} …\n\n")
+            append("Now propose decisions to the player's character ${if (setup.player.isBlank()) "(the first-person narrator)" else setup.player}, each one sentence in the first person of the player's character, fitting the situation:\n")
+            append("STORY: a decision that follows the plot of the book\n")
+            append("RISK: a decision that departs from the plot and can become dangerous (injury or death)\n")
+            append("DETOUR: a variant that goes differently but leads back to the plot\n")
+            if (cast.isNotEmpty()) append("If a decision affects the relationship with a main character ($cast), append [Name +1] or [Name -1] at the end of the line.\n")
+            append("Exactly these lines, nothing else, no markdown.")
+        }
+        return listOf(
+            WireMessage("system", if (g) "Du bist der Spielleiter eines Rollenspiels nach einem Buch. Du schreibst nur die verlangten Zeilen." else "You are the game master of a role play based on a book. You write only the requested lines."),
+            WireMessage("user", user),
+        )
+    }
+
+    private fun base(setup: RoleplaySetup, index: Int, closing: Boolean): String {
         val scene = setup.scenes[index]
         val next = setup.scenes.getOrNull(index + 1)
         val g = setup.german
@@ -172,9 +230,9 @@ object RoleplayPrompt {
     }
 
     /** Der Spielleiter als Companion ([Persona.promptOverride] ersetzt den gewohnten System-Prompt). */
-    fun persona(setup: RoleplaySetup, index: Int, closing: Boolean): Persona = Persona(
+    fun persona(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = ""): Persona = Persona(
         id = "roleplay", name = if (setup.german) "Spielleiter" else "Game master",
         description = "Rollenspiel nach dem Buch ${setup.title}", language = if (setup.german) "Deutsch" else "English",
-        promptOverride = system(setup, index, closing),
+        promptOverride = system(setup, index, closing, solo, outcome),
     )
 }

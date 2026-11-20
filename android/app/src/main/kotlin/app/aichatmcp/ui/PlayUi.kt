@@ -9,6 +9,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -89,6 +91,8 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
 private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStarted: () -> Unit) {
     val choice = rememberRoleplayChoice(doc)
     var turns by remember { mutableStateOf(vm.config.roleplayTurns.toString()) }
+    var solo by remember { mutableStateOf(vm.config.soloAdventure) }
+    var perDay by remember { mutableStateOf(vm.config.soloScenesPerDay.toString()) }
     Text(t("“${doc.name}” – ${doc.text.length} characters.", "„${doc.name}“ – ${doc.text.length} Zeichen."), style = MaterialTheme.typography.titleSmall)
     if (choice == null) {
         Text(t("Reading the book…", "Lese das Buch…"), style = MaterialTheme.typography.bodySmall)
@@ -98,11 +102,34 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
             t("Replies per scene (0 = move on by hand)", "Antworten je Szene (0 = nur von Hand weiter)"), turns, { turns = it },
             keyboard = KeyboardType.Number,
         )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(t("Solo adventure", "Solo-Abenteuer"), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    t("After every scene you choose between 1 and 3 options: one follows the story, one departs from it and can wound or kill your character, one is a variant that leads back to the story. " +
+                        "The third wound kills; one wound heals each night. Three wrong decisions in one day lose the story. Good and bad actions towards the main characters earn relationship points.",
+                        "Nach jeder Szene wählst du aus 1 bis 3 Möglichkeiten: Eine folgt der Geschichte, eine weicht ab und kann deine Figur verwunden oder töten, eine ist eine Variante, die zur Geschichte zurückführt. " +
+                            "Die dritte Verwundung tötet, pro Nacht heilt eine. Drei falsche Entscheidungen an einem Tag verlieren die Geschichte. Gutes und schlechtes Verhalten gegenüber den Hauptfiguren bringt Beziehungspunkte."),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                )
+            }
+            Switch(checked = solo, onCheckedChange = { solo = it })
+        }
+        if (solo) {
+            TextSetting(
+                t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it },
+                keyboard = KeyboardType.Number,
+            )
+        }
         Button(
             onClick = {
                 val n = turns.toIntOrNull()
-                if (n != null && n >= 0 && n != vm.config.roleplayTurns) vm.saveConfig(vm.config.copy(roleplayTurns = n))
-                vm.startRoleplay(doc, choice.playerName, choice.asFirstPerson)
+                val days = perDay.toIntOrNull()?.takeIf { it in 1..20 } ?: vm.config.soloScenesPerDay
+                var config = vm.config
+                if (n != null && n >= 0) config = config.copy(roleplayTurns = n)
+                config = config.copy(soloAdventure = solo, soloScenesPerDay = days)
+                if (config != vm.config) vm.saveConfig(config)
+                vm.startRoleplay(doc, choice.playerName, choice.asFirstPerson, solo = solo, characters = choice.names)
                 onStarted()
             },
             enabled = choice.scenes > 0 && !vm.streaming,
