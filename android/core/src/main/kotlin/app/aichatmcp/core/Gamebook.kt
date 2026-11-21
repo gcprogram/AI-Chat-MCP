@@ -1,7 +1,14 @@
 package app.aichatmcp.core
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -205,16 +212,19 @@ object Gamebooks {
     /**
      * Bereitet das Spielbuch vor: je Szene eine Karte (Zusammenfassung, Ort, Entscheidungen), danach die Stränge je [BATCH] Szenen. [scenes] sind die Szenen mit
      * Buchtext (ohne Vor- und Nachspann), [start] der bisherige Stand zu genau diesen Szenen ([skeleton] oder ein unterbrochener Lauf). Nach jeder Anfrage bekommt
-     * [onData] den Stand zum Speichern (Abbruch oder Fehler kosten nichts); [onProgress] die Zahl der erledigten und aller nötigen Anfragen.
+     * [onData] den Stand zum Speichern (Abbruch oder Fehler kosten nichts); [onProgress] die Zahl der erledigten und aller nötigen Anfragen. Die Karten der Szenen
+     * hängen nicht voneinander ab: [parallel] davon laufen gleichzeitig (ein externes Modell schafft so mehr; ein Modell auf dem Handy rechnet ohnehin nur eine Anfrage).
      */
     suspend fun prepare(
         scenes: List<Scene>, start: Gamebook,
         ask: suspend (List<WireMessage>, Int) -> String?,
         onProgress: (done: Int, total: Int, what: String) -> Unit = { _, _, _ -> }, onData: (Gamebook) -> Unit = {},
+        parallel: Int = 1,
     ): Gamebook {
         var book = start
         val total = requests(start).coerceAtLeast(1)
         var done = 0
+        val lock = Mutex()
         val german = book.language.startsWith("Deu", ignoreCase = true)
         suspend fun call(prompt: List<WireMessage>, maxTokens: Int, what: String): String {
             onProgress(done.coerceAtMost(total), total, what)
@@ -225,17 +235,25 @@ object Gamebooks {
             }
             return answer
         }
-        for ((i, scene) in scenes.withIndex()) {
-            if (sceneDone(book.scenes[i])) continue
+        suspend fun doCard(i: Int) {
+            val scene = scenes[i]
             val prompt = cardPrompt(book.title, scene, scenes.getOrNull(i + 1), book.language)
             var card = parseCard(call(prompt, 380, scene.title))
             if (card.summary.isBlank()) card = parseCard(call(prompt, 380, scene.title)) // das Format fehlt: ein zweiter Versuch
             val summary = card.summary.ifBlank { scene.text.trim().take(300) }
             val enter = card.enter.ifBlank { if (german) "Weiter." else "Continue." }
-            book = book.copy(scenes = book.scenes.toMutableList().also { it[i] = it[i].copy(plot = summary, place = card.place, enter = enter, risk = card.risk, detour = card.detour) })
-            done++
-            onProgress(done.coerceAtMost(total), total, scene.title)
-            onData(book)
+            lock.withLock {
+                book = book.copy(scenes = book.scenes.toMutableList().also { it[i] = it[i].copy(plot = summary, place = card.place, enter = enter, risk = card.risk, detour = card.detour) })
+                done++
+                onProgress(done.coerceAtMost(total), total, scene.title)
+                onData(book)
+            }
+        }
+        val pending = scenes.indices.filter { !sceneDone(book.scenes[it]) }
+        if (parallel <= 1) pending.forEach { doCard(it) }
+        else coroutineScope {
+            val permits = Semaphore(parallel)
+            pending.map { i -> async { permits.withPermit { doCard(i) } } }.awaitAll()
         }
         for (b in 0 until batches(book.scenes.size)) {
             if (batchDone(b, book)) continue

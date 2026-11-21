@@ -105,6 +105,9 @@ object ModelCatalog {
     val piper = listOf(
         voice("de_DE-thorsten-medium", "German – Thorsten", "de", 63 * MB, "Natural German male voice.", recommended = true),
         voice("de_DE-thorsten_emotional-medium", "German – Thorsten (emotions)", "de", 77 * MB, "German male voice with several moods."),
+        voice("de_DE-ramona-low", "German – Ramona", "de", 63 * MB, "German female voice (16 kHz, light).", recommended = true),
+        voice("de_DE-kerstin-low", "German – Kerstin", "de", 63 * MB, "German female voice (16 kHz, light)."),
+        voice("de_DE-eva_k-x_low", "German – Eva (very small)", "de", 21 * MB, "German female voice, very small file (16 kHz, simple)."),
         voice("en_US-lessac-medium", "English (US) – Lessac", "en", 63 * MB, "Clear American English voice.", recommended = true),
         voice("en_GB-cori-medium", "English (UK) – Cori", "en", 64 * MB, "British English female voice."),
     )

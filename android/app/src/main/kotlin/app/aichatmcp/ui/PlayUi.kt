@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,10 +29,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.GamebookState
 import app.aichatmcp.PendingDoc
 import app.aichatmcp.core.DecisionMode
 import app.aichatmcp.core.Gamebook
 import app.aichatmcp.core.Gamebooks
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * "Buch spielen": Story-Game (Companion mit Spiegel-Bild) macht aus einem geladenen Buch ein Rollenspiel. Hier wird vorbereitet (Buch laden,
@@ -69,7 +73,7 @@ fun PlayScreen(
         }
         when {
             run != null -> RunningGame(vm, onStarted)
-            vm.docBusy -> Text(t("Reading the file…", "Lese die Datei…"), style = MaterialTheme.typography.bodyMedium)
+            vm.docBusy -> WaitText(t("Reading the file", "Lese die Datei"))
             doc == null && vm.loadedGamebook != null -> GamebookSetup(vm, vm.loadedGamebook!!, onSaveGamebook, onStarted)
             doc == null -> {
                 Button(onClick = onLoad, modifier = Modifier.fillMaxWidth()) { Text(t("Load a book…", "Buch laden…")) }
@@ -120,7 +124,7 @@ private fun Setup(
     }
     Text(t("“${doc.name}” – ${doc.text.length} characters.", "„${doc.name}“ – ${doc.text.length} Zeichen."), style = MaterialTheme.typography.titleSmall)
     if (choice == null) {
-        Text(t("Reading the book…", "Lese das Buch…"), style = MaterialTheme.typography.bodySmall)
+        WaitText(t("Reading the book", "Lese das Buch"), MaterialTheme.typography.bodySmall)
     } else {
         RoleplayChoiceFields(choice, vm)
         TextSetting(
@@ -212,7 +216,13 @@ private fun durationText(seconds: Long): String {
  */
 @Composable
 private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () -> Unit, onSaveGamebook: (fileName: String, json: String) -> Unit) {
-    val state = remember(doc, vm.prepBusy, vm.prepDone) { vm.gamebookState(doc) }
+    // Der Zustand liest den Speicher und zerlegt das Buch: im Hintergrund, nicht bei jedem Zeichnen im Hauptthread (sonst ruckelt die Anzeige und die Karte erscheint spät)
+    val loaded by produceState<GamebookState?>(null, doc, vm.prepBusy, vm.prepDone) { value = withContext(Dispatchers.Default) { vm.gamebookState(doc) } }
+    val state = loaded
+    if (state == null) {
+        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { WaitText(t("Checking the game book", "Prüfe das Spielbuch"), MaterialTheme.typography.bodyMedium) } }
+        return
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(t("Prepare the game book", "Spielbuch vorbereiten"), style = MaterialTheme.typography.titleSmall)
@@ -226,10 +236,16 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
             when {
                 vm.prepBusy -> {
                     LinearProgressIndicator(progress = { if (vm.prepTotal > 0) vm.prepDone.toFloat() / vm.prepTotal else 0f }, modifier = Modifier.fillMaxWidth())
-                    Text(
-                        t("Request ${vm.prepDone} of ${vm.prepTotal}", "Anfrage ${vm.prepDone} von ${vm.prepTotal}") + if (vm.prepWhat.isNotBlank()) " · ${vm.prepWhat}" else "",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    if (vm.prepTotal == 0) {
+                        // das Buch wird zerlegt und nach Namen durchsucht, bevor die erste Anfrage hinausgeht
+                        WaitText(t("Analyzing the book", "Analysiere das Buch"), MaterialTheme.typography.bodySmall)
+                    } else {
+                        val current = (vm.prepDone + 1).coerceAtMost(vm.prepTotal)
+                        Text(
+                            t("Request $current of ${vm.prepTotal}", "Anfrage $current von ${vm.prepTotal}") + if (vm.prepWhat.isNotBlank()) " · ${vm.prepWhat}" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     Text(
                         if (vm.prepRemainingSec >= 0) t("Remaining: ${durationText(vm.prepRemainingSec)}", "Noch ${durationText(vm.prepRemainingSec)}") else t("The time is estimated after the first requests…", "Die Zeit wird nach den ersten Anfragen geschätzt…"),
                         style = MaterialTheme.typography.bodyMedium,
@@ -262,6 +278,17 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
                             "${state.requests} Anfragen. Die Zeit wird beim Lauf gemessen und dann angezeigt; mit dem Modell auf dem Handy dauert es lange."),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    // gleichzeitige Anfragen: bei einem externen Modell oft mehrfach so schnell, auf dem Handy ohne Wirkung
+                    Text(t("Requests at the same time:", "Gleichzeitige Anfragen:"), style = MaterialTheme.typography.labelMedium)
+                    val selected = if (vm.gamebookParallel in 1..4) vm.gamebookParallel else if (vm.gamebookIsLocal()) 1 else 3
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (1..4).forEach { n -> FilterChip(selected = selected == n, onClick = { vm.chooseGamebookParallel(n) }, label = { Text(n.toString()) }) }
+                    }
+                    if (vm.gamebookIsLocal()) {
+                        Text(t("The model on this phone answers one request at a time: more does not help.", "Das Modell auf dem Handy beantwortet nur eine Anfrage zugleich: mehr bringt nichts."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    } else {
+                        Text(t("If your server answers one request at a time (for example LM Studio without parallel mode), more does not speed it up, but does no harm.", "Beantwortet dein Server nur eine Anfrage zugleich (etwa LM Studio ohne Parallelbetrieb), wird es nicht schneller, schadet aber nicht."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
                     Button(onClick = { vm.prepareGamebook(doc) }, enabled = !vm.streaming && state.scenes > 0) {
                         Text(t("Prepare (${state.requests} requests)", "Vorbereiten (${state.requests} Anfragen)"))
                     }

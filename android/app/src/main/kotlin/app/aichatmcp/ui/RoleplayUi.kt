@@ -104,7 +104,7 @@ fun RoleplayDialog(doc: PendingDoc, vm: ChatViewModel, onClose: () -> Unit) {
                         "Der Companion wird zum Spielleiter und spielt die Ereignisse des Buches Szene für Szene nach: den Erzähler und alle Figuren außer deiner. Weichst du von der Handlung ab, lenkt er dich zurück. Du entscheidest, was deine Figur tut."),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (choice == null) Text(t("Reading the book…", "Lese das Buch…"), style = MaterialTheme.typography.bodySmall) else RoleplayChoiceFields(choice, vm)
+                if (choice == null) WaitText(t("Reading the book", "Lese das Buch"), MaterialTheme.typography.bodySmall) else RoleplayChoiceFields(choice, vm)
             }
         },
         confirmButton = {

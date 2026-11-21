@@ -94,7 +94,8 @@ object BookCast {
     )
 
     /** Die häufigsten großgeschriebenen Wörter mitten im Satz (höchstens [max]), häufigste zuerst. Im Deutschen sind auch viele Hauptwörter dabei. */
-    fun candidates(text: String, max: Int = 24): List<String> {
+    fun candidates(fullText: String, max: Int = 24): List<String> {
+        val text = fullText.take(300_000) // die Namen kommen früh und oft vor: ein Ausschnitt genügt und hält die Wartezeit kurz
         val word = Regex("""\p{Lu}[\p{L}'’-]{2,}""")
         val counts = HashMap<String, Int>()
         val lower = HashSet<String>()

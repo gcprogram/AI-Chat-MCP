@@ -60,6 +60,30 @@ class GamebookTest {
     }
 
     @Test
+    fun cardsCanBePreparedInParallelWithTheSameResult() = runBlocking {
+        val sc = scenes(30)
+        val seq = Gamebooks.prepare(sc, skeleton(30), Scripted()::ask)
+        val saved = mutableListOf<Int>()
+        val par = Gamebooks.prepare(sc, skeleton(30), Scripted()::ask, onData = { saved += Gamebooks.requests(it) }, parallel = 4)
+        assertEquals(seq, par)
+        assertTrue(Gamebooks.ready(par))
+        assertTrue(saved.zipWithNext().all { (x, y) -> y <= x }) // die Zahl der fehlenden Anfragen sinkt, auch wenn die Karten durcheinander fertig werden
+        // fällt eine Anfrage aus, bricht der Lauf ab und das Fertige bleibt
+        var calls = 0
+        val flaky: suspend (List<WireMessage>, Int) -> String? = { p, m -> if (++calls == 5) null else Scripted().ask(p, m) }
+        val done = mutableListOf<Gamebook>()
+        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(30), flaky, onData = { done += it }, parallel = 3) }
+        assertTrue(done.isNotEmpty() && done.last().scenes.count { Gamebooks.sceneDone(it) } >= 1)
+    }
+
+    @Test
+    fun theCatalogOffersAGermanFemaleVoice() {
+        val german = ModelCatalog.piper.filter { it.language == "de" }
+        assertTrue(german.any { "Ramona" in it.title } && german.any { "Kerstin" in it.title })
+        assertTrue(german.all { e -> e.files.size == 3 && e.files.all { it.url.startsWith("https://huggingface.co/csukuangfj/vits-piper-de_DE-") } })
+    }
+
+    @Test
     fun aSecondRunContinuesWhereTheFirstStopped() = runBlocking {
         val sc = scenes(12)
         val first = Scripted()

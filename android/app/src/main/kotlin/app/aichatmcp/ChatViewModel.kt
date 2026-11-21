@@ -94,6 +94,7 @@ import app.aichatmcp.core.Decision
 import app.aichatmcp.core.DecisionKind
 import app.aichatmcp.core.DecisionMode
 import app.aichatmcp.core.Gamebook
+import app.aichatmcp.core.Scene
 import app.aichatmcp.core.Gamebooks
 import app.aichatmcp.core.SummaryException
 import app.aichatmcp.core.BookPart
@@ -1756,13 +1757,39 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return if (cfg.backend == BACKEND_LOCAL) "local:${cfg.localModel}" else "server:${cfg.model}"
     }
 
-    /** Wie lange eine Anfrage der Vorbereitung mit dem gewählten Modell zuletzt gedauert hat (Mittel in Sekunden); null = noch nie gemessen. */
-    fun gamebookSecondsPerRequest(): Double? = runCatching { timingPrefs().getFloat(gamebookTimingKey(), -1f).toDouble() }.getOrNull()?.takeIf { it > 0 }
+    /** Wie lange die Vorbereitung je Anfrage zuletzt gedauert hat (Wanduhr: mit den gleichzeitigen Anfragen verrechnet, in Sekunden) mit dem gewählten Modell; null = noch nie gemessen. */
+    fun gamebookSecondsPerRequest(): Double? = runCatching { timingPrefs().getFloat(gamebookTimingKey() + ":p$gamebookParallel", -1f).toDouble() }.getOrNull()?.takeIf { it > 0 }
 
-    /** Wie weit die Vorbereitung des Spielbuchs zu [doc] ist (liest den Speicher). */
+    /** Läuft die Vorbereitung auf dem Handy (dann bringen gleichzeitige Anfragen nichts)? */
+    fun gamebookIsLocal(): Boolean = effectiveConfig(configFor(summaryChoice())).backend == BACKEND_LOCAL
+
+    /** Wie viele Anfragen die Vorbereitung gleichzeitig stellt (1 bis 4); beim ersten Mal 3 für ein externes Modell, 1 auf dem Handy. */
+    var gamebookParallel by mutableStateOf(
+        runCatching { getApplication<Application>().getSharedPreferences("gamebook_timing", android.content.Context.MODE_PRIVATE).getInt("parallel", 0) }.getOrDefault(0).let { saved ->
+            if (saved in 1..4) saved else 0
+        },
+    )
+        private set
+
+    fun chooseGamebookParallel(n: Int) {
+        gamebookParallel = n.coerceIn(1, 4)
+        runCatching { timingPrefs().edit().putInt("parallel", gamebookParallel).apply() }
+    }
+
+    /** Die gewählte Zahl gleichzeitiger Anfragen; ohne Wahl 3 bei einem externen Modell und 1 auf dem Handy. */
+    private fun effectiveParallel(): Int = if (gamebookParallel in 1..4) gamebookParallel else if (gamebookIsLocal()) 1 else 3
+
+    /** Die Szenen der Geschichte je Buch (ohne Vor- und Nachspann), nur einmal berechnet: das Zerlegen eines ganzen Buches ist nicht billig. */
+    private val storyCache = HashMap<String, List<Scene>>()
+
+    private fun storyScenesOf(doc: PendingDoc): List<Scene> = synchronized(storyCache) {
+        storyCache.getOrPut(Summaries.key(doc.name, doc.text)) { Gamebooks.storyScenes(Summaries.scenes(doc.text)) }
+    }
+
+    /** Wie weit die Vorbereitung des Spielbuchs zu [doc] ist (liest den Speicher; nicht im Hauptthread aufrufen: kann bei großen Büchern dauern). */
     fun gamebookState(doc: PendingDoc): GamebookState {
         val key = Summaries.key(doc.name, doc.text)
-        val scenes = Gamebooks.storyScenes(Summaries.scenes(doc.text))
+        val scenes = storyScenesOf(doc)
         val stored = storage.loadGamebook(key)
         if (stored != null && Gamebooks.ready(stored)) return GamebookState(stored.scenes.size, 0, Gamebooks.threadNames(stored), stored)
         val start = stored?.takeIf { Gamebooks.compatible(it, scenes) }
@@ -1777,10 +1804,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun prepareGamebook(doc: PendingDoc) {
         if (prepBusy || streaming) return
-        val scenes = Gamebooks.storyScenes(Summaries.scenes(doc.text))
-        if (scenes.isEmpty()) return
         val key = Summaries.key(doc.name, doc.text)
         val language = if (persona.isGerman()) "Deutsch" else "English"
+        val parallel = effectiveParallel()
         prepBusy = true
         prepError = ""
         prepDone = 0
@@ -1790,12 +1816,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         prepTimes.clear()
         syncKeepAlive()
         prepJob = viewModelScope.launch {
+            var workStart = 0L
             try {
-                val stored = storage.loadGamebook(key)
-                val start = stored?.takeIf { Gamebooks.compatible(it, scenes) } ?: run {
-                    val (cast, first) = withContext(Dispatchers.Default) { BookCast.candidates(doc.text, 12) to BookCast.firstPerson(doc.text) }
-                    Gamebooks.skeleton(scenes, doc.name.substringBeforeLast('.'), language, key, first, cast)
+                // Zerlegen und Namen suchen (bei einem langen Buch ein paar Sekunden) nicht im Hauptthread; die Anzeige sagt dabei, was passiert
+                val (scenes, start) = withContext(Dispatchers.Default) {
+                    val story = storyScenesOf(doc)
+                    val stored = storage.loadGamebook(key)
+                    story to (stored?.takeIf { Gamebooks.compatible(it, story) }
+                        ?: Gamebooks.skeleton(story, doc.name.substringBeforeLast('.'), language, key, BookCast.firstPerson(doc.text), BookCast.candidates(doc.text, 12)))
                 }
+                if (scenes.isEmpty()) return@launch
+                prepTotal = Gamebooks.requests(start).coerceAtLeast(1)
+                workStart = System.nanoTime()
                 Gamebooks.prepare(
                     scenes, start,
                     ask = { prompt, max ->
@@ -1806,9 +1838,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     },
                     onProgress = { d, t, w ->
                         prepDone = d; prepTotal = t; prepWhat = w
-                        prepRemainingSec = if (prepTimes.isEmpty()) -1 else ((t - d) * prepTimes.average() / 1000).toLong()
+                        // Restzeit nach dem tatsächlichen Tempo (Wanduhr), damit gleichzeitige Anfragen mitzählen
+                        prepRemainingSec = if (d <= 0) -1 else ((t - d) * ((System.nanoTime() - workStart) / 1_000_000_000.0) / d).toLong()
                     },
                     onData = { b -> runCatching { storage.saveGamebook(b) } },
+                    parallel = parallel,
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -1817,7 +1851,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Throwable) {
                 prepError = e.message ?: e::class.simpleName.orEmpty()
             } finally {
-                if (prepTimes.isNotEmpty()) runCatching { timingPrefs().edit().putFloat(gamebookTimingKey(), (prepTimes.average() / 1000).toFloat()).apply() }
+                // gemessen wird die Wanduhr je Anfrage (mit gleichzeitigen Anfragen), getrennt nach Modell und Zahl der gleichzeitigen Anfragen
+                if (workStart != 0L && prepDone >= 2) runCatching { timingPrefs().edit().putFloat(gamebookTimingKey() + ":p$parallel", (((System.nanoTime() - workStart) / 1_000_000_000.0) / prepDone).toFloat()).apply() }
                 prepBusy = false
                 prepWhat = ""
                 prepRemainingSec = -1

@@ -21,6 +21,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -56,4 +59,24 @@ fun TypewriterText(full: String) {
         Text(full + " ", style = MaterialTheme.typography.titleMedium, color = Color.Transparent)
         Text(full.take(shown) + if (cursor) "▍" else "", style = MaterialTheme.typography.titleMedium)
     }
+}
+
+/** Ein Wartetext mit bewegten Punkten ("Lese das Buch" -> "Lese das Buch." / ".." / "..."), die Breite bleibt gleich, nichts springt. */
+@Composable
+fun WaitText(text: String, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium, color: Color = Color.Unspecified) {
+    var dots by remember { mutableIntStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            dots = dots % 3 + 1
+        }
+    }
+    Text(
+        buildAnnotatedString {
+            append(text)
+            append(".".repeat(dots))
+            withStyle(SpanStyle(color = Color.Transparent)) { append(".".repeat(3 - dots)) }
+        },
+        style = style, color = color,
+    )
 }
