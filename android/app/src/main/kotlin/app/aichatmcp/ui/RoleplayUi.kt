@@ -31,6 +31,7 @@ import app.aichatmcp.ChatViewModel
 import app.aichatmcp.PendingDoc
 import app.aichatmcp.core.BookCast
 import app.aichatmcp.core.BookScenes
+import app.aichatmcp.core.DecisionKind
 import app.aichatmcp.core.Solo
 import app.aichatmcp.core.SoloEnd
 import kotlinx.coroutines.Dispatchers
@@ -125,7 +126,7 @@ fun RoleplayBar(vm: ChatViewModel) {
         Column {
             Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = if (solo) 0.dp else 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${run.setup.title} · " + t("scene ${run.sceneIndex + 1}/${run.setup.scenes.size}", "Szene ${run.sceneIndex + 1}/${run.setup.scenes.size}") + ": ${run.setup.scenes[run.sceneIndex].title}",
+                    "${run.setup.title} · " + t("scene ${if (solo) run.played.size else run.sceneIndex + 1}/${run.setup.scenes.size}", "Szene ${if (solo) run.played.size else run.sceneIndex + 1}/${run.setup.scenes.size}") + ": ${run.setup.scenes[run.sceneIndex].title}",
                     style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 2,
                 )
                 if (solo) {
@@ -193,7 +194,8 @@ fun SoloPanel(vm: ChatViewModel) {
                         }
                     }
                     Text(
-                        t("Careful: a decision away from the story can hurt or kill your character. You can also write freely and decide later.", "Vorsicht: Eine Entscheidung abseits der Geschichte kann deine Figur verletzen oder töten. Du kannst auch frei schreiben und später entscheiden."),
+                        if (run.decisions.any { it.kind == DecisionKind.STRAND }) t("Choose which thread continues; the others wait for later. You can also write freely and decide later.", "Wähle, mit welchem Strang es weitergeht; die anderen kommen später dran. Du kannst auch frei schreiben und später entscheiden.")
+                        else t("Careful: a decision away from the story can hurt or kill your character. You can also write freely and decide later.", "Vorsicht: Eine Entscheidung abseits der Geschichte kann deine Figur verletzen oder töten. Du kannst auch frei schreiben und später entscheiden."),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
                     )
                 }

@@ -41,6 +41,8 @@ data class Config(
     @SerialName("solo_adventure") val soloAdventure: Boolean = false,
     /** Solo-Abenteuer: nach so vielen Szenen vergeht eine Nacht (eine Verwundung heilt, die falschen Entscheidungen des Tages beginnen von vorn). */
     @SerialName("solo_scenes_per_day") val soloScenesPerDay: Int = Solo.DEFAULT_SCENES_PER_DAY,
+    /** Solo-Abenteuer: Art der Entscheidungen ("classic", "strands", "mixed"). */
+    @SerialName("solo_mode") val soloMode: String = "classic",
     /** Benachrichtigungen von WhatsApp und Telegram mitlesen (nur im Arbeitsspeicher), damit der Companion sie vorlesen kann. Zusätzlich braucht es den Benachrichtigungszugriff des Systems. */
     @SerialName("catch_messages") val catchMessages: Boolean = false,
     /** Nachdenken (Reasoning) von Qwen3-Modellen auf dem Gerät. Aus = schneller und weniger Gerede über die Regeln; Qwen3 "Instruct" denkt ohnehin nie. */

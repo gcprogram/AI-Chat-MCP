@@ -91,6 +91,12 @@ import app.aichatmcp.core.BookCast
 import app.aichatmcp.core.BookScenes
 import app.aichatmcp.core.Consequence
 import app.aichatmcp.core.Decision
+import app.aichatmcp.core.DecisionKind
+import app.aichatmcp.core.DecisionMode
+import app.aichatmcp.core.BookPart
+import kotlinx.coroutines.sync.withLock
+import app.aichatmcp.core.Summaries
+import app.aichatmcp.core.SummaryData
 import app.aichatmcp.core.BookEnd
 import app.aichatmcp.core.BookPicture
 import app.aichatmcp.core.RoleplayPrompt
@@ -156,6 +162,8 @@ data class RoleplayRun(
     val setup: RoleplaySetup, val sceneIndex: Int, val turns: Int, val returnTo: String, val closing: Boolean = false,
     /** Solo-Abenteuer: Spielstand, die gerade angebotenen Entscheidungen, ob sie gerade abgefragt werden, und die Folge der letzten Entscheidung (gilt für eine Antwort). */
     val solo: SoloState = SoloState(), val decisions: List<Decision> = emptyList(), val asking: Boolean = false, val outcome: String = "",
+    /** Solo-Abenteuer: Nummern der Szenen, die schon gespielt wurden oder gerade laufen (bei Strängen nicht in der Reihenfolge des Buches). */
+    val played: Set<Int> = setOf(0),
 )
 
 class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: String, private val answer: CompletableDeferred<Boolean>, val preview: String? = null) {
@@ -1611,7 +1619,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Startet das Rollenspiel mit der geladenen Datei; [player] leer = der Ich-Erzähler. Der bisherige Chat des Companions bleibt erhalten. */
     fun startRoleplay(doc: PendingDoc, player: String, firstPerson: Boolean, solo: Boolean = false, characters: List<String> = emptyList()) {
         if (streaming) return
-        val scenes = BookScenes.split(doc.text)
+        // Solo-Abenteuer: kurze Szenen wie die Teile der Zusammenfassung (gleiche Zerlegung, damit der Zwischenspeicher passt); sonst Szenen zu etwa 3000 Zeichen
+        val scenes = if (solo) Summaries.scenes(doc.text) else BookScenes.split(doc.text)
         if (scenes.isEmpty()) {
             status = tNow("No text found in the file.", "Kein Text in der Datei gefunden.")
             return
@@ -1621,6 +1630,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val setup = RoleplaySetup(
             doc.name.substringBeforeLast('.'), scenes, player, firstPerson, persona.isGerman(),
             solo = solo, scenesPerDay = config.soloScenesPerDay, known = characters.filter { it != player },
+            mode = DecisionMode.parse(config.soloMode), summaryKey = if (solo) Summaries.key(doc.name, doc.text) else "",
         )
         dismissDoc()
         beginGame(setup, returnTo)
@@ -1636,7 +1646,46 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val scenes = setup.scenes
         messages += UiMessage(UiKind.INFO, tNow("Role play: ${scenes[0].title} (scene 1/${scenes.size})", "Rollenspiel: ${scenes[0].title} (Szene 1/${scenes.size})"))
         input = if (setup.german) "(Das Spiel beginnt. Beschreibe die erste Szene und was meine Figur gerade sieht und hört.)" else "(The game begins. Describe the first scene and what my character sees and hears.)"
-        send()
+        if (setup.solo) sendWhenPlotReady(0) else send()
+    }
+
+    /**
+     * Solo-Abenteuer: Die Szene [index] wird nicht im Wortlaut gespielt, sondern aus ihrer Zusammenfassung erzählt. Gibt es sie noch nicht (weder aus dem
+     * Vorleser noch von früher), fragt die App das Modell für die Planung (wie bei der Zusammenfassung des Buches) und merkt sie sich im Zwischenspeicher.
+     * Schlägt das fehl, gilt der Anfang des Originaltextes.
+     */
+    private val plotLock = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun ensurePlot(index: Int) = plotLock.withLock { ensurePlotLocked(index) }
+
+    private suspend fun ensurePlotLocked(index: Int) {
+        val setup = roleplay?.setup ?: return
+        if (!setup.solo || index !in setup.scenes.indices || setup.hasPlot(index)) return
+        val cached = setup.summaryKey.takeIf { it.isNotEmpty() }?.let { storage.loadSummary(it) }
+        var plot = cached?.parts?.get(index)?.takeIf { it.isNotBlank() }
+        if (plot == null) {
+            status = tNow("Summarizing the scene…", "Fasse die Szene zusammen…")
+            val scene = setup.scenes[index]
+            val answer = askModel(Summaries.partPrompt(BookPart(scene.title, scene.text), if (setup.german) "Deutsch" else "English"), 250, 0.3, summaryChoice())
+            plot = answer?.let(Summaries::clean)?.takeIf { it.isNotBlank() }
+            if (plot != null && setup.summaryKey.isNotEmpty()) {
+                val data = cached ?: storage.loadSummary(setup.summaryKey) ?: SummaryData(key = setup.summaryKey)
+                runCatching { storage.saveSummary(data.copy(parts = data.parts + (index to plot))) }
+            }
+        }
+        val current = roleplay ?: return
+        if (current.setup.id != setup.id) return // inzwischen beendet oder neu gestartet
+        roleplay = current.copy(setup = current.setup.copy(plots = current.setup.plots + (index to plot.orEmpty())))
+        applyRoleplayPersona()
+    }
+
+    /** Erst die Handlung der Szene [index] besorgen, dann die vorbereitete Eingabe senden. */
+    private fun sendWhenPlotReady(index: Int) {
+        val id = roleplay?.setup?.id ?: return
+        viewModelScope.launch {
+            ensurePlot(index)
+            if (roleplay?.setup?.id == id) send()
+        }
     }
 
     /** Nach einem Spielende (Tod, verlorene Geschichte, Ende des Buches): dasselbe Buch mit derselben Figur noch einmal. */
@@ -1703,7 +1752,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Nach einer Antwort im Solo-Abenteuer: Folge der letzten Entscheidung ist erzählt; am Szenenende die Entscheidungen abfragen, nach der letzten Szene ist das Buch zu Ende. */
     private fun afterSoloTurn(run: RoleplayRun) {
-        val limit = config.roleplayTurns
+        val limit = 1 // wie im Spielbuch: ein erzählter Abschnitt je Szene, danach die Entscheidung (die Zahl der Antworten je Szene gilt nur für das freie Rollenspiel)
         val turns = run.turns + 1
         roleplay = run.copy(turns = turns, outcome = "") // die Folge galt nur für diese Antwort
         val r = roleplay ?: return
@@ -1711,7 +1760,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             applyRoleplayPersona()
             return
         }
-        val last = r.sceneIndex + 1 >= r.setup.scenes.size
+        val last = Solo.candidates(r.setup.scenes.size, r.played, 1).isEmpty()
         when {
             limit > 0 && turns >= limit -> {
                 applyRoleplayPersona()
@@ -1734,18 +1783,31 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun requestDecisions() {
         val run = roleplay ?: return
         if (!run.setup.solo || streaming || run.asking || run.solo.end != null) return
-        if (run.sceneIndex + 1 >= run.setup.scenes.size) { // die letzte Szene hat keine Entscheidung mehr: das Buch ist zu Ende gespielt
+        val candidates = Solo.candidates(run.setup.scenes.size, run.played)
+        if (candidates.isEmpty()) { // alle Szenen gespielt: das Buch ist zu Ende gespielt
             finishGame(SoloEnd.WON)
             return
         }
         roleplay = run.copy(asking = true, decisions = emptyList())
         viewModelScope.launch {
             val lastReply = session.history.lastOrNull { it.role == "assistant" }?.content.orEmpty()
-            val raw = askModel(RoleplayPrompt.decisions(run.setup, run.sceneIndex, lastReply, run.solo), 350, 0.7)
-            val parsed = Solo.withStory(Solo.parseDecisions(raw.orEmpty(), run.setup.known), run.setup.german)
+            val strands = Solo.useStrands(run.setup.mode, run.solo.scenesPlayed, candidates.size)
+            // Stränge: Die Handlung aller Kandidaten wird für die Formulierung gebraucht; bei Handlung/Risiko/Umweg genügt der Textanfang der nächsten Szene (die Zusammenfassung kommt danach)
+            if (strands) for (c in candidates) ensurePlot(c)
+            val setup = roleplay?.setup ?: return@launch
+            val parsed = if (strands) {
+                val raw = askModel(RoleplayPrompt.strandDecisions(setup, run.sceneIndex, lastReply, candidates), 300, 0.7)
+                Solo.parseStrands(raw.orEmpty(), candidates, candidates.map { setup.scenes[it].title }, setup.german)
+            } else {
+                val raw = askModel(RoleplayPrompt.decisions(setup, run.sceneIndex, lastReply, run.solo, run.played), 350, 0.7)
+                Solo.withStory(Solo.parseDecisions(raw.orEmpty(), setup.known), setup.german)
+            }
             val current = roleplay ?: return@launch
-            if (current.sceneIndex != run.sceneIndex || current.setup !== run.setup) return@launch // inzwischen beendet oder neu gestartet
+            if (current.sceneIndex != run.sceneIndex || current.setup.id != run.setup.id) return@launch // inzwischen beendet oder neu gestartet
             roleplay = current.copy(asking = false, decisions = parsed)
+            status = "Bereit"
+            // während der Spieler überlegt, ist die Handlung der nächsten Szene schon zu besorgen
+            if (!strands) ensurePlot(candidates.first())
         }
     }
 
@@ -1757,16 +1819,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val res = Solo.resolve(run.solo, decision, (0..99).random(), run.setup.scenesPerDay)
         val german = run.setup.german
         val over = res.state.end != null
-        val next = if (over) run.sceneIndex else run.sceneIndex + 1
+        // ein Strang bestimmt die nächste Szene selbst, sonst folgt die erste noch nicht gespielte in der Reihenfolge des Buches
+        val next = when {
+            over -> run.sceneIndex
+            decision.kind == DecisionKind.STRAND && decision.scene in run.setup.scenes.indices && decision.scene !in run.played -> decision.scene
+            else -> Solo.candidates(run.setup.scenes.size, run.played, 1).firstOrNull() ?: run.sceneIndex
+        }
         roleplay = run.copy(
             sceneIndex = next, turns = 0, closing = false, decisions = emptyList(), asking = false, solo = res.state, outcome = Solo.outcomeNote(decision, res, german),
+            played = run.played + next,
         )
         applyRoleplayPersona()
         val line = Solo.resultLine(decision, res, german)
         if (line.isNotEmpty()) messages += UiMessage(UiKind.INFO, line)
-        if (!over) messages += UiMessage(UiKind.INFO, tNow("Scene ${next + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}", "Szene ${next + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}"))
+        if (!over) messages += UiMessage(UiKind.INFO, tNow("Scene ${run.played.size + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}", "Szene ${run.played.size + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}"))
         input = decision.text
-        send()
+        if (over) send() else sendWhenPlotReady(next)
     }
 
     fun selectPersona(id: String) {

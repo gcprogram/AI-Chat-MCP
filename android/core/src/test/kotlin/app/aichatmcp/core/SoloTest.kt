@@ -168,4 +168,93 @@ class SoloTest {
         assertTrue("[Name +1]" in ask)
         assertEquals("Verwundungen ●○○ · Tag 2 · falsche Entscheidungen heute 0/3 · Tom +3 · Mara -1", Solo.statusLine(state, true))
     }
+
+    private fun gamebook() = RoleplaySetup(
+        "Das Logbuch", listOf(Scene("A", "Originaltext A. ".repeat(100)), Scene("B", "Originaltext B."), Scene("C", "Originaltext C."), Scene("D", "Originaltext D.")),
+        player = "Anna", firstPerson = false, german = true, solo = true,
+    )
+
+    @Test
+    fun theSoloNarratorTellsAShortPassageFromTheSummaryNotTheOriginalWording() {
+        val setup = gamebook().copy(plots = mapOf(0 to "Anna findet im Leuchtturm einen Brief."))
+        val p = RoleplayPrompt.system(setup, 0, closing = false, solo = SoloState())
+        assertTrue("120 bis 250 Wörter" in p && "HANDLUNG DER SZENE (A):\nAnna findet im Leuchtturm einen Brief." in p, p)
+        assertTrue("Originaltext A" !in p) // der Wortlaut des Buches steht nicht im Prompt
+        assertTrue("2 bis 5 Sätze" !in p && "Höre an einer offenen Stelle auf" in p)
+        // ohne Zusammenfassung (Fehler) gilt der Anfang des Originaltextes, gekürzt
+        val fallback = RoleplayPrompt.system(gamebook(), 0, closing = false, solo = SoloState())
+        assertTrue("Originaltext A" in fallback && fallback.length < 2500)
+        assertTrue(gamebook().hasPlot(0).not() && setup.hasPlot(0))
+        // das freie Rollenspiel bleibt, wie es war
+        assertTrue("2 bis 5 Sätze" in RoleplayPrompt.system(setup.copy(solo = false), 0, false))
+    }
+
+    @Test
+    fun strandsOfferTheNextUnplayedScenesInBookOrder() {
+        assertEquals(listOf(1, 2, 3), Solo.candidates(5, setOf(0)))
+        assertEquals(listOf(2, 3, 4), Solo.candidates(5, setOf(0, 1)))
+        assertEquals(listOf(1, 3, 4), Solo.candidates(5, setOf(0, 2))) // eine übersprungene Szene kommt später wieder an die Reihe
+        assertEquals(listOf(4), Solo.candidates(5, setOf(0, 1, 2, 3)))
+        assertEquals(emptyList(), Solo.candidates(3, setOf(0, 1, 2)))
+        assertEquals(listOf(1), Solo.candidates(5, setOf(0), 1))
+    }
+
+    @Test
+    fun theModeDecidesWhenStrandsAreOffered() {
+        assertFalse(Solo.useStrands(DecisionMode.CLASSIC, 1, 3))
+        assertTrue(Solo.useStrands(DecisionMode.STRANDS, 0, 3))
+        assertFalse(Solo.useStrands(DecisionMode.STRANDS, 0, 1)) // eine einzige Fortsetzung ist keine Wahl
+        assertFalse(Solo.useStrands(DecisionMode.MIXED, 0, 3))
+        assertTrue(Solo.useStrands(DecisionMode.MIXED, 1, 3))
+        assertFalse(Solo.useStrands(DecisionMode.MIXED, 2, 3))
+        assertEquals(DecisionMode.STRANDS, DecisionMode.parse("strands"))
+        assertEquals(DecisionMode.CLASSIC, DecisionMode.parse("unbekannt"))
+        assertEquals(DecisionMode.CLASSIC, DecisionMode.parse(null))
+    }
+
+    @Test
+    fun strandDecisionsAreReadByNumberAndMissingOnesGetAFallback() {
+        val answer = "Hier die Entscheidungen:\n1: Ich besuche die Zeugen im Dorf.\n**2:** Ich suche in der Bibliothek nach Hinweisen.\n3: kurz"
+        val list = Solo.parseStrands(answer, listOf(1, 2, 3), listOf("Zeugen", "Bibliothek", "Einkauf"), true)
+        assertEquals(3, list.size)
+        assertTrue(list.all { it.kind == DecisionKind.STRAND })
+        assertEquals(listOf(1, 2, 3), list.map { it.scene })
+        assertEquals("Ich besuche die Zeugen im Dorf.", list[0].text)
+        assertEquals("Ich suche in der Bibliothek nach Hinweisen.", list[1].text)
+        assertEquals("Ich wende mich dem Abschnitt „Einkauf“ zu.", list[2].text) // "kurz" ist zu kurz
+        // zwei Kandidaten, Antwort in unbekannter Form: beide bleiben wählbar
+        val none = Solo.parseStrands("Nichts Brauchbares.", listOf(4, 6), listOf("X", "Y"), false)
+        assertEquals(listOf(4, 6), none.map { it.scene })
+        assertEquals("I turn to the part \"X\".", none[0].text)
+        // Zeilen mit einer Nummer außerhalb der Kandidaten werden ignoriert
+        assertEquals("Ich wende mich dem Abschnitt „X“ zu.", Solo.parseStrands("5: Ich gehe nach Hause zurück.", listOf(2), listOf("X"), true)[0].text)
+    }
+
+    @Test
+    fun aStrandDecisionIsRiskFreeAndHandsOverTheScene() {
+        val strand = Decision(DecisionKind.STRAND, "Ich folge dem Bachlauf.", scene = 2)
+        for (roll in listOf(0, 30, 99)) {
+            val r = Solo.resolve(SoloState(wounds = 2, wrongToday = 2), strand, roll)
+            assertEquals(Consequence.NONE, r.consequence)
+            assertEquals(2, r.state.wounds)
+            assertEquals(2, r.state.wrongToday)
+            assertEquals(null, r.state.end)
+        }
+        val note = Solo.outcomeNote(strand, Solo.resolve(SoloState(), strand, 50), true)
+        assertTrue("Handlungsstrang" in note && "erwähne diesen Wechsel nicht" in note, note)
+        assertTrue("different thread".isNotEmpty() && "strand" in Solo.outcomeNote(strand, Solo.resolve(SoloState(), strand, 50), false))
+    }
+
+    @Test
+    fun theStrandRequestListsTheCandidatesWithTheirPlots() {
+        val setup = gamebook().copy(plots = mapOf(1 to "Tom befragt die Zeugen.", 2 to "Mara liest in der Bibliothek."))
+        val ask = RoleplayPrompt.strandDecisions(setup, 0, "Anna verlässt den Turm.", listOf(1, 2, 3))[1].content
+        assertTrue("1. B: Tom befragt die Zeugen." in ask && "2. C: Mara liest in der Bibliothek." in ask && "3. D: Originaltext D." in ask, ask)
+        assertTrue("1: …" in ask && "3: …" in ask && "Ich besuche die Zeugen" in ask)
+        // die klassische Anfrage sieht die Zusammenfassung der nächsten Szene (erste ungespielte), nicht die übernächste
+        val classic = RoleplayPrompt.decisions(setup, 0, "Anna verlässt den Turm.", SoloState(), setOf(0))[1].content
+        assertTrue("Tom befragt die Zeugen." in classic && "Mara liest" !in classic, classic)
+        val afterJump = RoleplayPrompt.decisions(setup, 2, "x", SoloState(), setOf(0, 2))[1].content
+        assertTrue("Tom befragt die Zeugen." in afterJump)
+    }
 }

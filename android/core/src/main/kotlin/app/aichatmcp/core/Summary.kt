@@ -50,6 +50,9 @@ object Summaries {
     fun parts(text: String): List<BookPart> =
         BookScenes.split(text, PART_CHARS, PART_MAX_CHARS).map { BookPart(chapterOf(it.title), it.text) }
 
+    /** Die Szenen des Solo-Abenteuers: dieselbe Zerlegung wie [parts] (Nummer für Nummer gleich), damit die Zusammenfassungen im Zwischenspeicher passen. */
+    fun scenes(text: String): List<Scene> = BookScenes.split(text, PART_CHARS, PART_MAX_CHARS)
+
     /** "Kapitel 2 (1/3)" gehört zu "Kapitel 2". */
     fun chapterOf(title: String): String = title.replace(Regex("""\s*\(\d+/\d+\)\s*$"""), "").trim()
 

@@ -141,12 +141,63 @@ object BookCast {
 data class RoleplaySetup(
     val title: String, val scenes: List<Scene>, val player: String, val firstPerson: Boolean, val german: Boolean,
     val solo: Boolean = false, val scenesPerDay: Int = Solo.DEFAULT_SCENES_PER_DAY, val known: List<String> = emptyList(),
-)
+    /** Solo-Abenteuer: Art der Entscheidungen (Handlung/Risiko/Umweg, Stränge oder abwechselnd). */
+    val mode: DecisionMode = DecisionMode.CLASSIC,
+    /** Solo-Abenteuer: Zusammenfassung je Szene (Nummer -> Handlung), wird beim Spielen nach und nach gefüllt; leer = Anfang des Originaltextes. */
+    val plots: Map<Int, String> = emptyMap(),
+    /** Schlüssel des Zwischenspeichers der Zusammenfassungen ([Summaries.key]); leer = nicht speichern. */
+    val summaryKey: String = "",
+    /** Erkennt dasselbe Spiel auch nach Änderungen von [plots]. */
+    val id: Long = System.nanoTime(),
+) {
+    /** Die Handlung der Szene [index]: die Zusammenfassung (Solo-Abenteuer), sonst oder ohne sie der Text, höchstens [max] Zeichen. */
+    fun plotOf(index: Int, max: Int = 900): String {
+        val scene = scenes.getOrNull(index) ?: return ""
+        val plot = plots[index].orEmpty().trim()
+        return if (plot.isNotEmpty()) plot else scene.text.trim().take(max)
+    }
+
+    /** Hat die Szene [index] schon eine Zusammenfassung (auch eine leere, nach einem Fehler: dann gilt der Text)? */
+    fun hasPlot(index: Int): Boolean = plots.containsKey(index)
+}
 
 object RoleplayPrompt {
     /** Der Spielleiter-Prompt für die Szene [index]; [closing]: die Szene soll jetzt zum Ende kommen. */
     fun system(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = ""): String =
-        base(setup, index, closing) + soloBlock(setup, solo, outcome, closing)
+        (if (setup.solo && solo != null) narration(setup, index) else base(setup, index, closing)) + soloBlock(setup, solo, outcome, closing)
+
+    /**
+     * Solo-Abenteuer wie ein Spielbuch: Der Spielleiter erzählt je Szene einen zusammenhängenden Abschnitt von einer Viertel- bis einer halben Seite
+     * (kein langer Dialog) und hält an einer Stelle an, an der entschieden wird. Die Handlung kommt als Zusammenfassung; der Wortlaut des Buches ist unwichtig.
+     */
+    private fun narration(setup: RoleplaySetup, index: Int): String {
+        val scene = setup.scenes[index]
+        val g = setup.german
+        val player = if (setup.player.isBlank()) (if (g) "den Ich-Erzähler des Buches (die Figur, aus deren Sicht erzählt wird)" else "the first-person narrator of the book") else (if (g) "die Figur ${setup.player}" else "the character ${setup.player}")
+        return if (g) buildString {
+            append("Du bist der Erzähler eines Solo-Abenteuers (Spielbuch) nach dem Buch „${setup.title}“. Der Spieler ({user}) spielt $player. Du erzählst die Szene, danach entscheidet der Spieler.\n")
+            append("Regeln:\n")
+            append("- Erzähle die Szene als zusammenhängenden Abschnitt von etwa 120 bis 250 Wörtern, in der zweiten Person („du“")
+            if (setup.firstPerson && setup.player.isBlank()) append(", auch wenn das Buch in der Ich-Form erzählt: der Spieler ist das Ich")
+            append("). Keine Aufzählungen, kein Markdown.\n")
+            append("- Die Handlung der Szene steht unten als Zusammenfassung. Erzähle ihre Ereignisse, Orte und Figuren in eigenen Worten und gib Gespräche nur kurz und sinngemäß wieder; der Wortlaut des Buches ist unwichtig, Namen und Ereignisse nicht. Erfinde nichts, was der Handlung widerspricht.\n")
+            append("- Beschreibe, was die Spielerfigur sieht, hört und erlebt und was die anderen Figuren sagen und tun. Lege der Spielerfigur keine neuen Entscheidungen in den Mund.\n")
+            append("- Höre an einer offenen Stelle auf, an der der Spieler sich entscheiden muss. Schreibe die Möglichkeiten nicht selbst auf: die App fragt sie danach ab.\n")
+            append("- Verrate nichts aus späteren Szenen.\n\n")
+            append("HANDLUNG DER SZENE (${scene.title}):\n${setup.plotOf(index)}\n")
+        } else buildString {
+            append("You are the narrator of a solo adventure (gamebook) based on the book \"${setup.title}\". The player ({user}) plays $player. You tell the scene, then the player decides.\n")
+            append("Rules:\n")
+            append("- Tell the scene as one continuous passage of about 120 to 250 words, in the second person (\"you\"")
+            if (setup.firstPerson && setup.player.isBlank()) append(", even if the book is told in the first person: the player is the I")
+            append("). No lists, no markdown.\n")
+            append("- The plot of the scene is given below as a summary. Tell its events, places and characters in your own words and give conversations only briefly and in substance; the wording of the book does not matter, names and events do. Invent nothing that contradicts the plot.\n")
+            append("- Describe what the player's character sees, hears and experiences and what the other characters say and do. Do not put new decisions into the player character's mouth.\n")
+            append("- Stop at an open moment where the player has to decide. Do not write the options yourself: the app asks for them afterwards.\n")
+            append("- Reveal nothing from later scenes.\n\n")
+            append("PLOT OF THE SCENE (${scene.title}):\n${setup.plotOf(index)}\n")
+        }
+    }
 
     /** Zusatz im Solo-Abenteuer: Spielstand, Regeln (die App legt die Folgen fest) und die verbindliche Folge der letzten Entscheidung. */
     private fun soloBlock(setup: RoleplaySetup, solo: SoloState?, outcome: String, closing: Boolean): String {
@@ -164,16 +215,18 @@ object RoleplayPrompt {
      * Die Anfrage nach den Entscheidungen am Ende einer Szene: höchstens eine je Art (Handlung, Risiko, Umweg), jede in einer Zeile, optional mit Beziehungspunkten
      * für Hauptfiguren. [lastReply] ist das Ende der Szene.
      */
-    fun decisions(setup: RoleplaySetup, index: Int, lastReply: String, solo: SoloState): List<WireMessage> {
+    fun decisions(setup: RoleplaySetup, index: Int, lastReply: String, solo: SoloState, played: Set<Int> = setOf(index)): List<WireMessage> {
         val scene = setup.scenes[index]
-        val next = setup.scenes.getOrNull(index + 1)
+        val nextIndex = Solo.candidates(setup.scenes.size, played, 1).firstOrNull()
+        val next = nextIndex?.let { setup.scenes[it] }
+        val nextPlot = nextIndex?.let { setup.plotOf(it, 400) }.orEmpty()
         val g = setup.german
         val names = (setup.known + setup.player).filter { it.isNotBlank() }.distinct()
         val cast = setup.known.filter { it != setup.player }.take(8).joinToString(", ")
         val user = if (g) buildString {
-            append("Buch: „${setup.title}“. Die Szene „${scene.title}“ ist zu Ende gespielt. Die Handlung der Szene:\n${scene.text.trim().take(900)}\n\n")
+            append("Buch: „${setup.title}“. Die Szene „${scene.title}“ ist zu Ende gespielt. Die Handlung der Szene:\n${setup.plotOf(index, 900)}\n\n")
             append("Zuletzt erzählt:\n${lastReply.trim().takeLast(700)}\n\n")
-            if (next != null) append("Danach folgt (Handlung des Buches):\n${next.text.trim().take(400)} …\n\n")
+            if (next != null) append("Danach folgt (Handlung des Buches):\n$nextPlot …\n\n")
             append("Schlage der Spielerfigur ${if (setup.player.isBlank()) "(dem Ich-Erzähler)" else setup.player} jetzt Entscheidungen vor, jeweils ein Satz in der Ich-Form der Spielerfigur, passend zur Situation:\n")
             append("STORY: eine Entscheidung, die der Handlung des Buches folgt\n")
             append("RISIKO: eine Entscheidung, die von der Handlung abweicht und gefährlich werden kann (Verletzung oder Tod)\n")
@@ -181,15 +234,42 @@ object RoleplayPrompt {
             if (cast.isNotEmpty()) append("Wirkt eine Entscheidung auf das Verhältnis zu einer Hauptfigur ($cast), hänge ans Zeilenende [Name +1] oder [Name -1].\n")
             append("Genau diese Zeilen, nichts anderes, kein Markdown.")
         } else buildString {
-            append("Book: \"${setup.title}\". The scene \"${scene.title}\" has been played to its end. The plot of the scene:\n${scene.text.trim().take(900)}\n\n")
+            append("Book: \"${setup.title}\". The scene \"${scene.title}\" has been played to its end. The plot of the scene:\n${setup.plotOf(index, 900)}\n\n")
             append("Last told:\n${lastReply.trim().takeLast(700)}\n\n")
-            if (next != null) append("What follows (plot of the book):\n${next.text.trim().take(400)} …\n\n")
+            if (next != null) append("What follows (plot of the book):\n$nextPlot …\n\n")
             append("Now propose decisions to the player's character ${if (setup.player.isBlank()) "(the first-person narrator)" else setup.player}, each one sentence in the first person of the player's character, fitting the situation:\n")
             append("STORY: a decision that follows the plot of the book\n")
             append("RISK: a decision that departs from the plot and can become dangerous (injury or death)\n")
             append("DETOUR: a variant that goes differently but leads back to the plot\n")
             if (cast.isNotEmpty()) append("If a decision affects the relationship with a main character ($cast), append [Name +1] or [Name -1] at the end of the line.\n")
             append("Exactly these lines, nothing else, no markdown.")
+        }
+        return listOf(
+            WireMessage("system", if (g) "Du bist der Spielleiter eines Rollenspiels nach einem Buch. Du schreibst nur die verlangten Zeilen." else "You are the game master of a role play based on a book. You write only the requested lines."),
+            WireMessage("user", user),
+        )
+    }
+
+    /**
+     * Die Anfrage nach den Strang-Entscheidungen: [candidates] sind die Szenen, zwischen denen der Spieler wählt (jede ein eigener Handlungsstrang oder ein
+     * eigenes Erlebnis des Buches). Das Modell schreibt je Szene einen Satz, der in sie hineinführt, ohne zu verraten, was dort geschieht.
+     */
+    fun strandDecisions(setup: RoleplaySetup, index: Int, lastReply: String, candidates: List<Int>): List<WireMessage> {
+        val g = setup.german
+        val who = if (setup.player.isBlank()) (if (g) "(dem Ich-Erzähler)" else "(the first-person narrator)") else setup.player
+        val list = candidates.mapIndexed { i, c -> "${i + 1}. ${setup.scenes[c].title}: ${setup.plotOf(c, 450)}" }.joinToString("\n")
+        val user = if (g) buildString {
+            append("Buch: „${setup.title}“. Die Szene „${setup.scenes[index].title}“ ist zu Ende gespielt. Zuletzt erzählt:\n${lastReply.trim().takeLast(600)}\n\n")
+            append("Die Spielerfigur $who kann jetzt wählen, womit es weitergeht. Das sind die Möglichkeiten (jede ein eigener Handlungsstrang des Buches):\n$list\n\n")
+            append("Schreibe zu jeder Nummer genau eine Entscheidung als ein Satz in der Ich-Form der Spielerfigur, der in diesen Strang führt (zum Beispiel „Ich besuche die Zeugen.“ oder „Ich folge dem Bachlauf.“). ")
+            append("Verrate nicht, was dort geschieht, und nenne keine Figuren, die die Spielerfigur noch nicht kennt.\n")
+            append("Genau diese Form, nichts anderes, kein Markdown:\n" + candidates.indices.joinToString("\n") { "${it + 1}: …" })
+        } else buildString {
+            append("Book: \"${setup.title}\". The scene \"${setup.scenes[index].title}\" has been played to its end. Last told:\n${lastReply.trim().takeLast(600)}\n\n")
+            append("The player's character $who can now choose what happens next. These are the options (each a separate strand of the book):\n$list\n\n")
+            append("For each number write exactly one decision as a sentence in the first person of the player's character that leads into that strand (for example \"I visit the witnesses.\" or \"I follow the stream.\"). ")
+            append("Do not reveal what happens there and do not name characters the player's character does not know yet.\n")
+            append("Exactly this form, nothing else, no markdown:\n" + candidates.indices.joinToString("\n") { "${it + 1}: …" })
         }
         return listOf(
             WireMessage("system", if (g) "Du bist der Spielleiter eines Rollenspiels nach einem Buch. Du schreibst nur die verlangten Zeilen." else "You are the game master of a role play based on a book. You write only the requested lines."),

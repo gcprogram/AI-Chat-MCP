@@ -2,11 +2,14 @@ package app.aichatmcp.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -23,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.PendingDoc
+import app.aichatmcp.core.DecisionMode
 
 /**
  * "Buch spielen": Story-Game (Companion mit Spiegel-Bild) macht aus einem geladenen Buch ein Rollenspiel. Hier wird vorbereitet (Buch laden,
@@ -75,7 +79,7 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("A game is running: ${run.setup.title}", "Ein Spiel läuft: ${run.setup.title}"), style = MaterialTheme.typography.titleSmall)
             Text(
-                t("Scene ${run.sceneIndex + 1} of ${run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}", "Szene ${run.sceneIndex + 1} von ${run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}"),
+                t("Scene ${if (run.setup.solo) run.played.size else run.sceneIndex + 1} of ${run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}", "Szene ${if (run.setup.solo) run.played.size else run.sceneIndex + 1} von ${run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}"),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -87,12 +91,14 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
 }
 
 /** Das Buch ist geladen: Figur wählen, Länge einer Szene einstellen, starten. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStarted: () -> Unit) {
     val choice = rememberRoleplayChoice(doc)
     var turns by remember { mutableStateOf(vm.config.roleplayTurns.toString()) }
     var solo by remember { mutableStateOf(vm.config.soloAdventure) }
     var perDay by remember { mutableStateOf(vm.config.soloScenesPerDay.toString()) }
+    var mode by remember { mutableStateOf(DecisionMode.parse(vm.config.soloMode)) }
     Text(t("“${doc.name}” – ${doc.text.length} characters.", "„${doc.name}“ – ${doc.text.length} Zeichen."), style = MaterialTheme.typography.titleSmall)
     if (choice == null) {
         Text(t("Reading the book…", "Lese das Buch…"), style = MaterialTheme.typography.bodySmall)
@@ -116,6 +122,26 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
             Switch(checked = solo, onCheckedChange = { solo = it })
         }
         if (solo) {
+            Text(
+                t("The game master tells each scene as a short passage (a quarter to half a page) from a summary of the book part, then you decide.",
+                    "Der Spielleiter erzählt jede Szene als kurzen Abschnitt (eine Viertel- bis halbe Seite) aus einer Zusammenfassung des Buchteils, danach entscheidest du."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+            )
+            Text(t("Kind of decisions", "Art der Entscheidungen"), style = MaterialTheme.typography.titleSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = mode == DecisionMode.CLASSIC, onClick = { mode = DecisionMode.CLASSIC }, label = { Text(t("Story / risk / detour", "Handlung / Risiko / Umweg")) })
+                FilterChip(selected = mode == DecisionMode.STRANDS, onClick = { mode = DecisionMode.STRANDS }, label = { Text(t("Threads", "Stränge")) })
+                FilterChip(selected = mode == DecisionMode.MIXED, onClick = { mode = DecisionMode.MIXED }, label = { Text(t("Mixed", "Gemischt")) })
+            }
+            Text(
+                when (mode) {
+                    DecisionMode.CLASSIC -> t("One option follows the story, one departs from it (danger), one is a detour back.", "Eine Möglichkeit folgt der Geschichte, eine weicht ab (Gefahr), eine ist ein Umweg zurück.")
+                    DecisionMode.STRANDS -> t("You choose which of the next parts of the book comes next, like a different character or an independent adventure. Works best for books with parallel threads or episodes; no danger in these choices.",
+                        "Du wählst, welcher der nächsten Buchteile als Nächstes kommt, etwa eine andere Figur oder ein unabhängiges Erlebnis. Passt am besten zu Büchern mit parallelen Strängen oder Episoden; diese Wahl bringt keine Gefahr.")
+                    DecisionMode.MIXED -> t("Alternates between the two kinds.", "Wechselt zwischen beiden Arten ab.")
+                },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+            )
             TextSetting(
                 t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it },
                 keyboard = KeyboardType.Number,
@@ -127,7 +153,7 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
                 val days = perDay.toIntOrNull()?.takeIf { it in 1..20 } ?: vm.config.soloScenesPerDay
                 var config = vm.config
                 if (n != null && n >= 0) config = config.copy(roleplayTurns = n)
-                config = config.copy(soloAdventure = solo, soloScenesPerDay = days)
+                config = config.copy(soloAdventure = solo, soloScenesPerDay = days, soloMode = mode.name.lowercase())
                 if (config != vm.config) vm.saveConfig(config)
                 vm.startRoleplay(doc, choice.playerName, choice.asFirstPerson, solo = solo, characters = choice.names)
                 onStarted()

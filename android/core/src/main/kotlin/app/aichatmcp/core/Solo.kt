@@ -1,6 +1,18 @@
 package app.aichatmcp.core
 
-/** Die drei Arten von Entscheidung im Solo-Abenteuer. */
+/**
+ * Wie die Entscheidungen nach einer Szene aussehen: [CLASSIC] = Handlung / Risiko / Umweg, [STRANDS] = der Spieler wählt, welcher von bis zu drei
+ * Handlungssträngen (die nächsten Szenen des Buches) als Nächstes gespielt wird, [MIXED] = abwechselnd.
+ */
+enum class DecisionMode {
+    CLASSIC, STRANDS, MIXED;
+
+    companion object {
+        fun parse(value: String?): DecisionMode = entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: CLASSIC
+    }
+}
+
+/** Die Arten von Entscheidung im Solo-Abenteuer. */
 enum class DecisionKind {
     /** folgt der Handlung des Buches */
     STORY,
@@ -10,10 +22,13 @@ enum class DecisionKind {
 
     /** eine Variante, die erzählt wird und danach zur Handlung zurückführt */
     DETOUR,
+
+    /** wählt einen Handlungsstrang: die Szene [Decision.scene] kommt als Nächstes (ohne Risiko) */
+    STRAND,
 }
 
 /** Ein Vorschlag nach einer Szene; [relations] sind die Punkte für Hauptfiguren (positiv oder negativ), die die Entscheidung bringt. */
-data class Decision(val kind: DecisionKind, val text: String, val relations: Map<String, Int> = emptyMap())
+data class Decision(val kind: DecisionKind, val text: String, val relations: Map<String, Int> = emptyMap(), val scene: Int = -1)
 
 enum class SoloEnd {
     /** die Spielerfigur ist gestorben (dritte Verwundung oder tödlicher Ausgang) */
@@ -56,6 +71,42 @@ object Solo {
     /** Bei einer riskanten Entscheidung: Würfel 0 bis 99, darunter [FATAL_BELOW] tödlich, darunter [WOUND_BELOW] eine Verwundung, sonst knapp entkommen. */
     const val FATAL_BELOW = 10
     const val WOUND_BELOW = 60
+
+    /** Wie viele Stränge zur Wahl stehen (die nächsten noch ungespielten Szenen des Buches). */
+    const val MAX_STRANDS = 3
+
+    /** Die nächsten ungespielten Szenen in der Reihenfolge des Buches (höchstens [max]); die erste ist die, die der Handlung folgt. */
+    fun candidates(sceneCount: Int, played: Set<Int>, max: Int = MAX_STRANDS): List<Int> = (0 until sceneCount).filter { it !in played }.take(max)
+
+    /** Soll diese Entscheidungsrunde Stränge anbieten? [round] = Zahl der bisher getroffenen Entscheidungen; Stränge brauchen mindestens zwei zur Wahl. */
+    fun useStrands(mode: DecisionMode, round: Int, candidateCount: Int): Boolean = candidateCount >= 2 && when (mode) {
+        DecisionMode.CLASSIC -> false
+        DecisionMode.STRANDS -> true
+        DecisionMode.MIXED -> round % 2 == 1
+    }
+
+    private val STRAND_LINE = Regex("""(?m)^\s*[*#_\s\-]*(\d)\s*[.:)]\s*[*_]*\s*(.+)$""")
+
+    /**
+     * Liest die Strang-Entscheidungen ("1: …", "2: …"): die Zeile n gehört zur n-ten Szene in [candidates]. Fehlt eine (oder ist sie zu kurz), steht ihre
+     * Entscheidung trotzdem zur Wahl ("Ich wende mich … zu"), damit das Spiel weitergeht. [titles] = Überschriften der Kandidaten.
+     */
+    fun parseStrands(text: String, candidates: List<Int>, titles: List<String>, german: Boolean): List<Decision> {
+        val byNumber = HashMap<Int, String>()
+        for (m in STRAND_LINE.findAll(text)) {
+            val n = m.groupValues[1].toInt()
+            val body = m.groupValues[2].replace(Regex("""\s+"""), " ").trim().trim('*', '_')
+            if (n in 1..candidates.size && n !in byNumber && body.length >= 8) byNumber[n] = body
+        }
+        return candidates.mapIndexed { i, scene ->
+            val title = titles.getOrNull(i).orEmpty()
+            Decision(
+                DecisionKind.STRAND,
+                byNumber[i + 1] ?: if (german) "Ich wende mich dem Abschnitt „$title“ zu." else "I turn to the part \"$title\".",
+                scene = scene,
+            )
+        }
+    }
 
     /** Wendet [decision] an. [roll] ist der Würfel (0 bis 99, zum Testen vorgegeben), [scenesPerDay]: nach so vielen Szenen vergeht eine Nacht. */
     fun resolve(state: SoloState, decision: Decision, roll: Int, scenesPerDay: Int = DEFAULT_SCENES_PER_DAY): Resolution {
@@ -172,6 +223,8 @@ object Solo {
                 else "The decision departs from the plot, but the player's character escapes unharmed. Describe the narrow escape in 2 to 4 sentences, then lead back to the plot (new scene below)."
                 DecisionKind.DETOUR -> if (german) "Der Spieler wählt eine Variante. Beschreibe sie anschaulich in 2 bis 4 Sätzen und führe sie so weiter, dass sie in die Handlung zurückmündet (neue Szene unten). Niemand wird dadurch verletzt."
                 else "The player chooses a variant. Describe it vividly in 2 to 4 sentences and lead it so that it flows back into the plot (new scene below). Nobody is hurt by it."
+                DecisionKind.STRAND -> if (german) "Der Spieler wählt diesen Handlungsstrang. Beschreibe in 1 bis 2 Sätzen, wie die Spielerfigur sich ihm zuwendet, und erzähle dann die neue Szene (unten), als erlebte die Spielerfigur sie selbst, auch wenn im Buch eine andere Figur sie erlebt; erwähne diesen Wechsel nicht. Niemand wird dadurch verletzt."
+                else "The player chooses this strand. Describe in 1 to 2 sentences how the player's character turns to it, then tell the new scene (below) as if the player's character experienced it, even if another character does in the book; do not mention this switch. Nobody is hurt by it."
                 DecisionKind.STORY -> if (german) "Der Spieler folgt der Handlung. Beschreibe das Ergebnis kurz in 1 bis 3 Sätzen, dann führe in die neue Szene ein (unten)."
                 else "The player follows the plot. Describe the result briefly in 1 to 3 sentences, then introduce the new scene (below)."
             }
