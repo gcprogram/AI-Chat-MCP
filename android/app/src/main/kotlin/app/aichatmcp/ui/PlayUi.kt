@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -16,12 +17,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
@@ -99,6 +102,12 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
     var solo by remember { mutableStateOf(vm.config.soloAdventure) }
     var perDay by remember { mutableStateOf(vm.config.soloScenesPerDay.toString()) }
     var mode by remember { mutableStateOf(DecisionMode.parse(vm.config.soloMode)) }
+    // Während das Spielbuch vorbereitet wird, soll der Bildschirm nicht ausgehen (bei dunklem Bildschirm drosselt Samsung die Rechenleistung stark)
+    val view = LocalView.current
+    DisposableEffect(vm.prepBusy) {
+        view.keepScreenOn = vm.prepBusy
+        onDispose { view.keepScreenOn = false }
+    }
     Text(t("“${doc.name}” – ${doc.text.length} characters.", "„${doc.name}“ – ${doc.text.length} Zeichen."), style = MaterialTheme.typography.titleSmall)
     if (choice == null) {
         Text(t("Reading the book…", "Lese das Buch…"), style = MaterialTheme.typography.bodySmall)
@@ -146,6 +155,7 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
                 t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it },
                 keyboard = KeyboardType.Number,
             )
+            GamebookCard(vm, doc)
         }
         Button(
             onClick = {
@@ -165,5 +175,52 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = onLoad) { Text(t("Another book…", "Anderes Buch…")) }
         TextButton(onClick = vm::dismissDoc) { Text(t("Discard", "Verwerfen")) }
+    }
+}
+
+/**
+ * Das Spielbuch vorbereiten: Zusammenfassung jeder Szene und Handlungsstrang je Szene, einmal im Voraus (läuft im Hintergrund, Abbruch kostet nichts).
+ * Das Spiel liest danach nur noch diese kurzen Angaben; Stränge bieten dann je Handlungsstrang die nächste Szene an und halten so die Reihenfolge.
+ */
+@Composable
+private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc) {
+    val state = remember(doc, vm.prepBusy, vm.prepDone) { vm.gamebookState(doc) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(t("Prepare the game book", "Spielbuch vorbereiten"), style = MaterialTheme.typography.titleSmall)
+            Text(
+                t("Summarizes every scene once and finds the story threads, so the game can use short notes instead of the book text and keeps the order of the threads right. You can also start without it; missing scenes are summarized while you play.",
+                    "Fasst jede Szene einmal zusammen und findet die Handlungsstränge. Das Spiel liest dann kurze Notizen statt des Buchtextes und hält die Reihenfolge der Stränge ein. Du kannst auch ohne starten; fehlende Szenen werden beim Spielen zusammengefasst."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+            )
+            when {
+                vm.prepBusy -> {
+                    LinearProgressIndicator(progress = { if (vm.prepTotal > 0) vm.prepDone.toFloat() / vm.prepTotal else 0f }, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        t("Request ${vm.prepDone} of ${vm.prepTotal}", "Anfrage ${vm.prepDone} von ${vm.prepTotal}") + if (vm.prepWhat.isNotBlank()) " · ${vm.prepWhat}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = vm::cancelGamebook) { Text(t("Stop", "Anhalten")) }
+                }
+                state.ready -> {
+                    Text(
+                        t("Ready: ${state.scenes} scenes, ${state.threads.size} thread(s): ${state.threads.joinToString(", ")}.", "Fertig: ${state.scenes} Szenen, ${state.threads.size} Strang/Stränge: ${state.threads.joinToString(", ")}."),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (state.threads.size < 2) {
+                        Text(
+                            t("Only one thread: the thread choice then falls back to the normal decisions.", "Nur ein Strang: die Strang-Wahl fällt dann auf die normalen Entscheidungen zurück."),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+                else -> {
+                    Button(onClick = { vm.prepareGamebook(doc) }, enabled = !vm.streaming && state.scenes > 0) {
+                        Text(t("Prepare (${state.requests} requests)", "Vorbereiten (${state.requests} Anfragen)"))
+                    }
+                    if (vm.prepError.isNotBlank()) Text(vm.prepError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
     }
 }

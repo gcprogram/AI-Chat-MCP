@@ -147,6 +147,8 @@ data class RoleplaySetup(
     val plots: Map<Int, String> = emptyMap(),
     /** Schlüssel des Zwischenspeichers der Zusammenfassungen ([Summaries.key]); leer = nicht speichern. */
     val summaryKey: String = "",
+    /** Handlungsstrang je Szene aus dem vorbereiteten Spielbuch ([Gamebooks]); leer = unbekannt (dann gelten die nächsten Szenen in der Reihenfolge des Buches). */
+    val threads: Map<Int, String> = emptyMap(),
     /** Erkennt dasselbe Spiel auch nach Änderungen von [plots]. */
     val id: Long = System.nanoTime(),
 ) {
@@ -257,7 +259,10 @@ object RoleplayPrompt {
     fun strandDecisions(setup: RoleplaySetup, index: Int, lastReply: String, candidates: List<Int>): List<WireMessage> {
         val g = setup.german
         val who = if (setup.player.isBlank()) (if (g) "(dem Ich-Erzähler)" else "(the first-person narrator)") else setup.player
-        val list = candidates.mapIndexed { i, c -> "${i + 1}. ${setup.scenes[c].title}: ${setup.plotOf(c, 450)}" }.joinToString("\n")
+        val list = candidates.mapIndexed { i, c ->
+            val thread = setup.threads[c]?.takeIf { it.isNotBlank() }?.let { " [${if (g) "Strang" else "storyline"}: $it]" }.orEmpty()
+            "${i + 1}. ${setup.scenes[c].title}$thread: ${setup.plotOf(c, 450)}"
+        }.joinToString("\n")
         val user = if (g) buildString {
             append("Buch: „${setup.title}“. Die Szene „${setup.scenes[index].title}“ ist zu Ende gespielt. Zuletzt erzählt:\n${lastReply.trim().takeLast(600)}\n\n")
             append("Die Spielerfigur $who kann jetzt wählen, womit es weitergeht. Das sind die Möglichkeiten (jede ein eigener Handlungsstrang des Buches):\n$list\n\n")

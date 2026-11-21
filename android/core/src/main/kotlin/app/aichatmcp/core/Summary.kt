@@ -29,6 +29,8 @@ data class SummaryData(
     val key: String = "",
     val parts: Map<Int, String> = emptyMap(),
     val chapters: Map<String, String> = emptyMap(),
+    /** Spielbuch ([Gamebooks]): Handlungsstrang je Szene (Nummer ab 0). */
+    val threads: Map<Int, String> = emptyMap(),
     val short: String = "",
     val detailed: String = "",
     val perChapter: String = "",

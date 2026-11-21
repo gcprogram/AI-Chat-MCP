@@ -75,8 +75,22 @@ object Solo {
     /** Wie viele Stränge zur Wahl stehen (die nächsten noch ungespielten Szenen des Buches). */
     const val MAX_STRANDS = 3
 
-    /** Die nächsten ungespielten Szenen in der Reihenfolge des Buches (höchstens [max]); die erste ist die, die der Handlung folgt. */
-    fun candidates(sceneCount: Int, played: Set<Int>, max: Int = MAX_STRANDS): List<Int> = (0 until sceneCount).filter { it !in played }.take(max)
+    /**
+     * Die Szenen, zwischen denen der Spieler wählen kann (höchstens [max]): ohne Strang-Angaben die nächsten ungespielten Szenen des Buches; mit [threads]
+     * ([Gamebooks]) die nächste ungespielte Szene **je Handlungsstrang**, damit innerhalb eines Strangs die Reihenfolge des Buches bleibt. Die erste ist immer
+     * die frühste ungespielte Szene (die, die der Handlung folgt).
+     */
+    fun candidates(sceneCount: Int, played: Set<Int>, max: Int = MAX_STRANDS, threads: Map<Int, String> = emptyMap()): List<Int> {
+        val open = (0 until sceneCount).filter { it !in played }
+        if (threads.isEmpty()) return open.take(max)
+        val seen = HashSet<String>()
+        val out = mutableListOf<Int>()
+        for (i in open) {
+            if (seen.add(threads[i].orEmpty().lowercase())) out += i
+            if (out.size >= max) break
+        }
+        return out
+    }
 
     /** Soll diese Entscheidungsrunde Stränge anbieten? [round] = Zahl der bisher getroffenen Entscheidungen; Stränge brauchen mindestens zwei zur Wahl. */
     fun useStrands(mode: DecisionMode, round: Int, candidateCount: Int): Boolean = candidateCount >= 2 && when (mode) {

@@ -93,6 +93,8 @@ import app.aichatmcp.core.Consequence
 import app.aichatmcp.core.Decision
 import app.aichatmcp.core.DecisionKind
 import app.aichatmcp.core.DecisionMode
+import app.aichatmcp.core.Gamebooks
+import app.aichatmcp.core.SummaryException
 import app.aichatmcp.core.BookPart
 import kotlinx.coroutines.sync.withLock
 import app.aichatmcp.core.Summaries
@@ -156,6 +158,11 @@ internal const val IMAGE_PROMPT = "Describe this image in 5 to 7 sentences. Star
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
 data class UiMessage(val kind: UiKind, val text: String)
+
+/** Was zu einem Buch an Spielbuch-Vorbereitung schon da ist: Zahl der Szenen, noch nötige Anfragen, gefundene Handlungsstränge (nur wenn fertig). */
+data class GamebookState(val scenes: Int, val requests: Int, val threads: List<String>) {
+    val ready: Boolean get() = scenes > 0 && requests == 0
+}
 
 /** Ein laufendes Buch-Rollenspiel: Szene, Zahl der Antworten in dieser Szene und der Companion, zu dem man danach zurückkehrt. */
 data class RoleplayRun(
@@ -1627,10 +1634,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         saveChat()
         val returnTo = roleplay?.returnTo ?: persona.id
+        // vorbereitetes Spielbuch: Zusammenfassungen der Szenen und (nur wenn für alle Szenen bekannt) die Handlungsstränge
+        val cache = if (solo) storage.loadSummary(Summaries.key(doc.name, doc.text)) else null
         val setup = RoleplaySetup(
             doc.name.substringBeforeLast('.'), scenes, player, firstPerson, persona.isGerman(),
             solo = solo, scenesPerDay = config.soloScenesPerDay, known = characters.filter { it != player },
             mode = DecisionMode.parse(config.soloMode), summaryKey = if (solo) Summaries.key(doc.name, doc.text) else "",
+            plots = cache?.parts?.filterValues { it.isNotBlank() }?.filterKeys { it in scenes.indices }.orEmpty(),
+            threads = cache?.threads?.takeIf { t -> scenes.indices.all { it in t } }.orEmpty(),
         )
         dismissDoc()
         beginGame(setup, returnTo)
@@ -1677,6 +1688,71 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (current.setup.id != setup.id) return // inzwischen beendet oder neu gestartet
         roleplay = current.copy(setup = current.setup.copy(plots = current.setup.plots + (index to plot.orEmpty())))
         applyRoleplayPersona()
+    }
+
+    // --- Spielbuch vorbereiten ----------------------------------------------------------------------------------
+
+    var prepBusy by mutableStateOf(false)
+        private set
+    var prepDone by mutableStateOf(0)
+        private set
+    var prepTotal by mutableStateOf(0)
+        private set
+    var prepWhat by mutableStateOf("")
+        private set
+    var prepError by mutableStateOf("")
+        private set
+    private var prepJob: Job? = null
+
+    /** Wie weit die Vorbereitung des Spielbuchs zu [doc] ist (liest den Zwischenspeicher). */
+    fun gamebookState(doc: PendingDoc): GamebookState {
+        val scenes = Summaries.scenes(doc.text).size
+        val data = storage.loadSummary(Summaries.key(doc.name, doc.text)) ?: SummaryData()
+        val requests = Gamebooks.requests(scenes, data)
+        return GamebookState(scenes, requests, if (scenes > 0 && requests == 0) Gamebooks.threadNames(data) else emptyList())
+    }
+
+    /**
+     * Bereitet das Spielbuch vor (Zusammenfassung jeder Szene, Handlungsstrang je Szene) und legt es im Zwischenspeicher ab. Das Spiel liest danach nur noch diese kurzen
+     * Angaben. Läuft im Hintergrund mit dem Modell für die Planung; Abbruch und Fehler kosten nichts, ein neuer Lauf macht dort weiter.
+     */
+    fun prepareGamebook(doc: PendingDoc) {
+        if (prepBusy || streaming) return
+        val scenes = Summaries.scenes(doc.text)
+        if (scenes.isEmpty()) return
+        val key = Summaries.key(doc.name, doc.text)
+        val language = if (persona.isGerman()) "Deutsch" else "English"
+        prepBusy = true
+        prepError = ""
+        prepDone = 0
+        prepTotal = 0
+        prepWhat = ""
+        syncKeepAlive()
+        prepJob = viewModelScope.launch {
+            try {
+                val start = storage.loadSummary(key) ?: SummaryData(key = key)
+                Gamebooks.prepare(
+                    scenes, language, start, { prompt, max -> askModel(prompt, max, 0.3, summaryChoice()) },
+                    onProgress = { d, t, w -> prepDone = d; prepTotal = t; prepWhat = w },
+                    onData = { d -> runCatching { storage.saveSummary(d) } },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SummaryException) {
+                prepError = e.message.orEmpty()
+            } catch (e: Throwable) {
+                prepError = e.message ?: e::class.simpleName.orEmpty()
+            } finally {
+                prepBusy = false
+                prepWhat = ""
+                syncKeepAlive()
+            }
+        }
+    }
+
+    fun cancelGamebook() {
+        prepJob?.cancel()
+        prepError = tNow("Stopped. What is done is kept.", "Angehalten. Was fertig ist, bleibt erhalten.")
     }
 
     /** Erst die Handlung der Szene [index] besorgen, dann die vorbereitete Eingabe senden. */
@@ -1783,7 +1859,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun requestDecisions() {
         val run = roleplay ?: return
         if (!run.setup.solo || streaming || run.asking || run.solo.end != null) return
-        val candidates = Solo.candidates(run.setup.scenes.size, run.played)
+        val candidates = Solo.candidates(run.setup.scenes.size, run.played, threads = run.setup.threads)
         if (candidates.isEmpty()) { // alle Szenen gespielt: das Buch ist zu Ende gespielt
             finishGame(SoloEnd.WON)
             return
@@ -2047,7 +2123,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Solange das Modell rechnet (Antwort oder Vorbereitung): Vordergrunddienst mit Wake-Lock, sonst schläft die CPU bei gesperrtem Bildschirm ein. */
     private fun syncKeepAlive() {
-        if (streaming || warming || summary.busy) GenerationService.start(getApplication()) else GenerationService.stop(getApplication())
+        if (streaming || warming || summary.busy || prepBusy) GenerationService.start(getApplication()) else GenerationService.stop(getApplication())
     }
 
     /**
