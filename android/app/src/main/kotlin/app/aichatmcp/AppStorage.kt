@@ -1,6 +1,8 @@
 package app.aichatmcp
 
 import app.aichatmcp.core.AppJson
+import app.aichatmcp.core.Gamebook
+import app.aichatmcp.core.Gamebooks
 import app.aichatmcp.core.ChatFileException
 import app.aichatmcp.core.ChatLog
 import app.aichatmcp.core.Config
@@ -229,6 +231,22 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
         val target = File(summariesDir, "${data.key}.json")
         val temp = File(summariesDir, "${data.key}.json.tmp")
         temp.writeText(AppJson.encodeToString(SummaryData.serializer(), data), Charsets.UTF_8)
+        if (!temp.renameTo(target)) target.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
+    }
+
+    // --- Spielbücher (vorbereitete Bücher mit fertigen Entscheidungen, JSON) ----------------------------------------
+
+    private val gamebooksDir get() = File(root, "gamebooks")
+
+    fun loadGamebook(key: String): Gamebook? =
+        runCatching { Gamebooks.parse(File(gamebooksDir, "$key.json").readText(Charsets.UTF_8)) }.getOrNull()
+
+    fun saveGamebook(book: Gamebook) {
+        if (book.key.isBlank()) return
+        gamebooksDir.mkdirs()
+        val target = File(gamebooksDir, "${book.key}.json")
+        val temp = File(gamebooksDir, "${book.key}.json.tmp")
+        temp.writeText(Gamebooks.toJson(book), Charsets.UTF_8)
         if (!temp.renameTo(target)) target.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
     }
 

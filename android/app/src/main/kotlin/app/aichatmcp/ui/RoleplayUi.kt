@@ -126,7 +126,7 @@ fun RoleplayBar(vm: ChatViewModel) {
         Column {
             Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = if (solo) 0.dp else 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${run.setup.title} · " + t("scene ${if (solo) run.played.size else run.sceneIndex + 1}/${run.setup.scenes.size}", "Szene ${if (solo) run.played.size else run.sceneIndex + 1}/${run.setup.scenes.size}") + ": ${run.setup.scenes[run.sceneIndex].title}",
+                    "${run.setup.title} · " + t("scene ${if (solo) run.sceneNumber else run.sceneIndex + 1}/${if (solo) run.sceneTotal else run.setup.scenes.size}", "Szene ${if (solo) run.sceneNumber else run.sceneIndex + 1}/${if (solo) run.sceneTotal else run.setup.scenes.size}") + ": ${run.setup.scenes[run.sceneIndex].title}",
                     style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 2,
                 )
                 if (solo) {
@@ -178,13 +178,30 @@ fun SoloPanel(vm: ChatViewModel) {
                 }
             }
         }
+        // nach der Wahl bleibt die Karte stehen: die gewählte Entscheidung ist hervorgehoben, die anderen sind abgeblendet, bis die nächsten Möglichkeiten kommen
+        run.answered.isNotEmpty() && !run.asking -> {
+            val order = run.order.takeIf { o -> o.size == run.answered.size && o.toSet() == run.answered.indices.toSet() } ?: run.answered.indices.toList()
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f), modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(t("You decided:", "Du hast entschieden:"), style = MaterialTheme.typography.titleSmall)
+                    order.forEach { i ->
+                        val chosen = i == run.chosen
+                        if (chosen) {
+                            Button(onClick = {}, enabled = true, modifier = Modifier.fillMaxWidth()) { Text(run.answered[i].text, style = MaterialTheme.typography.bodyMedium) }
+                        } else {
+                            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(run.answered[i].text, style = MaterialTheme.typography.bodyMedium) }
+                        }
+                    }
+                }
+            }
+        }
         run.asking -> Text(
             t("The game master is thinking of your options…", "Der Spielleiter überlegt deine Möglichkeiten…"),
             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
         )
         run.decisions.isNotEmpty() && !vm.streaming -> {
-            // gemischt, aber stabil für diese Szene: sonst stünde die Entscheidung der Handlung immer oben
-            val order = remember(run.decisions) { run.decisions.indices.shuffled() }
+            // gemischt, aber stabil für diese Szene (die App legt die Reihenfolge fest): sonst stünde die Entscheidung der Handlung immer oben
+            val order = run.order.takeIf { o -> o.size == run.decisions.size && o.toSet() == run.decisions.indices.toSet() } ?: run.decisions.indices.toList()
             Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp), shape = MaterialTheme.shapes.medium) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(t("What do you do?", "Wie entscheidest du?"), style = MaterialTheme.typography.titleSmall)

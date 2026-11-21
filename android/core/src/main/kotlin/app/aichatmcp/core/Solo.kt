@@ -80,8 +80,13 @@ object Solo {
      * ([Gamebooks]) die nächste ungespielte Szene **je Handlungsstrang**, damit innerhalb eines Strangs die Reihenfolge des Buches bleibt. Die erste ist immer
      * die frühste ungespielte Szene (die, die der Handlung folgt).
      */
-    fun candidates(sceneCount: Int, played: Set<Int>, max: Int = MAX_STRANDS, threads: Map<Int, String> = emptyMap()): List<Int> {
-        val open = (0 until sceneCount).filter { it !in played }
+    fun candidates(sceneCount: Int, played: Set<Int>, max: Int = MAX_STRANDS, threads: Map<Int, String> = emptyMap(), chapters: List<String> = emptyList()): List<Int> {
+        var open = (0 until sceneCount).filter { it !in played }
+        // [chapters]: es wird nicht durch das Buch gesprungen, nur Szenen des Kapitels, in dem die Geschichte gerade ist (das der frühesten ungespielten Szene)
+        if (chapters.isNotEmpty() && open.isNotEmpty()) {
+            val chapter = chapters.getOrNull(open.first())
+            open = open.filter { chapters.getOrNull(it) == chapter }
+        }
         if (threads.isEmpty()) return open.take(max)
         val seen = HashSet<String>()
         val out = mutableListOf<Int>()
@@ -200,7 +205,7 @@ object Solo {
     }
 
     /** Wenn das Modell keine Vorschläge liefert, bleibt wenigstens der Weg der Handlung (1 bis 3 Entscheidungen). */
-    fun fallbackStory(german: Boolean) = Decision(DecisionKind.STORY, if (german) "Ich folge dem Lauf der Geschichte." else "I follow the course of the story.")
+    fun fallbackStory(german: Boolean) = Decision(DecisionKind.STORY, if (german) "Weiter." else "Continue.")
 
     /** Die Vorschläge für die Anzeige: immer die Weg-der-Handlung-Entscheidung dabei, sonst nur, was das Modell geliefert hat. */
     fun withStory(list: List<Decision>, german: Boolean): List<Decision> = if (list.any { it.kind == DecisionKind.STORY }) list else listOf(fallbackStory(german)) + list

@@ -93,6 +93,7 @@ import app.aichatmcp.core.Consequence
 import app.aichatmcp.core.Decision
 import app.aichatmcp.core.DecisionKind
 import app.aichatmcp.core.DecisionMode
+import app.aichatmcp.core.Gamebook
 import app.aichatmcp.core.Gamebooks
 import app.aichatmcp.core.SummaryException
 import app.aichatmcp.core.BookPart
@@ -157,10 +158,11 @@ internal const val IMAGE_PROMPT = "Describe this image in 5 to 7 sentences. Star
 
 enum class UiKind { USER, ASSISTANT, RESULT, RESULT_ERROR, SHOWN, INFO, ERROR, TOOL }
 
-data class UiMessage(val kind: UiKind, val text: String)
+/** [typed] != 0: die Begrüßung, die beim Öffnen des Companions langsam getippt wird (die Zahl erkennt, ob sie schon getippt wurde). */
+data class UiMessage(val kind: UiKind, val text: String, val typed: Int = 0)
 
 /** Was zu einem Buch an Spielbuch-Vorbereitung schon da ist: Zahl der Szenen, noch nötige Anfragen, gefundene Handlungsstränge (nur wenn fertig). */
-data class GamebookState(val scenes: Int, val requests: Int, val threads: List<String>) {
+data class GamebookState(val scenes: Int, val requests: Int, val threads: List<String>, val book: Gamebook? = null) {
     val ready: Boolean get() = scenes > 0 && requests == 0
 }
 
@@ -171,7 +173,15 @@ data class RoleplayRun(
     val solo: SoloState = SoloState(), val decisions: List<Decision> = emptyList(), val asking: Boolean = false, val outcome: String = "",
     /** Solo-Abenteuer: Nummern der Szenen, die schon gespielt wurden oder gerade laufen (bei Strängen nicht in der Reihenfolge des Buches). */
     val played: Set<Int> = setOf(0),
-)
+    /** Reihenfolge, in der die angebotenen Entscheidungen angezeigt werden (gemischt, damit die der Handlung nicht immer oben steht). */
+    val order: List<Int> = emptyList(),
+    /** Die zuletzt gewählte Entscheidungsrunde bleibt sichtbar, die gewählte ([chosen]) ist markiert, bis die nächsten Möglichkeiten kommen. */
+    val answered: List<Decision> = emptyList(), val chosen: Int = -1,
+) {
+    /** Wie viele Szenen der Geschichte schon gespielt sind (mit der laufenden) und wie viele es sind, ohne Vorspann. */
+    val sceneNumber: Int get() = played.count { it !in setup.skip }
+    val sceneTotal: Int get() = setup.scenes.size - setup.skip.size
+}
 
 class PendingConfirm(val call: ToolCall, val spec: ToolSpec?, val persona: String, private val answer: CompletableDeferred<Boolean>, val preview: String? = null) {
     fun answer(ok: Boolean) {
@@ -339,12 +349,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (text.length <= LONG_MESSAGE_CHARS) text
         else text.take(300).trimEnd() + "\n[… ${text.length - 500} Zeichen ausgeblendet …]\n" + text.takeLast(200).trimStart()
 
+    private var greetingSeq = 0
+
     /** Zeichnet Begrüßung und Verlauf neu (Companion-Wechsel, neuer Chat, geladener Chat). */
     private fun renderHistory() {
         dismissDoc()
         messages.clear()
         live = null
-        if (persona.greeting.isNotEmpty()) messages += UiMessage(UiKind.ASSISTANT, persona.greeting)
+        if (persona.greeting.isNotEmpty()) messages += UiMessage(UiKind.ASSISTANT, persona.greeting, typed = ++greetingSeq)
         session.history.forEach { messages += toUi(it) }
         updateContext()
     }
@@ -389,7 +401,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         speechOut.stop()
         userStopped = false
-        roleplay?.let { if (it.decisions.isNotEmpty()) roleplay = it.copy(decisions = emptyList()) } // wer frei weiterspielt, entscheidet erst am nächsten Szenenende
+        roleplay?.let { if (it.decisions.isNotEmpty() || it.answered.isNotEmpty()) roleplay = it.copy(decisions = emptyList(), answered = emptyList(), chosen = -1) } // wer frei weiterspielt, entscheidet erst am nächsten Szenenende
         input = ""
         session.config = effectiveConfig(config)
         modelNotice = if (config.backend == BACKEND_LOCAL && (warming || !localLlm.isLoaded(effectiveConfig(config)))) loadNoticeText() else null
@@ -1626,7 +1638,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Startet das Rollenspiel mit der geladenen Datei; [player] leer = der Ich-Erzähler. Der bisherige Chat des Companions bleibt erhalten. */
     fun startRoleplay(doc: PendingDoc, player: String, firstPerson: Boolean, solo: Boolean = false, characters: List<String> = emptyList()) {
         if (streaming) return
-        // Solo-Abenteuer: kurze Szenen wie die Teile der Zusammenfassung (gleiche Zerlegung, damit der Zwischenspeicher passt); sonst Szenen zu etwa 3000 Zeichen
+        // Ein fertig vorbereitetes Spielbuch (auch ein eingelesenes, von Hand geändertes) hat Vorrang: Zusammenfassungen und Entscheidungen sind schon da
+        val key = Summaries.key(doc.name, doc.text)
+        val prepared = if (solo) storage.loadGamebook(key)?.takeIf { Gamebooks.ready(it) } else null
+        if (prepared != null) {
+            dismissDoc()
+            startGamebook(prepared, player, firstPerson, characters.ifEmpty { prepared.characters })
+            return
+        }
+        // Ohne Vorbereitung: kurze Szenen wie die Teile der Zusammenfassung (gleiche Zerlegung); sonst Szenen zu etwa 3000 Zeichen
         val scenes = if (solo) Summaries.scenes(doc.text) else BookScenes.split(doc.text)
         if (scenes.isEmpty()) {
             status = tNow("No text found in the file.", "Kein Text in der Datei gefunden.")
@@ -1634,30 +1654,45 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         saveChat()
         val returnTo = roleplay?.returnTo ?: persona.id
-        // vorbereitetes Spielbuch: Zusammenfassungen der Szenen und (nur wenn für alle Szenen bekannt) die Handlungsstränge
-        val cache = if (solo) storage.loadSummary(Summaries.key(doc.name, doc.text)) else null
+        val cache = if (solo) storage.loadSummary(key) else null
         val setup = RoleplaySetup(
             doc.name.substringBeforeLast('.'), scenes, player, firstPerson, persona.isGerman(),
             solo = solo, scenesPerDay = config.soloScenesPerDay, known = characters.filter { it != player },
-            mode = DecisionMode.parse(config.soloMode), summaryKey = if (solo) Summaries.key(doc.name, doc.text) else "",
+            mode = DecisionMode.parse(config.soloMode), summaryKey = if (solo) key else "",
             plots = cache?.parts?.filterValues { it.isNotBlank() }?.filterKeys { it in scenes.indices }.orEmpty(),
-            threads = cache?.threads?.takeIf { t -> scenes.indices.all { it in t } }.orEmpty(),
+            skip = if (solo) Gamebooks.frontMatter(scenes) else emptySet(), // Titelseite, Copyright, Danksagung gehören nicht zur Geschichte
         )
         dismissDoc()
         beginGame(setup, returnTo)
     }
 
+    /** Spielt ein vorbereitetes Spielbuch (aus dem Buch erzeugt oder eingelesen): ohne Buchtext, mit fertigen Zusammenfassungen und Entscheidungen. */
+    fun startGamebook(book: Gamebook, player: String, firstPerson: Boolean, characters: List<String> = book.characters) {
+        if (streaming) return
+        saveChat()
+        val returnTo = roleplay?.returnTo ?: persona.id
+        val setup = RoleplaySetup(
+            book.title, book.sceneList(), player, firstPerson, book.language.startsWith("Deu", ignoreCase = true),
+            solo = true, scenesPerDay = config.soloScenesPerDay, known = characters.filter { it != player },
+            mode = DecisionMode.parse(config.soloMode), plots = book.plots(), threads = book.threads(), book = book,
+        )
+        loadedGamebook = null
+        beginGame(setup, returnTo)
+    }
+
     /** Beginnt ein Spiel mit [setup] von vorn (auch für "Noch einmal" nach einem Spielende). */
     private fun beginGame(setup: RoleplaySetup, returnTo: String) {
-        roleplay = RoleplayRun(setup, 0, 0, returnTo)
+        val start = setup.scenes.indices.firstOrNull { it !in setup.skip } ?: 0
+        roleplay = RoleplayRun(setup, start, 0, returnTo, played = setup.skip + start)
         applyRoleplayPersona()
         session.reset()
         storage.deleteChat("roleplay") // ein neues Spiel beginnt immer von vorn
         renderHistory()
         val scenes = setup.scenes
-        messages += UiMessage(UiKind.INFO, tNow("Role play: ${scenes[0].title} (scene 1/${scenes.size})", "Rollenspiel: ${scenes[0].title} (Szene 1/${scenes.size})"))
+        val total = scenes.size - setup.skip.size
+        messages += UiMessage(UiKind.INFO, tNow("Role play: ${scenes[start].title} (scene 1/$total)", "Rollenspiel: ${scenes[start].title} (Szene 1/$total)"))
         input = if (setup.german) "(Das Spiel beginnt. Beschreibe die erste Szene und was meine Figur gerade sieht und hört.)" else "(The game begins. Describe the first scene and what my character sees and hears.)"
-        if (setup.solo) sendWhenPlotReady(0) else send()
+        if (setup.solo) sendWhenPlotReady(start) else send()
     }
 
     /**
@@ -1702,23 +1737,47 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var prepError by mutableStateOf("")
         private set
-    private var prepJob: Job? = null
 
-    /** Wie weit die Vorbereitung des Spielbuchs zu [doc] ist (liest den Zwischenspeicher). */
+    /** Geschätzte Restzeit der laufenden Vorbereitung in Sekunden; -1 = noch keine Messung. */
+    var prepRemainingSec by mutableStateOf(-1L)
+        private set
+    private var prepJob: Job? = null
+    private val prepTimes = mutableListOf<Long>()
+
+    /** Ein von Hand geladenes Spielbuch (JSON), mit dem ohne Buchtext gespielt werden kann. */
+    var loadedGamebook by mutableStateOf<Gamebook?>(null)
+        private set
+
+    private fun timingPrefs() = getApplication<Application>().getSharedPreferences("gamebook_timing", android.content.Context.MODE_PRIVATE)
+
+    /** Schlüssel der Zeitmessung: Modell, das für die Vorbereitung verwendet wird. */
+    private fun gamebookTimingKey(): String {
+        val cfg = effectiveConfig(configFor(summaryChoice()))
+        return if (cfg.backend == BACKEND_LOCAL) "local:${cfg.localModel}" else "server:${cfg.model}"
+    }
+
+    /** Wie lange eine Anfrage der Vorbereitung mit dem gewählten Modell zuletzt gedauert hat (Mittel in Sekunden); null = noch nie gemessen. */
+    fun gamebookSecondsPerRequest(): Double? = runCatching { timingPrefs().getFloat(gamebookTimingKey(), -1f).toDouble() }.getOrNull()?.takeIf { it > 0 }
+
+    /** Wie weit die Vorbereitung des Spielbuchs zu [doc] ist (liest den Speicher). */
     fun gamebookState(doc: PendingDoc): GamebookState {
-        val scenes = Summaries.scenes(doc.text).size
-        val data = storage.loadSummary(Summaries.key(doc.name, doc.text)) ?: SummaryData()
-        val requests = Gamebooks.requests(scenes, data)
-        return GamebookState(scenes, requests, if (scenes > 0 && requests == 0) Gamebooks.threadNames(data) else emptyList())
+        val key = Summaries.key(doc.name, doc.text)
+        val scenes = Gamebooks.storyScenes(Summaries.scenes(doc.text))
+        val stored = storage.loadGamebook(key)
+        if (stored != null && Gamebooks.ready(stored)) return GamebookState(stored.scenes.size, 0, Gamebooks.threadNames(stored), stored)
+        val start = stored?.takeIf { Gamebooks.compatible(it, scenes) }
+        val requests = start?.let { Gamebooks.requests(it) } ?: (scenes.size + Gamebooks.batches(scenes.size))
+        return GamebookState(scenes.size, requests, emptyList(), null)
     }
 
     /**
-     * Bereitet das Spielbuch vor (Zusammenfassung jeder Szene, Handlungsstrang je Szene) und legt es im Zwischenspeicher ab. Das Spiel liest danach nur noch diese kurzen
-     * Angaben. Läuft im Hintergrund mit dem Modell für die Planung; Abbruch und Fehler kosten nichts, ein neuer Lauf macht dort weiter.
+     * Bereitet das Spielbuch vor: je Szene Zusammenfassung, Ort und die Entscheidungen (Handlung, Risiko, Umweg), dazu die Handlungsstränge, und legt es im Speicher ab
+     * (JSON, auch zum Speichern und Einlesen). Das Spiel braucht danach keinen Modellaufruf für Entscheidungen mehr. Läuft im Hintergrund mit dem Modell für die Planung;
+     * Abbruch und Fehler kosten nichts, ein neuer Lauf macht dort weiter.
      */
     fun prepareGamebook(doc: PendingDoc) {
         if (prepBusy || streaming) return
-        val scenes = Summaries.scenes(doc.text)
+        val scenes = Gamebooks.storyScenes(Summaries.scenes(doc.text))
         if (scenes.isEmpty()) return
         val key = Summaries.key(doc.name, doc.text)
         val language = if (persona.isGerman()) "Deutsch" else "English"
@@ -1727,14 +1786,29 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         prepDone = 0
         prepTotal = 0
         prepWhat = ""
+        prepRemainingSec = -1
+        prepTimes.clear()
         syncKeepAlive()
         prepJob = viewModelScope.launch {
             try {
-                val start = storage.loadSummary(key) ?: SummaryData(key = key)
+                val stored = storage.loadGamebook(key)
+                val start = stored?.takeIf { Gamebooks.compatible(it, scenes) } ?: run {
+                    val (cast, first) = withContext(Dispatchers.Default) { BookCast.candidates(doc.text, 12) to BookCast.firstPerson(doc.text) }
+                    Gamebooks.skeleton(scenes, doc.name.substringBeforeLast('.'), language, key, first, cast)
+                }
                 Gamebooks.prepare(
-                    scenes, language, start, { prompt, max -> askModel(prompt, max, 0.3, summaryChoice()) },
-                    onProgress = { d, t, w -> prepDone = d; prepTotal = t; prepWhat = w },
-                    onData = { d -> runCatching { storage.saveSummary(d) } },
+                    scenes, start,
+                    ask = { prompt, max ->
+                        val t0 = System.nanoTime()
+                        val answer = askModel(prompt, max, 0.3, summaryChoice())
+                        if (answer != null) prepTimes += (System.nanoTime() - t0) / 1_000_000
+                        answer
+                    },
+                    onProgress = { d, t, w ->
+                        prepDone = d; prepTotal = t; prepWhat = w
+                        prepRemainingSec = if (prepTimes.isEmpty()) -1 else ((t - d) * prepTimes.average() / 1000).toLong()
+                    },
+                    onData = { b -> runCatching { storage.saveGamebook(b) } },
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -1743,8 +1817,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Throwable) {
                 prepError = e.message ?: e::class.simpleName.orEmpty()
             } finally {
+                if (prepTimes.isNotEmpty()) runCatching { timingPrefs().edit().putFloat(gamebookTimingKey(), (prepTimes.average() / 1000).toFloat()).apply() }
                 prepBusy = false
                 prepWhat = ""
+                prepRemainingSec = -1
                 syncKeepAlive()
             }
         }
@@ -1753,6 +1829,28 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelGamebook() {
         prepJob?.cancel()
         prepError = tNow("Stopped. What is done is kept.", "Angehalten. Was fertig ist, bleibt erhalten.")
+    }
+
+    /** Das gespeicherte Spielbuch zu [doc] als JSON (zum Speichern in eine Datei); null, wenn es keins gibt. */
+    fun gamebookJson(doc: PendingDoc): String? = storage.loadGamebook(Summaries.key(doc.name, doc.text))?.let(Gamebooks::toJson)
+
+    /** Das Spielbuch, das gerade zur Auswahl steht (geladenes oder das zum Buch gespeicherte), als JSON. */
+    fun gamebookJson(book: Gamebook): String = Gamebooks.toJson(book)
+
+    /**
+     * Liest ein Spielbuch aus einer JSON-Datei (auch von Hand geändert) ein, speichert es unter seinem Schlüssel (ersetzt das gespeicherte zu diesem Buch) und macht es
+     * zum geladenen Spielbuch. Gibt die Meldung für den Nutzer zurück.
+     */
+    fun importGamebook(text: String): String {
+        val parsed = Gamebooks.parse(text) ?: return tNow("This is not a game book file.", "Das ist keine Spielbuch-Datei.")
+        val book = if (parsed.key.isBlank()) parsed.copy(key = Summaries.key(parsed.title, parsed.scenes.size.toString() + parsed.scenes.first().plot.take(80))) else parsed
+        runCatching { storage.saveGamebook(book) }.onFailure { return tNow("Saving failed: ${it.message}", "Speichern fehlgeschlagen: ${it.message}") }
+        loadedGamebook = book
+        return tNow("Game book “${book.title}” loaded (${book.scenes.size} scenes).", "Spielbuch „${book.title}“ geladen (${book.scenes.size} Szenen).")
+    }
+
+    fun closeLoadedGamebook() {
+        loadedGamebook = null
     }
 
     /** Erst die Handlung der Szene [index] besorgen, dann die vorbereitete Eingabe senden. */
@@ -1775,7 +1873,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val run = roleplay ?: return
         // Bild und Stimme des Spielleiters kommen vom Companion "Story-Game" (wenn er angelegt ist)
         val host = if ("story_game" in personaIds) storage.personas.load("story_game") else null
-        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing, run.solo, run.outcome).let { if (host == null) it else it.copy(avatarData = host.avatarData, voice = host.voice) }
+        // die Szene davor (nur wenn sie zur Geschichte gehört): ihre Zusammenfassung und der Ort der Spielerfigur stehen im Prompt
+        val order = run.played.toList()
+        val previous = if (order.lastOrNull() == run.sceneIndex) order.getOrNull(order.size - 2)?.takeIf { it !in run.setup.skip } else null
+        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing, run.solo, run.outcome, previous).let { if (host == null) it else it.copy(avatarData = host.avatarData, voice = host.voice) }
         session.persona = persona
         syncVoice()
         updateContext()
@@ -1855,16 +1956,29 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         roleplay = run.copy(solo = run.solo.copy(end = end), decisions = emptyList(), asking = false)
     }
 
-    /** Fragt das Modell nach den Entscheidungen zum Ende der Szene (1 bis 3: Handlung, Risiko, Umweg); ohne brauchbare Antwort bleibt der Weg der Handlung. */
+    /**
+     * Die Entscheidungen zum Ende der Szene: Mit Spielbuch sind sie fertig (kein Modellaufruf); sonst fragt das Modell (1 bis 3: Handlung, Risiko, Umweg, oder Stränge mit
+     * bekannten Handlungssträngen); ohne brauchbare Antwort bleibt "Weiter".
+     */
     fun requestDecisions() {
         val run = roleplay ?: return
         if (!run.setup.solo || streaming || run.asking || run.solo.end != null) return
-        val candidates = Solo.candidates(run.setup.scenes.size, run.played, threads = run.setup.threads)
+        val book = run.setup.book
+        if (book != null) {
+            val options = Gamebooks.options(book, run.sceneIndex, run.played, run.setup.mode, run.solo.scenesPlayed, run.setup.german)
+            if (options.isEmpty()) {
+                finishGame(SoloEnd.WON)
+                return
+            }
+            roleplay = run.copy(decisions = options, order = options.indices.shuffled(), answered = emptyList(), chosen = -1, asking = false)
+            return
+        }
+        val candidates = Solo.candidates(run.setup.scenes.size, run.played, if (run.setup.threads.isEmpty()) 1 else Solo.MAX_STRANDS, run.setup.threads)
         if (candidates.isEmpty()) { // alle Szenen gespielt: das Buch ist zu Ende gespielt
             finishGame(SoloEnd.WON)
             return
         }
-        roleplay = run.copy(asking = true, decisions = emptyList())
+        roleplay = run.copy(asking = true, decisions = emptyList(), answered = emptyList(), chosen = -1)
         viewModelScope.launch {
             val lastReply = session.history.lastOrNull { it.role == "assistant" }?.content.orEmpty()
             val strands = Solo.useStrands(run.setup.mode, run.solo.scenesPlayed, candidates.size)
@@ -1880,7 +1994,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             val current = roleplay ?: return@launch
             if (current.sceneIndex != run.sceneIndex || current.setup.id != run.setup.id) return@launch // inzwischen beendet oder neu gestartet
-            roleplay = current.copy(asking = false, decisions = parsed)
+            roleplay = current.copy(asking = false, decisions = parsed, order = parsed.indices.shuffled())
             status = "Bereit"
             // während der Spieler überlegt, ist die Handlung der nächsten Szene schon zu besorgen
             if (!strands) ensurePlot(candidates.first())
@@ -1904,11 +2018,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         roleplay = run.copy(
             sceneIndex = next, turns = 0, closing = false, decisions = emptyList(), asking = false, solo = res.state, outcome = Solo.outcomeNote(decision, res, german),
             played = run.played + next,
+            answered = run.decisions, chosen = index, // die Karte mit den Möglichkeiten bleibt stehen, die gewählte ist markiert
         )
         applyRoleplayPersona()
         val line = Solo.resultLine(decision, res, german)
         if (line.isNotEmpty()) messages += UiMessage(UiKind.INFO, line)
-        if (!over) messages += UiMessage(UiKind.INFO, tNow("Scene ${run.played.size + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}", "Szene ${run.played.size + 1}/${run.setup.scenes.size}: ${run.setup.scenes[next].title}"))
+        if (!over) {
+            val total = run.setup.scenes.size - run.setup.skip.size
+            val number = run.played.count { it !in run.setup.skip } + 1
+            messages += UiMessage(UiKind.INFO, tNow("Scene $number/$total: ${run.setup.scenes[next].title}", "Szene $number/$total: ${run.setup.scenes[next].title}"))
+        }
         input = decision.text
         if (over) send() else sendWhenPlotReady(next)
     }

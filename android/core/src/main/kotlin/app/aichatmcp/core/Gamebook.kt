@@ -2,42 +2,174 @@ package app.aichatmcp.core
 
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 /**
- * Das Spielbuch: Ein Buch wird vor dem Spielen einmal vorbereitet und im Zwischenspeicher ([SummaryData], `summaries/<Schlüssel>.json`) abgelegt:
- * die Zusammenfassung jeder Szene ([SummaryData.parts], dieselben wie beim Vorleser) und der **Handlungsstrang** jeder Szene ([SummaryData.threads]).
- * Das Spiel liest nur noch diese kurzen Angaben: Der Spielleiter erzählt aus der Zusammenfassung, und die Stränge bieten je Strang die nächste noch
- * ungespielte Szene an (innerhalb eines Strangs bleibt die Reihenfolge des Buches, zwischen Strängen darf der Spieler wechseln) - das verhindert
- * "Seltsamkeiten", wenn eine Szene vor der gespielt wird, auf der sie aufbaut.
+ * Eine Szene des Spielbuchs. Alles außer [title] und [chapter] erzeugt die Vorbereitung und kann von Hand (auch außerhalb der App) geändert werden:
+ * [plot] = Zusammenfassung (daraus erzählt der Spielleiter), [place] = wo die Spielerfigur am Ende der Szene ist, [thread] = Handlungsstrang,
+ * [enter] = die Entscheidung, die in diese Szene hineinführt (Richtung oder Handlung am Anfang der Szene, ohne Ergebnis), [risk] und [detour] = die
+ * beiden Alternativen am Ende der Szene (gefährlich bzw. harmloser Umweg, beide vom Ort [place] aus möglich).
  */
+@Serializable
+data class GbScene(
+    val title: String,
+    val chapter: String = "",
+    val thread: String = "",
+    val plot: String = "",
+    val place: String = "",
+    val enter: String = "",
+    val risk: String = "",
+    val detour: String = "",
+)
+
+/** Das Spielbuch: ein Buch, einmal vorbereitet. Wird als JSON gespeichert, ist von Hand änderbar und lässt sich wieder einlesen; zum Spielen braucht es den Buchtext nicht mehr. */
+@Serializable
+data class Gamebook(
+    val format: String = Gamebooks.FORMAT,
+    val version: Int = 1,
+    /** Verbindet das Spielbuch mit dem Buch, aus dem es stammt ([Summaries.key]). */
+    val key: String = "",
+    val title: String = "",
+    val language: String = "Deutsch",
+    val firstPerson: Boolean = false,
+    val characters: List<String> = emptyList(),
+    val scenes: List<GbScene> = emptyList(),
+) {
+    /** Die Szenen für das Spiel: Titel und Zusammenfassung als Text. */
+    fun sceneList(): List<Scene> = scenes.map { Scene(it.title, it.plot) }
+
+    fun plots(): Map<Int, String> = scenes.withIndex().filter { it.value.plot.isNotBlank() }.associate { it.index to it.value.plot }
+
+    /** Die Handlungsstränge je Szene; leer, wenn sie nicht für alle Szenen bekannt sind. */
+    fun threads(): Map<Int, String> = if (scenes.isNotEmpty() && scenes.all { it.thread.isNotBlank() }) scenes.withIndex().associate { it.index to it.value.thread } else emptyMap()
+
+    fun chapters(): List<String> = scenes.map { it.chapter.ifBlank { Summaries.chapterOf(it.title) } }
+}
+
+/** Eine Entscheidung nach einer Szene, in der Form, wie sie das Spiel anbietet. */
 object Gamebooks {
+    const val FORMAT = "aichat-gamebook"
+
     /** Wie viele Szenen eine Anfrage nach den Strängen umfasst. */
     const val BATCH = 10
     private const val PLOT_CHARS = 300
+    private const val PASSAGE_CHARS = 3600
+    private const val NEXT_CHARS = 500
+
+    private val JSON = Json(AppJson) { prettyPrint = true; encodeDefaults = true }
+
+    fun toJson(book: Gamebook): String = JSON.encodeToString(Gamebook.serializer(), book)
+
+    /** Liest ein Spielbuch aus JSON (auch von Hand geändert); null, wenn es keins ist (falsches Format oder keine Szenen). */
+    fun parse(text: String): Gamebook? {
+        val book = runCatching { AppJson.decodeFromString(Gamebook.serializer(), text.trim().removePrefix("﻿")) }.getOrNull() ?: return null
+        if (book.format != FORMAT || book.scenes.isEmpty()) return null
+        return book.copy(scenes = book.scenes.map { it.copy(chapter = it.chapter.ifBlank { Summaries.chapterOf(it.title) }) })
+    }
+
+    // --- Vorspann und Nachspann ---------------------------------------------------------------------------------
+
+    private val FRONT = Regex(
+        """(?i)(\bISBN\b|©|\(c\)\s*\d{4}|copyright|all rights reserved|alle rechte vorbehalten|originalausgabe|originaltitel|impressum|erstmals erschienen|printed in|inhaltsverzeichnis|table of contents|danksagung|acknowledg|leseprobe|über den autor|about the author|verlagsgruppe|gedruckt auf)""",
+    )
+
+    /**
+     * Welche Szenen sind Vorspann oder Nachspann (Titelseite, Copyright, Inhaltsverzeichnis, Danksagung)? Nur die ersten und letzten vier Szenen werden geprüft.
+     * Sie gehören nicht zur Geschichte; ein Spielleiter, der sie erzählen soll, erfindet sonst etwas.
+     */
+    fun frontMatter(scenes: List<Scene>): Set<Int> {
+        val out = HashSet<Int>()
+        for ((i, s) in scenes.withIndex()) {
+            if (i >= 4 && i < scenes.size - 4) continue
+            val markers = FRONT.findAll(s.text).map { it.value.lowercase() }.toSet().size
+            if (markers >= 2 || (markers >= 1 && s.text.length < 1500)) out += i
+        }
+        return out
+    }
+
+    /** Die Szenen der Geschichte ohne Vorspann und Nachspann (Titelseite, Copyright, Danksagung). */
+    fun storyScenes(scenes: List<Scene>): List<Scene> {
+        val skip = frontMatter(scenes)
+        return scenes.filterIndexed { i, _ -> i !in skip }
+    }
+
+    // --- Vorbereitung -------------------------------------------------------------------------------------------
+
+    /** Ein leeres Spielbuch zu den Szenen (nur Titel und Kapitel). */
+    fun skeleton(scenes: List<Scene>, title: String, language: String, key: String, firstPerson: Boolean, characters: List<String>): Gamebook =
+        Gamebook(key = key, title = title, language = language, firstPerson = firstPerson, characters = characters, scenes = scenes.map { GbScene(it.title, Summaries.chapterOf(it.title)) })
+
+    /** Passt [book] zu diesen Szenen (gleiche Zahl und Titel), sodass eine unterbrochene Vorbereitung dort weitermachen kann? */
+    fun compatible(book: Gamebook, scenes: List<Scene>): Boolean = book.scenes.size == scenes.size && book.scenes.indices.all { book.scenes[it].title == scenes[it].title }
+
+    fun sceneDone(s: GbScene): Boolean = s.plot.isNotBlank() && s.enter.isNotBlank()
 
     fun batches(count: Int): Int = (count + BATCH - 1) / BATCH
 
-    private fun batchDone(b: Int, count: Int, data: SummaryData): Boolean = (b * BATCH until minOf(count, (b + 1) * BATCH)).all { it in data.threads }
+    private fun batchDone(b: Int, book: Gamebook): Boolean = (b * BATCH until minOf(book.scenes.size, (b + 1) * BATCH)).all { book.scenes[it].thread.isNotBlank() }
 
-    /** Wie viele Anfragen noch fehlen (Zusammenfassungen der Szenen und Gruppen von Szenen ohne Strang). */
-    fun requests(count: Int, data: SummaryData): Int =
-        (0 until count).count { data.parts[it].isNullOrBlank() } + (0 until batches(count)).count { !batchDone(it, count, data) }
+    /** Wie viele Anfragen noch fehlen: eine je Szene ohne Karte und eine je Gruppe von Szenen ohne Strang. */
+    fun requests(book: Gamebook): Int = book.scenes.count { !sceneDone(it) } + (0 until batches(book.scenes.size)).count { !batchDone(it, book) }
 
-    fun ready(count: Int, data: SummaryData): Boolean = count > 0 && requests(count, data) == 0
+    fun ready(book: Gamebook): Boolean = book.scenes.isNotEmpty() && requests(book) == 0
 
-    /** Wie viele verschiedene Handlungsstränge gefunden wurden. */
-    fun threadCount(data: SummaryData): Int = data.threads.values.map { it.lowercase() }.distinct().size
+    /** Die Handlungsstränge in der Reihenfolge ihres ersten Auftretens. */
+    fun threadNames(book: Gamebook): List<String> = book.scenes.map { it.thread }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }
 
-    /** Die Anfrage: Welchen Handlungsstrang gehört jede dieser Szenen ([items] = Nummer ab 0, Titel, Zusammenfassung) an? [known] = Stränge bisher. */
+    /** Das Ergebnis der Karten-Anfrage zu einer Szene. */
+    data class Card(val summary: String, val place: String, val enter: String, val risk: String, val detour: String)
+
+    /**
+     * Die Anfrage zu einer Szene: Zusammenfassung, Ort am Ende und die drei Entscheidungen. [scene] ist der Text der Szene, [next] der Anfang der folgenden.
+     * Das Modell soll den Verlauf zur Richtung machen (kein Ergebnis verraten) und die Alternativen vom Ort aus möglich halten.
+     */
+    fun cardPrompt(book: String, scene: Scene, next: Scene?, language: String): List<WireMessage> {
+        val nextBlock = next?.let { "\n\nNEXT (the beginning of the following passage):\n${it.text.trim().take(NEXT_CHARS)}" }.orEmpty()
+        val lastLines = if (next != null) {
+            "RISK: one sentence in the first person: a different, bolder or dangerous action the main character could take at the END of the passage instead of continuing with NEXT. It must be possible from exactly the place named in PLACE (no jumping to other floors, rooms far away or buildings; at most one step or one door away).\n" +
+                "DETOUR: one sentence in the first person: a different, harmless action, also possible from the place named in PLACE, that still leads on towards NEXT."
+        } else "RISK: -\nDETOUR: -"
+        return listOf(
+            WireMessage(
+                "user",
+                "You prepare a solo gamebook (choose your path) from the novel \"$book\". Read the PASSAGE and write exactly these lines, one value per line, in $language, nothing else:\n" +
+                    "SUMMARY: 3 to 5 sentences: who acts, what happens, which places and turning points. Use only the passage and invent nothing.\n" +
+                    "PLACE: where the main character is at the END of the passage (building, floor or level, room, or outdoor place), in a few words.\n" +
+                    "ENTER: one short sentence in the first person (\"I ...\") naming the direction or action the main character takes at the BEGINNING of the passage, for example \"I go on up the stairs.\" when the text says the character sets a foot on the next step. " +
+                    "Name only the movement or action itself: never its result, nothing that is revealed later in the passage, and no names of people the character has not met yet.\n" +
+                    lastLines + "\n\nPASSAGE (${scene.title}):\n${scene.text.trim().take(PASSAGE_CHARS)}$nextBlock",
+            ),
+        )
+    }
+
+    private val LABEL = Regex("""(?im)^[ \t]*[*#_\-]*[ \t]*(SUMMARY|PLACE|ENTER|RISK|DETOUR)[ \t]*[*_]*[ \t]*[:：][ \t]*""")
+
+    private fun tidy(s: String): String = s.replace("**", "").replace(Regex("""\s+"""), " ").trim().trim('"', '„', '“', '”', '»', '«', '*', '_', ' ')
+
+    /** Liest die Antwort zur Karte; fehlende Zeilen bleiben leer, "-" gilt als leer. */
+    fun parseCard(answer: String): Card {
+        val matches = LABEL.findAll(answer).toList()
+        val values = HashMap<String, String>()
+        for ((i, m) in matches.withIndex()) {
+            val end = if (i + 1 < matches.size) matches[i + 1].range.first else answer.length
+            val key = m.groupValues[1].uppercase()
+            if (key !in values) values[key] = tidy(answer.substring(m.range.last + 1, end)).let { if (it == "-") "" else it }
+        }
+        fun one(key: String): String = values[key].orEmpty().let { v -> if (v.length > 220) (Regex("""^.{20,220}?[.!?…]""").find(v)?.value ?: v.take(220)) else v }
+        return Card(values["SUMMARY"].orEmpty(), one("PLACE").take(120), one("ENTER"), one("RISK"), one("DETOUR"))
+    }
+
+    /** Die Anfrage: Welchem Handlungsstrang gehört jede dieser Szenen ([items] = Nummer ab 0, Titel, Zusammenfassung) an? [known] = Stränge bisher. */
     fun threadPrompt(items: List<Triple<Int, String, String>>, known: List<String>, language: String): List<WireMessage> {
         val list = items.joinToString("\n") { (i, title, plot) -> "${i + 1}. $title: ${plot.trim().take(PLOT_CHARS)}" }
         val knownLine = if (known.isEmpty()) "There are no storylines yet." else "Storylines so far: ${known.joinToString("; ")}."
         return listOf(
             WireMessage(
                 "user",
-                "Below are consecutive scenes of a book (number, title, summary). Assign each scene to the storyline it belongs to. A storyline is a sequence of scenes that follows the same main character " +
-                    "or group, or the same plot thread; scenes that tell different things in parallel or independent episodes belong to different storylines. $knownLine " +
-                    "Reuse a known storyline whenever the scene continues it; add a new one (1 to 3 words, in $language) only for a really separate storyline. A book with only one storyline uses one name for all scenes.\n" +
+                "Below are consecutive scenes of a book (number, title, summary). Assign each scene to the storyline it belongs to. A storyline follows one main character or group, " +
+                    "or one place and plot thread; name it after the character or group (for example \"Lucy and Lockwood\") and not after a topic. Scenes that happen in parallel or independently of each other belong to different storylines. $knownLine " +
+                    "Reuse a known storyline whenever the scene continues it; add a new one (1 to 3 words, in $language) only for a really separate storyline. A book that follows one main character uses one name for all scenes.\n" +
                     "Answer with exactly one line per scene in this form and nothing else:\n<number>: <storyline>\n\n$list",
             ),
         )
@@ -47,8 +179,8 @@ object Gamebooks {
 
     /**
      * Liest die Antwort: Zeile "n: Strang" für die Szenen [numbers] (Nummern ab 0, die Zeilen zählen ab 1). Gleiche Namen (ohne Rücksicht auf Groß-/Kleinschreibung)
-     * werden zusammengelegt, bekannte Namen ([known]) haben Vorrang. Szenen ohne Zeile übernehmen den Strang der vorigen, die erste im Zweifel den zuletzt bekannten
-     * oder [fallback].
+     * werden zusammengelegt, bekannte Namen ([known]) haben Vorrang, eine wiederholte Nummer im Namen ("96: 96: Alarm") wird entfernt. Szenen ohne Zeile übernehmen
+     * den Strang der vorigen, die erste im Zweifel [fallback].
      */
     fun parseThreads(answer: String, numbers: List<Int>, known: List<String>, fallback: String): Map<Int, String> {
         val names = known.toMutableList()
@@ -56,7 +188,7 @@ object Gamebooks {
         for (m in LINE.findAll(answer)) {
             val index = m.groupValues[1].toInt() - 1
             if (index !in numbers || index in found) continue
-            val raw = m.groupValues[2].replace("**", "").trim().trim('*', '_', '"', '„', '“', '»', '«', ' ', '.').take(40)
+            val raw = m.groupValues[2].replace("**", "").replace(Regex("""^\d{1,5}\s*[:.)\-–]\s*"""), "").trim().trim('*', '_', '"', '„', '“', '»', '«', ' ', '.').take(40)
             if (raw.isBlank()) continue
             val name = names.firstOrNull { it.equals(raw, ignoreCase = true) } ?: raw.also { names += it }
             found[index] = name
@@ -70,21 +202,20 @@ object Gamebooks {
         return out
     }
 
-    /** Die Handlungsstränge in der Reihenfolge ihres ersten Auftretens (für die Anzeige). */
-    fun threadNames(data: SummaryData): List<String> = data.threads.toSortedMap().values.distinctBy { it.lowercase() }
-
     /**
-     * Bereitet das Spielbuch vor: Zusammenfassung jeder fehlenden Szene, danach die Stränge je [BATCH] Szenen. Nach jeder Anfrage bekommt [onData] den Stand zum Speichern
-     * (Abbruch oder Fehler kosten nichts, ein neuer Lauf macht dort weiter); [onProgress] die Zahl der erledigten und aller nötigen Anfragen.
+     * Bereitet das Spielbuch vor: je Szene eine Karte (Zusammenfassung, Ort, Entscheidungen), danach die Stränge je [BATCH] Szenen. [scenes] sind die Szenen mit
+     * Buchtext (ohne Vor- und Nachspann), [start] der bisherige Stand zu genau diesen Szenen ([skeleton] oder ein unterbrochener Lauf). Nach jeder Anfrage bekommt
+     * [onData] den Stand zum Speichern (Abbruch oder Fehler kosten nichts); [onProgress] die Zahl der erledigten und aller nötigen Anfragen.
      */
     suspend fun prepare(
-        scenes: List<Scene>, language: String, start: SummaryData,
+        scenes: List<Scene>, start: Gamebook,
         ask: suspend (List<WireMessage>, Int) -> String?,
-        onProgress: (done: Int, total: Int, what: String) -> Unit = { _, _, _ -> }, onData: (SummaryData) -> Unit = {},
-    ): SummaryData {
-        var data = start
-        val total = requests(scenes.size, start).coerceAtLeast(1)
+        onProgress: (done: Int, total: Int, what: String) -> Unit = { _, _, _ -> }, onData: (Gamebook) -> Unit = {},
+    ): Gamebook {
+        var book = start
+        val total = requests(start).coerceAtLeast(1)
         var done = 0
+        val german = book.language.startsWith("Deu", ignoreCase = true)
         suspend fun call(prompt: List<WireMessage>, maxTokens: Int, what: String): String {
             onProgress(done.coerceAtMost(total), total, what)
             val answer = ask(prompt, maxTokens)?.let(Summaries::clean).orEmpty()
@@ -92,27 +223,58 @@ object Gamebooks {
                 currentCoroutineContext().ensureActive() // ein Abbruch ist keine Fehlermeldung des Modells
                 throw SummaryException("Das Modell hat nicht geantwortet.")
             }
-            done++
-            onProgress(done.coerceAtMost(total), total, what)
             return answer
         }
         for ((i, scene) in scenes.withIndex()) {
-            if (!data.parts[i].isNullOrBlank()) continue
-            val answer = call(Summaries.partPrompt(BookPart(scene.title, scene.text), language), 250, scene.title)
-            data = data.copy(parts = data.parts + (i to answer))
-            onData(data)
+            if (sceneDone(book.scenes[i])) continue
+            val prompt = cardPrompt(book.title, scene, scenes.getOrNull(i + 1), book.language)
+            var card = parseCard(call(prompt, 380, scene.title))
+            if (card.summary.isBlank()) card = parseCard(call(prompt, 380, scene.title)) // das Format fehlt: ein zweiter Versuch
+            val summary = card.summary.ifBlank { scene.text.trim().take(300) }
+            val enter = card.enter.ifBlank { if (german) "Weiter." else "Continue." }
+            book = book.copy(scenes = book.scenes.toMutableList().also { it[i] = it[i].copy(plot = summary, place = card.place, enter = enter, risk = card.risk, detour = card.detour) })
+            done++
+            onProgress(done.coerceAtMost(total), total, scene.title)
+            onData(book)
         }
-        for (b in 0 until batches(scenes.size)) {
-            if (batchDone(b, scenes.size, data)) continue
-            val numbers = (b * BATCH until minOf(scenes.size, (b + 1) * BATCH)).toList()
-            val known = threadNames(data)
-            val items = numbers.map { Triple(it, scenes[it].title, data.parts.getValue(it)) }
-            val answer = call(threadPrompt(items, known, language), 200, scenes[numbers.first()].title)
-            val fallback = data.threads[numbers.first() - 1] ?: if (language.startsWith("Deu")) "Haupthandlung" else "Main story"
-            data = data.copy(threads = data.threads + parseThreads(answer, numbers, known, fallback))
-            onData(data)
+        for (b in 0 until batches(book.scenes.size)) {
+            if (batchDone(b, book)) continue
+            val numbers = (b * BATCH until minOf(book.scenes.size, (b + 1) * BATCH)).toList()
+            val known = threadNames(book)
+            val items = numbers.map { Triple(it, book.scenes[it].title, book.scenes[it].plot) }
+            val answer = call(threadPrompt(items, known, book.language), 200, book.scenes[numbers.first()].title)
+            val fallback = book.scenes.getOrNull(numbers.first() - 1)?.thread?.takeIf { it.isNotBlank() } ?: if (german) "Haupthandlung" else "Main story"
+            val threads = parseThreads(answer, numbers, known, fallback)
+            book = book.copy(scenes = book.scenes.toMutableList().also { list -> for ((i, t) in threads) list[i] = list[i].copy(thread = t) })
+            done++
+            onProgress(done.coerceAtMost(total), total, book.scenes[numbers.first()].title)
+            onData(book)
         }
-        onData(data)
-        return data
+        onData(book)
+        return book
+    }
+
+    // --- Entscheidungen aus dem Spielbuch -----------------------------------------------------------------------
+
+    /** Die Entscheidung, die in die Szene [index] hineinführt ("Weiter.", wenn nichts da ist). */
+    fun enterOf(book: Gamebook, index: Int, german: Boolean): String = book.scenes.getOrNull(index)?.enter?.takeIf { it.isNotBlank() } ?: if (german) "Weiter." else "Continue."
+
+    /**
+     * Die Entscheidungen am Ende der Szene [current]: je nach [mode] und [round] die Stränge (die nächste Szene je Handlungsstrang **im selben Kapitel**,
+     * Text = Entscheidung, die in sie hineinführt) oder Handlung/Risiko/Umweg (Handlung = Eingang der nächsten Szene, Risiko und Umweg aus dieser Szene).
+     * Fertige Texte, kein Modellaufruf. Leer, wenn alle Szenen gespielt sind.
+     */
+    fun options(book: Gamebook, current: Int, played: Set<Int>, mode: DecisionMode, round: Int, german: Boolean): List<Decision> {
+        val n = book.scenes.size
+        val next = Solo.candidates(n, played, 1).firstOrNull() ?: return emptyList()
+        val threads = book.threads()
+        val strands = if (threads.isEmpty()) listOf(next) else Solo.candidates(n, played, Solo.MAX_STRANDS, threads, book.chapters())
+        if (Solo.useStrands(mode, round, strands.size)) return strands.map { Decision(DecisionKind.STRAND, enterOf(book, it, german), scene = it) }
+        val scene = book.scenes.getOrNull(current)
+        return listOfNotNull(
+            Decision(DecisionKind.STORY, enterOf(book, next, german), scene = next),
+            scene?.risk?.takeIf { it.isNotBlank() }?.let { Decision(DecisionKind.RISK, it) },
+            scene?.detour?.takeIf { it.isNotBlank() }?.let { Decision(DecisionKind.DETOUR, it) },
+        )
     }
 }

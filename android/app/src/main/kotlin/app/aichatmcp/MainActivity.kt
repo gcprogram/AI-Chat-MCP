@@ -194,6 +194,10 @@ private fun RootContent(vm: ChatViewModel) {
     var bookSave by remember { mutableStateOf(false) }
     fun writeBytes(uri: Uri, bytes: ByteArray) =
         runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } }.onSuccess { toast("Gespeichert") }.onFailure { toast("Speichern fehlgeschlagen: ${it.message}") }
+    var gamebookText by remember { mutableStateOf("") }
+    val saveGamebook = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { writeBytes(it, gamebookText.toByteArray(Charsets.UTF_8)) } }
+    // Kein MIME-Filter: JSON melden die Dateimanager uneinheitlich
+    val pickGamebook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { u -> toast(read(u)?.let(vm::importGamebook) ?: "Datei nicht lesbar") } }
     val saveMarkdown = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> uri?.let { writeBytes(it, bookVm.markdown(bookSave)) } }
     val saveDocx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) { uri ->
         uri?.let { writeBytes(it, bookVm.docx(bookSave)) }
@@ -228,7 +232,10 @@ private fun RootContent(vm: ChatViewModel) {
             vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) },
             onSaveText = { fileName, text -> summaryText = text; saveSummary.launch(fileName) },
         )
-        Screen.PLAY -> PlayScreen(vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) }, onStarted = { screen = Screen.CHAT })
+        Screen.PLAY -> PlayScreen(
+            vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) }, onStarted = { screen = Screen.CHAT },
+            onLoadGamebook = { pickGamebook.launch(arrayOf("*/*")) }, onSaveGamebook = { name, json -> gamebookText = json; saveGamebook.launch(name) },
+        )
         Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(
             vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },

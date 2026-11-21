@@ -36,9 +36,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -221,7 +223,7 @@ private fun MessageItem(message: UiMessage, personaName: String, userName: Strin
         }
         UiKind.ASSISTANT -> Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth()) {
-                Bubble(personaName, message.text, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+                Bubble(personaName, if (message.typed != 0) typedProgress(message.typed, message.text) else message.text, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // Pflicht für Apps mit KI-erzeugten Inhalten (Google Play): Antworten melden können
             TextButton(onClick = { onReport(message.text) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
@@ -237,6 +239,26 @@ private fun MessageItem(message: UiMessage, personaName: String, userName: Strin
         UiKind.ERROR -> Text(message.text, color = ErrorRed, style = MaterialTheme.typography.bodyMedium)
         UiKind.TOOL -> Text(message.text, color = ToolGreen, fontStyle = FontStyle.Italic, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+/** Die Begrüßungen, die schon fertig getippt wurden (sonst finge das Tippen beim Zurückscrollen von vorn an). */
+private val TYPED_DONE = HashSet<Int>()
+
+/** Die Begrüßung eines Companions baut sich Zeichen für Zeichen auf, wie bei den Bildschirmen zum Schreiben, Lesen und Spielen. */
+@Composable
+private fun typedProgress(id: Int, full: String): String {
+    if (id in TYPED_DONE) return full
+    var shown by remember(id) { mutableIntStateOf(0) }
+    LaunchedEffect(id) {
+        delay(300)
+        val step = if (full.length > 220) 14L else 30L // lange Begrüßungen etwas schneller
+        while (shown < full.length) {
+            shown++
+            delay(if (full[shown - 1] == '.') step * 8 else if (full[shown - 1] == ' ') step * 2 else step)
+        }
+        TYPED_DONE += id
+    }
+    return full.take(shown) + if (shown < full.length) "▍" else ""
 }
 
 @Composable

@@ -30,13 +30,18 @@ import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.PendingDoc
 import app.aichatmcp.core.DecisionMode
+import app.aichatmcp.core.Gamebook
+import app.aichatmcp.core.Gamebooks
 
 /**
  * "Buch spielen": Story-Game (Companion mit Spiegel-Bild) macht aus einem geladenen Buch ein Rollenspiel. Hier wird vorbereitet (Buch laden,
  * Figur wählen, Szenenlänge); das Spiel selbst läuft danach im Chat (Leiste mit "Nächste Szene" und "Beenden" oben).
  */
 @Composable
-fun PlayScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onStarted: () -> Unit) {
+fun PlayScreen(
+    vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onStarted: () -> Unit,
+    onLoadGamebook: () -> Unit = {}, onSaveGamebook: (fileName: String, json: String) -> Unit = { _, _ -> },
+) {
     val image = remember { vm.companionImage("story_game") }
     var explain by remember { mutableStateOf(false) }
     val run = vm.roleplay
@@ -65,11 +70,13 @@ fun PlayScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onStar
         when {
             run != null -> RunningGame(vm, onStarted)
             vm.docBusy -> Text(t("Reading the file…", "Lese die Datei…"), style = MaterialTheme.typography.bodyMedium)
+            doc == null && vm.loadedGamebook != null -> GamebookSetup(vm, vm.loadedGamebook!!, onSaveGamebook, onStarted)
             doc == null -> {
                 Button(onClick = onLoad, modifier = Modifier.fillMaxWidth()) { Text(t("Load a book…", "Buch laden…")) }
+                OutlinedButton(onClick = onLoadGamebook, modifier = Modifier.fillMaxWidth()) { Text(t("Load a saved game book (.json)…", "Gespeichertes Spielbuch laden (.json)…")) }
                 if (vm.status.isNotBlank() && vm.status != "Bereit") Text(vm.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
-            else -> Setup(vm, doc, onLoad, onStarted)
+            else -> Setup(vm, doc, onLoad, onStarted, onLoadGamebook, onSaveGamebook)
         }
     }
 }
@@ -82,7 +89,7 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("A game is running: ${run.setup.title}", "Ein Spiel läuft: ${run.setup.title}"), style = MaterialTheme.typography.titleSmall)
             Text(
-                t("Scene ${if (run.setup.solo) run.played.size else run.sceneIndex + 1} of ${run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}", "Szene ${if (run.setup.solo) run.played.size else run.sceneIndex + 1} von ${run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}"),
+                t("Scene ${if (run.setup.solo) run.sceneNumber else run.sceneIndex + 1} of ${if (run.setup.solo) run.sceneTotal else run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}", "Szene ${if (run.setup.solo) run.sceneNumber else run.sceneIndex + 1} von ${if (run.setup.solo) run.sceneTotal else run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}"),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -96,7 +103,10 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
 /** Das Buch ist geladen: Figur wählen, Länge einer Szene einstellen, starten. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStarted: () -> Unit) {
+private fun Setup(
+    vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStarted: () -> Unit,
+    onLoadGamebook: () -> Unit, onSaveGamebook: (fileName: String, json: String) -> Unit,
+) {
     val choice = rememberRoleplayChoice(doc)
     var turns by remember { mutableStateOf(vm.config.roleplayTurns.toString()) }
     var solo by remember { mutableStateOf(vm.config.soloAdventure) }
@@ -136,26 +146,12 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
                     "Der Spielleiter erzählt jede Szene als kurzen Abschnitt (eine Viertel- bis halbe Seite) aus einer Zusammenfassung des Buchteils, danach entscheidest du."),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
             )
-            Text(t("Kind of decisions", "Art der Entscheidungen"), style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(selected = mode == DecisionMode.CLASSIC, onClick = { mode = DecisionMode.CLASSIC }, label = { Text(t("Story / risk / detour", "Handlung / Risiko / Umweg")) })
-                FilterChip(selected = mode == DecisionMode.STRANDS, onClick = { mode = DecisionMode.STRANDS }, label = { Text(t("Threads", "Stränge")) })
-                FilterChip(selected = mode == DecisionMode.MIXED, onClick = { mode = DecisionMode.MIXED }, label = { Text(t("Mixed", "Gemischt")) })
-            }
-            Text(
-                when (mode) {
-                    DecisionMode.CLASSIC -> t("One option follows the story, one departs from it (danger), one is a detour back.", "Eine Möglichkeit folgt der Geschichte, eine weicht ab (Gefahr), eine ist ein Umweg zurück.")
-                    DecisionMode.STRANDS -> t("You choose which of the next parts of the book comes next, like a different character or an independent adventure. Works best for books with parallel threads or episodes; no danger in these choices.",
-                        "Du wählst, welcher der nächsten Buchteile als Nächstes kommt, etwa eine andere Figur oder ein unabhängiges Erlebnis. Passt am besten zu Büchern mit parallelen Strängen oder Episoden; diese Wahl bringt keine Gefahr.")
-                    DecisionMode.MIXED -> t("Alternates between the two kinds.", "Wechselt zwischen beiden Arten ab.")
-                },
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
-            )
+            ModeChoice(mode) { mode = it }
             TextSetting(
                 t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it },
                 keyboard = KeyboardType.Number,
             )
-            GamebookCard(vm, doc)
+            GamebookCard(vm, doc, onLoadGamebook, onSaveGamebook)
         }
         Button(
             onClick = {
@@ -178,19 +174,53 @@ private fun Setup(vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStar
     }
 }
 
+/** Die Art der Entscheidungen im Solo-Abenteuer wählen (Handlung/Risiko/Umweg, Stränge, gemischt) mit kurzer Erklärung. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ModeChoice(mode: DecisionMode, onMode: (DecisionMode) -> Unit) {
+    Text(t("Kind of decisions", "Art der Entscheidungen"), style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = mode == DecisionMode.CLASSIC, onClick = { onMode(DecisionMode.CLASSIC) }, label = { Text(t("Story / risk / detour", "Handlung / Risiko / Umweg")) })
+        FilterChip(selected = mode == DecisionMode.STRANDS, onClick = { onMode(DecisionMode.STRANDS) }, label = { Text(t("Threads", "Stränge")) })
+        FilterChip(selected = mode == DecisionMode.MIXED, onClick = { onMode(DecisionMode.MIXED) }, label = { Text(t("Mixed", "Gemischt")) })
+    }
+    Text(
+        when (mode) {
+            DecisionMode.CLASSIC -> t("One option follows the story, one departs from it (danger), one is a detour back.", "Eine Möglichkeit folgt der Geschichte, eine weicht ab (Gefahr), eine ist ein Umweg zurück.")
+            DecisionMode.STRANDS -> t("You choose which story thread continues, like a different character or an independent adventure, within the current chapter. Needs a prepared game book with several threads; no danger in these choices.",
+                "Du wählst, welcher Handlungsstrang weitergeht, etwa eine andere Figur oder ein unabhängiges Erlebnis, innerhalb des aktuellen Kapitels. Braucht ein vorbereitetes Spielbuch mit mehreren Strängen; diese Wahl bringt keine Gefahr.")
+            DecisionMode.MIXED -> t("Alternates between the two kinds.", "Wechselt zwischen beiden Arten ab.")
+        },
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+    )
+}
+
+/** Eine Dauer in Sekunden als Text ("etwa 12 Min.", "etwa 2 Std. 10 Min."). */
+@Composable
+private fun durationText(seconds: Long): String {
+    val minutes = (seconds + 30) / 60
+    return when {
+        seconds < 45 -> t("under a minute", "unter einer Minute")
+        minutes < 60 -> t("about $minutes min", "etwa $minutes Min.")
+        else -> t("about ${minutes / 60} h ${minutes % 60} min", "etwa ${minutes / 60} Std. ${minutes % 60} Min.")
+    }
+}
+
 /**
- * Das Spielbuch vorbereiten: Zusammenfassung jeder Szene und Handlungsstrang je Szene, einmal im Voraus (läuft im Hintergrund, Abbruch kostet nichts).
- * Das Spiel liest danach nur noch diese kurzen Angaben; Stränge bieten dann je Handlungsstrang die nächste Szene an und halten so die Reihenfolge.
+ * Das Spielbuch vorbereiten: je Szene Zusammenfassung, Ort und fertige Entscheidungen, dazu die Handlungsstränge, einmal im Voraus (läuft im Hintergrund, Abbruch kostet nichts).
+ * Das Ergebnis lässt sich als JSON-Datei speichern, von Hand ändern und wieder einlesen; das Spiel braucht dann keinen Modellaufruf mehr für Entscheidungen.
  */
 @Composable
-private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc) {
+private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () -> Unit, onSaveGamebook: (fileName: String, json: String) -> Unit) {
     val state = remember(doc, vm.prepBusy, vm.prepDone) { vm.gamebookState(doc) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(t("Prepare the game book", "Spielbuch vorbereiten"), style = MaterialTheme.typography.titleSmall)
             Text(
-                t("Summarizes every scene once and finds the story threads, so the game can use short notes instead of the book text and keeps the order of the threads right. You can also start without it; missing scenes are summarized while you play.",
-                    "Fasst jede Szene einmal zusammen und findet die Handlungsstränge. Das Spiel liest dann kurze Notizen statt des Buchtextes und hält die Reihenfolge der Stränge ein. Du kannst auch ohne starten; fehlende Szenen werden beim Spielen zusammengefasst."),
+                t("Prepares the book once: for every scene a summary, the place, ready-made decisions (that do not give away what comes next) and the story threads. The game then needs no model call for decisions and keeps the order. " +
+                    "This takes long. You can also start without it; missing scenes are then summarized while you play, and the decisions are asked from the model.",
+                    "Bereitet das Buch einmal vor: je Szene eine Zusammenfassung, der Ort, fertige Entscheidungen (die nichts vom Folgenden verraten) und die Handlungsstränge. Das Spiel braucht dann keinen Modellaufruf für Entscheidungen und hält die Reihenfolge ein. " +
+                        "Das dauert lange. Du kannst auch ohne starten; fehlende Szenen werden dann beim Spielen zusammengefasst, und die Entscheidungen fragt die App beim Modell ab."),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
             )
             when {
@@ -199,6 +229,10 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc) {
                     Text(
                         t("Request ${vm.prepDone} of ${vm.prepTotal}", "Anfrage ${vm.prepDone} von ${vm.prepTotal}") + if (vm.prepWhat.isNotBlank()) " · ${vm.prepWhat}" else "",
                         style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        if (vm.prepRemainingSec >= 0) t("Remaining: ${durationText(vm.prepRemainingSec)}", "Noch ${durationText(vm.prepRemainingSec)}") else t("The time is estimated after the first requests…", "Die Zeit wird nach den ersten Anfragen geschätzt…"),
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                     OutlinedButton(onClick = vm::cancelGamebook) { Text(t("Stop", "Anhalten")) }
                 }
@@ -213,14 +247,67 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc) {
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
                         )
                     }
+                    Text(
+                        t("You can save the game book as a file, edit it by hand (summaries, places, decisions) and load it again.", "Du kannst das Spielbuch als Datei speichern, von Hand ändern (Zusammenfassungen, Orte, Entscheidungen) und wieder einlesen."),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                    )
+                    GamebookFileButtons(onLoadGamebook) { vm.gamebookJson(doc)?.let { onSaveGamebook(doc.name.substringBeforeLast('.') + ".gamebook.json", it) } }
                 }
                 else -> {
+                    val perRequest = vm.gamebookSecondsPerRequest()
+                    Text(
+                        if (perRequest != null) t("Estimated time: ${durationText((perRequest * state.requests).toLong())} (${state.requests} requests, about ${perRequest.toInt()} s each, measured with this model).",
+                            "Geschätzte Zeit: ${durationText((perRequest * state.requests).toLong())} (${state.requests} Anfragen, je etwa ${perRequest.toInt()} s, mit diesem Modell gemessen).")
+                        else t("${state.requests} requests. The time is measured while it runs and shown then; with the phone's own model expect a long time.",
+                            "${state.requests} Anfragen. Die Zeit wird beim Lauf gemessen und dann angezeigt; mit dem Modell auf dem Handy dauert es lange."),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     Button(onClick = { vm.prepareGamebook(doc) }, enabled = !vm.streaming && state.scenes > 0) {
                         Text(t("Prepare (${state.requests} requests)", "Vorbereiten (${state.requests} Anfragen)"))
                     }
                     if (vm.prepError.isNotBlank()) Text(vm.prepError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    GamebookFileButtons(onLoadGamebook, null)
                 }
             }
         }
     }
+}
+
+/** "Speichern…" (nur mit [onSave]) und "Spielbuch laden…". */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GamebookFileButtons(onLoad: () -> Unit, onSave: (() -> Unit)?) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onSave != null) OutlinedButton(onClick = onSave) { Text(t("Save game book…", "Spielbuch speichern…")) }
+        OutlinedButton(onClick = onLoad) { Text(t("Load game book…", "Spielbuch laden…")) }
+    }
+}
+
+/** Ein geladenes Spielbuch (JSON): Figur wählen, Entscheidungsart, starten; der Buchtext wird nicht gebraucht. */
+@Composable
+private fun GamebookSetup(vm: ChatViewModel, book: Gamebook, onSaveGamebook: (fileName: String, json: String) -> Unit, onStarted: () -> Unit) {
+    val choice = remember(book) { RoleplayChoice(book.scenes.size, book.firstPerson, book.characters) }
+    var perDay by remember { mutableStateOf(vm.config.soloScenesPerDay.toString()) }
+    var mode by remember { mutableStateOf(DecisionMode.parse(vm.config.soloMode)) }
+    Text(t("Game book “${book.title}” – ${book.scenes.size} scenes.", "Spielbuch „${book.title}“ – ${book.scenes.size} Szenen."), style = MaterialTheme.typography.titleSmall)
+    Text(
+        t("Threads: ${Gamebooks.threadNames(book).joinToString(", ").ifBlank { "–" }}.", "Stränge: ${Gamebooks.threadNames(book).joinToString(", ").ifBlank { "–" }}."),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+    )
+    RoleplayChoiceFields(choice, vm)
+    ModeChoice(mode) { mode = it }
+    TextSetting(t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it }, keyboard = KeyboardType.Number)
+    Button(
+        onClick = {
+            val days = perDay.toIntOrNull()?.takeIf { it in 1..20 } ?: vm.config.soloScenesPerDay
+            val config = vm.config.copy(soloAdventure = true, soloScenesPerDay = days, soloMode = mode.name.lowercase())
+            if (config != vm.config) vm.saveConfig(config)
+            vm.startGamebook(book, choice.playerName, choice.asFirstPerson, choice.names)
+            onStarted()
+        },
+        enabled = book.scenes.isNotEmpty() && !vm.streaming,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text(t("Start the game", "Spiel starten")) }
+    GamebookFileButtons({ vm.closeLoadedGamebook() }, { onSaveGamebook(book.title.ifBlank { "gamebook" } + ".gamebook.json", vm.gamebookJson(book)) })
+    TextButton(onClick = vm::closeLoadedGamebook) { Text(t("Close", "Schließen")) }
 }

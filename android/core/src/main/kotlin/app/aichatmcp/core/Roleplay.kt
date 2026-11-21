@@ -151,6 +151,10 @@ data class RoleplaySetup(
     val threads: Map<Int, String> = emptyMap(),
     /** Erkennt dasselbe Spiel auch nach Änderungen von [plots]. */
     val id: Long = System.nanoTime(),
+    /** Das vorbereitete Spielbuch: Zusammenfassungen, Orte, Stränge und fertige Entscheidungen; null = die Entscheidungen fragt das Modell nach jeder Szene ab. */
+    val book: Gamebook? = null,
+    /** Szenen, die nicht zur Geschichte gehören (Titelseite, Copyright, Danksagung): sie gelten als gespielt und werden nie angeboten. */
+    val skip: Set<Int> = emptySet(),
 ) {
     /** Die Handlung der Szene [index]: die Zusammenfassung (Solo-Abenteuer), sonst oder ohne sie der Text, höchstens [max] Zeichen. */
     fun plotOf(index: Int, max: Int = 900): String {
@@ -165,14 +169,14 @@ data class RoleplaySetup(
 
 object RoleplayPrompt {
     /** Der Spielleiter-Prompt für die Szene [index]; [closing]: die Szene soll jetzt zum Ende kommen. */
-    fun system(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = ""): String =
-        (if (setup.solo && solo != null) narration(setup, index) else base(setup, index, closing)) + soloBlock(setup, solo, outcome, closing)
+    fun system(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = "", previous: Int? = null): String =
+        (if (setup.solo && solo != null) narration(setup, index, previous) else base(setup, index, closing)) + soloBlock(setup, solo, outcome, closing)
 
     /**
      * Solo-Abenteuer wie ein Spielbuch: Der Spielleiter erzählt je Szene einen zusammenhängenden Abschnitt von einer Viertel- bis einer halben Seite
      * (kein langer Dialog) und hält an einer Stelle an, an der entschieden wird. Die Handlung kommt als Zusammenfassung; der Wortlaut des Buches ist unwichtig.
      */
-    private fun narration(setup: RoleplaySetup, index: Int): String {
+    private fun narration(setup: RoleplaySetup, index: Int, previous: Int?): String {
         val scene = setup.scenes[index]
         val g = setup.german
         val player = if (setup.player.isBlank()) (if (g) "den Ich-Erzähler des Buches (die Figur, aus deren Sicht erzählt wird)" else "the first-person narrator of the book") else (if (g) "die Figur ${setup.player}" else "the character ${setup.player}")
@@ -185,7 +189,9 @@ object RoleplayPrompt {
             append("- Die Handlung der Szene steht unten als Zusammenfassung. Erzähle ihre Ereignisse, Orte und Figuren in eigenen Worten und gib Gespräche nur kurz und sinngemäß wieder; der Wortlaut des Buches ist unwichtig, Namen und Ereignisse nicht. Erfinde nichts, was der Handlung widerspricht.\n")
             append("- Beschreibe, was die Spielerfigur sieht, hört und erlebt und was die anderen Figuren sagen und tun. Lege der Spielerfigur keine neuen Entscheidungen in den Mund.\n")
             append("- Höre an einer offenen Stelle auf, an der der Spieler sich entscheiden muss. Schreibe die Möglichkeiten nicht selbst auf: die App fragt sie danach ab.\n")
-            append("- Verrate nichts aus späteren Szenen.\n\n")
+            append("- Weicht der Spieler mit seiner Eingabe von der Handlung ab, reagiere kurz und stimmig in der Welt und führe in diesem Abschnitt zu den Ereignissen der Szene zurück. Der Spieler kann nur tun, was vom Ort der Spielerfigur aus möglich ist.\n")
+            append("- Verrate nichts aus späteren Szenen. Setze genau dort fort, wo die vorige Szene aufgehört hat, und wiederhole keine Sätze aus dem Verlauf.\n\n")
+            previousBlock(setup, previous, true)?.let { append(it) }
             append("HANDLUNG DER SZENE (${scene.title}):\n${setup.plotOf(index)}\n")
         } else buildString {
             append("You are the narrator of a solo adventure (gamebook) based on the book \"${setup.title}\". The player ({user}) plays $player. You tell the scene, then the player decides.\n")
@@ -196,8 +202,21 @@ object RoleplayPrompt {
             append("- The plot of the scene is given below as a summary. Tell its events, places and characters in your own words and give conversations only briefly and in substance; the wording of the book does not matter, names and events do. Invent nothing that contradicts the plot.\n")
             append("- Describe what the player's character sees, hears and experiences and what the other characters say and do. Do not put new decisions into the player character's mouth.\n")
             append("- Stop at an open moment where the player has to decide. Do not write the options yourself: the app asks for them afterwards.\n")
-            append("- Reveal nothing from later scenes.\n\n")
+            append("- If the player's input departs from the plot, react briefly and consistently in the world and lead back to the events of the scene within this passage. The player can only do what is possible from the player character's place.\n")
+            append("- Reveal nothing from later scenes. Continue exactly where the previous scene stopped and do not repeat sentences from the history.\n\n")
+            previousBlock(setup, previous, false)?.let { append(it) }
             append("PLOT OF THE SCENE (${scene.title}):\n${setup.plotOf(index)}\n")
+        }
+    }
+
+    /** Wo die Geschichte vorher stand: Zusammenfassung der vorigen Szene und der Ort der Spielerfigur am Ende (nur mit Spielbuch). */
+    private fun previousBlock(setup: RoleplaySetup, previous: Int?, german: Boolean): String? {
+        if (previous == null || previous !in setup.scenes.indices) return null
+        val place = setup.book?.scenes?.getOrNull(previous)?.place?.takeIf { it.isNotBlank() }
+        return buildString {
+            append(if (german) "VORHER (${setup.scenes[previous].title}): ${setup.plotOf(previous, 400)}\n" else "BEFORE (${setup.scenes[previous].title}): ${setup.plotOf(previous, 400)}\n")
+            if (place != null) append(if (german) "ORT DER SPIELERFIGUR ZU BEGINN: $place\n" else "THE PLAYER CHARACTER'S PLACE AT THE START: $place\n")
+            append('\n')
         }
     }
 
@@ -230,7 +249,7 @@ object RoleplayPrompt {
             append("Zuletzt erzählt:\n${lastReply.trim().takeLast(700)}\n\n")
             if (next != null) append("Danach folgt (Handlung des Buches):\n$nextPlot …\n\n")
             append("Schlage der Spielerfigur ${if (setup.player.isBlank()) "(dem Ich-Erzähler)" else setup.player} jetzt Entscheidungen vor, jeweils ein Satz in der Ich-Form der Spielerfigur, passend zur Situation:\n")
-            append("STORY: eine Entscheidung, die der Handlung des Buches folgt\n")
+            append("STORY: eine Entscheidung, die der Handlung des Buches folgt: nenne nur die Richtung oder Handlung, mit der die nächste Szene beginnt (zum Beispiel „Ich gehe die Treppe weiter hinauf.“), nie ihr Ergebnis und nichts, was erst später enthüllt wird\n")
             append("RISIKO: eine Entscheidung, die von der Handlung abweicht und gefährlich werden kann (Verletzung oder Tod)\n")
             append("UMWEG: eine Variante, die anders verläuft, aber zur Handlung zurückführt\n")
             if (cast.isNotEmpty()) append("Wirkt eine Entscheidung auf das Verhältnis zu einer Hauptfigur ($cast), hänge ans Zeilenende [Name +1] oder [Name -1].\n")
@@ -240,7 +259,7 @@ object RoleplayPrompt {
             append("Last told:\n${lastReply.trim().takeLast(700)}\n\n")
             if (next != null) append("What follows (plot of the book):\n$nextPlot …\n\n")
             append("Now propose decisions to the player's character ${if (setup.player.isBlank()) "(the first-person narrator)" else setup.player}, each one sentence in the first person of the player's character, fitting the situation:\n")
-            append("STORY: a decision that follows the plot of the book\n")
+            append("STORY: a decision that follows the plot of the book: name only the direction or action the next scene begins with (for example \"I go on up the stairs.\"), never its result and nothing that is revealed later\n")
             append("RISK: a decision that departs from the plot and can become dangerous (injury or death)\n")
             append("DETOUR: a variant that goes differently but leads back to the plot\n")
             if (cast.isNotEmpty()) append("If a decision affects the relationship with a main character ($cast), append [Name +1] or [Name -1] at the end of the line.\n")
@@ -315,9 +334,9 @@ object RoleplayPrompt {
     }
 
     /** Der Spielleiter als Companion ([Persona.promptOverride] ersetzt den gewohnten System-Prompt). */
-    fun persona(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = ""): Persona = Persona(
+    fun persona(setup: RoleplaySetup, index: Int, closing: Boolean, solo: SoloState? = null, outcome: String = "", previous: Int? = null): Persona = Persona(
         id = "roleplay", name = if (setup.german) "Spielleiter" else "Game master",
         description = "Rollenspiel nach dem Buch ${setup.title}", language = if (setup.german) "Deutsch" else "English",
-        promptOverride = system(setup, index, closing, solo, outcome),
+        promptOverride = system(setup, index, closing, solo, outcome, previous),
     )
 }
