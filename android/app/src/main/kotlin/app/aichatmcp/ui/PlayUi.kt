@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
@@ -18,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -73,8 +75,8 @@ fun PlayScreen(
         }
         when {
             run != null -> RunningGame(vm, onStarted)
+            vm.loadedGamebook != null -> GamebookSetup(vm, vm.loadedGamebook!!, onSaveGamebook, onStarted) // auch bei geladenem Buch: ein geladenes Spielbuch geht vor
             vm.docBusy -> WaitText(t("Reading the file", "Lese die Datei"))
-            doc == null && vm.loadedGamebook != null -> GamebookSetup(vm, vm.loadedGamebook!!, onSaveGamebook, onStarted)
             doc == null -> {
                 Button(onClick = onLoad, modifier = Modifier.fillMaxWidth()) { Text(t("Load a book…", "Buch laden…")) }
                 OutlinedButton(onClick = onLoadGamebook, modifier = Modifier.fillMaxWidth()) { Text(t("Load a saved game book (.json)…", "Gespeichertes Spielbuch laden (.json)…")) }
@@ -219,6 +221,25 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
     // Der Zustand liest den Speicher und zerlegt das Buch: im Hintergrund, nicht bei jedem Zeichnen im Hauptthread (sonst ruckelt die Anzeige und die Karte erscheint spät)
     val loaded by produceState<GamebookState?>(null, doc, vm.prepBusy, vm.prepDone) { value = withContext(Dispatchers.Default) { vm.gamebookState(doc) } }
     val state = loaded
+    // Ist die Vorbereitung gerade fertig geworden, wird angeboten, das Spielbuch neben dem Buch zu speichern: im App-Speicher kommt man von außen nicht heran
+    var wasBusy by remember { mutableStateOf(false) }
+    var offerSave by remember { mutableStateOf(false) }
+    LaunchedEffect(vm.prepBusy, state?.ready) {
+        if (wasBusy && !vm.prepBusy && state?.ready == true) offerSave = true
+        wasBusy = vm.prepBusy
+    }
+    if (offerSave) {
+        AlertDialog(
+            onDismissRequest = { offerSave = false },
+            title = { Text(t("Game book ready", "Spielbuch fertig")) },
+            text = {
+                Text(t("It is kept inside the app, where you cannot reach it from outside. Save it as a file now? The dialog opens at the folder of the book.",
+                    "Es liegt im Speicher der App, den du von außen nicht erreichst. Jetzt als Datei speichern? Der Dialog öffnet sich im Ordner des Buches."))
+            },
+            confirmButton = { TextButton(onClick = { offerSave = false; vm.gamebookJson(doc)?.let { onSaveGamebook(doc.name.substringBeforeLast('.') + ".gamebook.json", it) } }) { Text(t("Save…", "Speichern…")) } },
+            dismissButton = { TextButton(onClick = { offerSave = false }) { Text(t("Later", "Später")) } },
+        )
+    }
     if (state == null) {
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { WaitText(t("Checking the game book", "Prüfe das Spielbuch"), MaterialTheme.typography.bodyMedium) } }
         return
@@ -264,7 +285,7 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
                         )
                     }
                     Text(
-                        t("You can save the game book as a file, edit it by hand (summaries, places, decisions) and load it again.", "Du kannst das Spielbuch als Datei speichern, von Hand ändern (Zusammenfassungen, Orte, Entscheidungen) und wieder einlesen."),
+                        t("The game book is kept inside the app. Save it as a file next to the book, edit it by hand (summaries, places, decisions) and load it again.", "Das Spielbuch liegt im Speicher der App. Speichere es als Datei neben dem Buch, ändere es von Hand (Zusammenfassungen, Orte, Entscheidungen) und lies es wieder ein."),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
                     )
                     GamebookFileButtons(onLoadGamebook) { vm.gamebookJson(doc)?.let { onSaveGamebook(doc.name.substringBeforeLast('.') + ".gamebook.json", it) } }
@@ -332,9 +353,16 @@ private fun GamebookSetup(vm: ChatViewModel, book: Gamebook, onSaveGamebook: (fi
             vm.startGamebook(book, choice.playerName, choice.asFirstPerson, choice.names)
             onStarted()
         },
-        enabled = book.scenes.isNotEmpty() && !vm.streaming,
+        enabled = Gamebooks.playable(book) && !vm.streaming,
         modifier = Modifier.fillMaxWidth(),
     ) { Text(t("Start the game", "Spiel starten")) }
+    if (!Gamebooks.playable(book)) {
+        Text(
+            t("This game book is incomplete: ${Gamebooks.missingScenes(book)} scene(s) have no summary or entry yet. Prepare it first with the book (it continues where it stopped), or fill the fields in the file.",
+                "Dieses Spielbuch ist unvollständig: Bei ${Gamebooks.missingScenes(book)} Szene(n) fehlen Zusammenfassung oder Eingang. Bereite es zuerst mit dem Buch weiter vor (es macht dort weiter) oder fülle die Felder in der Datei."),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+        )
+    }
     GamebookFileButtons({ vm.closeLoadedGamebook() }, { onSaveGamebook(book.title.ifBlank { "gamebook" } + ".gamebook.json", vm.gamebookJson(book)) })
     TextButton(onClick = vm::closeLoadedGamebook) { Text(t("Close", "Schließen")) }
 }

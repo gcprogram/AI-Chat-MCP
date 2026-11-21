@@ -549,7 +549,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 pendingDoc = null
                 pendingImage = null
                 when (loaded) {
-                    is LoadedDoc -> showDocument(loaded.doc, uri.toString())
+                    is LoadedDoc -> {
+                        showDocument(loaded.doc, uri.toString())
+                        rememberBookLocation(uri.toString())
+                    }
                     is LoadedImage -> {
                         pendingImage = PendingImage(loaded.name, loaded.jpeg)
                         status = "Bild geladen: ${loaded.name}"
@@ -1641,7 +1644,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (streaming) return
         // Ein fertig vorbereitetes Spielbuch (auch ein eingelesenes, von Hand geändertes) hat Vorrang: Zusammenfassungen und Entscheidungen sind schon da
         val key = Summaries.key(doc.name, doc.text)
-        val prepared = if (solo) storage.loadGamebook(key)?.takeIf { Gamebooks.ready(it) } else null
+        val prepared = if (solo) storage.loadGamebook(key)?.takeIf { Gamebooks.playable(it) } else null
         if (prepared != null) {
             dismissDoc()
             startGamebook(prepared, player, firstPerson, characters.ifEmpty { prepared.characters })
@@ -1744,6 +1747,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var prepJob: Job? = null
     private val prepTimes = mutableListOf<Long>()
+
+    /** Wo das Buch zuletzt geladen wurde (Adresse der Datei): Dort öffnen sich die Dialoge zum Speichern und Laden eines Spielbuchs, damit es neben dem Buch liegt. */
+    var bookLocation by mutableStateOf(runCatching { getApplication<Application>().getSharedPreferences("gamebook_timing", android.content.Context.MODE_PRIVATE).getString("book_uri", "").orEmpty() }.getOrDefault(""))
+        private set
+
+    private fun rememberBookLocation(uri: String) {
+        bookLocation = uri
+        runCatching { timingPrefs().edit().putString("book_uri", uri).apply() }
+    }
 
     /** Ein von Hand geladenes Spielbuch (JSON), mit dem ohne Buchtext gespielt werden kann. */
     var loadedGamebook by mutableStateOf<Gamebook?>(null)

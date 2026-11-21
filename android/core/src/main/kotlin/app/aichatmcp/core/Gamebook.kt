@@ -121,6 +121,15 @@ object Gamebooks {
 
     fun ready(book: Gamebook): Boolean = book.scenes.isNotEmpty() && requests(book) == 0
 
+    /**
+     * Lässt sich mit dem Spielbuch spielen? Jede Szene braucht Zusammenfassung und Eingang; die Stränge sind freiwillig (ohne sie gibt es nur Handlung/Risiko/Umweg).
+     * Gilt auch für ein von Hand geschriebenes oder halb fertiges Buch ohne Stränge.
+     */
+    fun playable(book: Gamebook): Boolean = book.scenes.isNotEmpty() && book.scenes.all { sceneDone(it) }
+
+    /** Wie viele Szenen noch keine Zusammenfassung oder keinen Eingang haben (für die Meldung bei einem unvollständigen Spielbuch). */
+    fun missingScenes(book: Gamebook): Int = book.scenes.count { !sceneDone(it) }
+
     /** Die Handlungsstränge in der Reihenfolge ihres ersten Auftretens. */
     fun threadNames(book: Gamebook): List<String> = book.scenes.map { it.thread }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }
 

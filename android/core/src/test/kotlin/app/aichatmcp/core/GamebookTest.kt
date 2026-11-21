@@ -221,6 +221,17 @@ class GamebookTest {
     }
 
     @Test
+    fun aBookWithoutThreadsOrWithFewGapsIsPlayableOnlyWhenEverySceneHasPlotAndEntry() {
+        val full = Gamebook(key = "k", title = "T", scenes = listOf(GbScene("S1", plot = "P1", enter = "Ich gehe."), GbScene("S2", plot = "P2", enter = "Ich öffne.")))
+        assertTrue(Gamebooks.playable(full)) // von Hand geschrieben, ohne Stränge: spielbar (nur ohne Strang-Wahl)
+        assertFalse(Gamebooks.ready(full)) // "fertig vorbereitet" meint auch die Stränge
+        val partial = full.copy(scenes = full.scenes + GbScene("S3"))
+        assertFalse(Gamebooks.playable(partial))
+        assertEquals(1, Gamebooks.missingScenes(partial))
+        assertFalse(Gamebooks.playable(full.copy(scenes = emptyList())))
+    }
+
+    @Test
     fun theNarratorKnowsWhereThePreviousSceneEnded() {
         val book = Gamebook(
             key = "k", title = "T",
