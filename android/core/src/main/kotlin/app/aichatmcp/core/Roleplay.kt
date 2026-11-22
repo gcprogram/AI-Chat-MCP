@@ -98,6 +98,7 @@ object BookCast {
         val text = fullText.take(300_000) // die Namen kommen früh und oft vor: ein Ausschnitt genügt und hält die Wartezeit kurz
         val word = Regex("""\p{Lu}[\p{L}'’-]{2,}""")
         val counts = HashMap<String, Int>()
+        val withArticle = HashMap<String, Int>() // wie oft ein Artikel davorsteht: Namen haben selten einen, Hauptwörter (der Geist, die Tür, das Haus) fast immer
         val lower = HashSet<String>()
         Regex("""\p{Ll}[\p{L}'’-]{2,}""").findAll(text).forEach { lower += it.value.lowercase() }
         for (m in word.findAll(text)) {
@@ -108,9 +109,18 @@ object BookCast {
             val before = if (i >= 0) text[i] else '\n'
             if (before in ".!?\n\"„“»«:…" ) continue // Satzanfang: sagt nichts über Namen
             counts[w] = (counts[w] ?: 0) + 1
+            var start = i
+            while (start >= 0 && text[start].isLetter()) start--
+            if (text.substring(start + 1, i + 1).lowercase() in ARTICLES) withArticle[w] = (withArticle[w] ?: 0) + 1
         }
-        return counts.filter { it.value >= 3 }.entries.sortedByDescending { it.value }.take(max).map { it.key }
+        return counts.filter { it.value >= 3 && (withArticle[it.key] ?: 0) * 10 < it.value * 3 }.entries.sortedByDescending { it.value }.take(max).map { it.key }
     }
+
+    private val ARTICLES = setOf(
+        "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "eines", "im", "am", "vom", "zum", "zur", "beim", "ins", "ans", "durchs",
+        "mein", "meine", "meinen", "meinem", "meiner", "dein", "deine", "deinen", "sein", "seine", "seinen", "seinem", "seiner", "ihre", "ihren", "ihrem", "ihrer", "unser", "unsere",
+        "kein", "keine", "keinen", "jeden", "jede", "jeder", "dieser", "diese", "dieses", "diesen", "the", "a", "an", "his", "her", "their", "our", "your", "my",
+    )
 
     fun filterPrompt(candidates: List<String>, german: Boolean): List<WireMessage> = listOf(
         WireMessage(
@@ -128,10 +138,13 @@ object BookCast {
 
     /** Erzählt das Buch in der Ich-Form? ("ich" kommt deutlich häufiger vor als "er"/"sie"; Reden in Anführungszeichen zählen nicht.) */
     fun firstPerson(text: String): Boolean {
-        val sample = text.take(30000).replace(Regex("""["„“»][^"“”«]{0,300}["“”«]"""), " ")
+        // Titelseite und Vorspann überspringen (bei langen Büchern); Reden in Anführungszeichen zählen nicht
+        val body = if (text.length > 20000) text.drop(3000) else text
+        val sample = body.take(60000).replace(Regex("""["„“»][^"“”«]{0,300}["“”«]"""), " ")
         val ich = Regex("""(?i)\b(ich|mir|mich|meine[nrms]?|i|my|me)\b""").findAll(sample).count()
         val third = Regex("""(?i)\b(er|sie|ihm|ihn|ihr|seine[nrms]?|he|she|him|his|her)\b""").findAll(sample).count()
-        return ich > 20 && ich >= third * 1.5
+        // ein Ich-Erzähler spricht auch über andere ("er sagte"): schon ein halb so häufiges "ich" wie "er/sie" genügt, im Dritte-Person-Buch kommt "ich" nur in Reden vor (herausgerechnet)
+        return ich > 30 && ich >= third * 0.5
     }
 }
 

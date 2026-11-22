@@ -41,10 +41,24 @@ class RoleplayTest {
     }
 
     @Test
+    fun nounsWithAnArticleAreNotNames() {
+        // "der Geist", "die Tür", "das Haus" stehen mit Artikel; Namen fast nie
+        val text = ("Dann öffnete Lockwood die Tür und sah den Geist. Wir betraten das Haus, und Lockwood zeigte auf den Geist in der Tür. " +
+            "Später fragte George im Haus nach dem Geist, während Lockwood die Tür schloss. George sagte, das Haus sei kalt. ").repeat(3)
+        val names = BookCast.candidates(text)
+        assertTrue("Lockwood" in names && "George" in names, names.toString())
+        assertFalse("Geist" in names || "Tür" in names || "Haus" in names, names.toString())
+    }
+
+    @Test
     fun detectsFirstPersonNarration() {
         assertTrue(BookCast.firstPerson("Ich ging nach Hause und mein Hund folgte mir. ".repeat(40)))
         assertFalse(BookCast.firstPerson("Er ging nach Hause und sein Hund folgte ihm. Sie lachte. ".repeat(40)))
         assertFalse(BookCast.firstPerson("Er sagte: \"Ich gehe heim, mir ist kalt.\" Sie antwortete: \"Ich bleibe.\" Er ging. ".repeat(30)))
+        // ein Ich-Erzähler, der viel über andere spricht (wie Lucy über Lockwood), ist trotzdem ein Ich-Erzähler
+        assertTrue(BookCast.firstPerson("Ich sah Lockwood an. Er lächelte und sagte nichts. Sie, die Kundin, wartete. Mir wurde kalt, ich zog meinen Mantel enger. ".repeat(30)))
+        // Titelseite vorweg zählt nicht
+        assertTrue(BookCast.firstPerson("Der Verlag und seine Autoren, er und sie. ".repeat(100) + "Ich ging hinein, mir war kalt und ich wartete. ".repeat(400)))
     }
 
     @Test

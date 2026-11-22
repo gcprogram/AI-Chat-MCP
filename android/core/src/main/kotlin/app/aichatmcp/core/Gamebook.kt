@@ -110,25 +110,53 @@ object Gamebooks {
     /** Passt [book] zu diesen Szenen (gleiche Zahl und Titel), sodass eine unterbrochene Vorbereitung dort weitermachen kann? */
     fun compatible(book: Gamebook, scenes: List<Scene>): Boolean = book.scenes.size == scenes.size && book.scenes.indices.all { book.scenes[it].title == scenes[it].title }
 
-    fun sceneDone(s: GbScene): Boolean = s.plot.isNotBlank() && s.enter.isNotBlank()
+    /**
+     * Ist die Karte der Szene fertig? Zusammenfassung, Eingang und Ort müssen da sein: Eine Notlösung (Anfang des Buchtextes statt Zusammenfassung, weil das Modell das Format
+     * nicht eingehalten hat) hat keinen Ort und wird bei der nächsten Vorbereitung erneut erzeugt.
+     */
+    fun sceneDone(s: GbScene): Boolean = s.plot.isNotBlank() && s.enter.isNotBlank() && s.place.isNotBlank()
+
+    private val ENGLISH = Regex("""(?i)\b(the|and|of|to|with|is|are|she|her|his|they|that|from)\b""")
+    private val GERMAN = Regex("""(?i)\b(der|die|das|und|nicht|ist|mit|sich|ein|eine|zu|den|sie|er|von)\b""")
+
+    /**
+     * Ist die Karte in der falschen Sprache geschrieben? Das Modell antwortet bei einer englischen Anweisung manchmal englisch, obwohl das Buch deutsch ist (die Entscheidungen
+     * stünden dann englisch im deutschen Spiel). Erkannt wird nur Deutsch gegen Englisch; andere Sprachen werden nicht geprüft.
+     */
+    fun wrongLanguage(s: GbScene, language: String): Boolean {
+        val text = s.plot + " " + s.enter + " " + s.risk + " " + s.detour
+        val en = ENGLISH.findAll(text).count()
+        val de = GERMAN.findAll(text).count()
+        return when {
+            language.startsWith("Deu", ignoreCase = true) -> en >= 3 && en > de * 2
+            language.startsWith("Eng", ignoreCase = true) -> de >= 3 && de > en * 2
+            else -> false
+        }
+    }
+
+    /** Ist die Karte der Szene [i] fertig und in der Sprache des Buches? Sonst wird sie bei der nächsten Vorbereitung erneut erzeugt. */
+    fun cardDone(book: Gamebook, i: Int): Boolean = sceneDone(book.scenes[i]) && !wrongLanguage(book.scenes[i], book.language)
 
     fun batches(count: Int): Int = (count + BATCH - 1) / BATCH
 
     private fun batchDone(b: Int, book: Gamebook): Boolean = (b * BATCH until minOf(book.scenes.size, (b + 1) * BATCH)).all { book.scenes[it].thread.isNotBlank() }
 
     /** Wie viele Anfragen noch fehlen: eine je Szene ohne Karte und eine je Gruppe von Szenen ohne Strang. */
-    fun requests(book: Gamebook): Int = book.scenes.count { !sceneDone(it) } + (0 until batches(book.scenes.size)).count { !batchDone(it, book) }
+    fun requests(book: Gamebook): Int = book.scenes.indices.count { !cardDone(book, it) } + (0 until batches(book.scenes.size)).count { !batchDone(it, book) }
 
     fun ready(book: Gamebook): Boolean = book.scenes.isNotEmpty() && requests(book) == 0
 
     /**
-     * Lässt sich mit dem Spielbuch spielen? Jede Szene braucht Zusammenfassung und Eingang; die Stränge sind freiwillig (ohne sie gibt es nur Handlung/Risiko/Umweg).
-     * Gilt auch für ein von Hand geschriebenes oder halb fertiges Buch ohne Stränge.
+     * Lässt sich mit dem Spielbuch spielen? Jede Szene braucht eine Zusammenfassung; fehlen Eingang, Ort oder Alternativen, gibt es dort "Weiter." und nur die Handlung.
+     * Die Stränge sind freiwillig. Gilt auch für ein von Hand geschriebenes oder halb fertiges Buch.
      */
-    fun playable(book: Gamebook): Boolean = book.scenes.isNotEmpty() && book.scenes.all { sceneDone(it) }
+    fun playable(book: Gamebook): Boolean = book.scenes.isNotEmpty() && book.scenes.all { it.plot.isNotBlank() }
 
-    /** Wie viele Szenen noch keine Zusammenfassung oder keinen Eingang haben (für die Meldung bei einem unvollständigen Spielbuch). */
-    fun missingScenes(book: Gamebook): Int = book.scenes.count { !sceneDone(it) }
+    /** Wie viele Szenen noch keine Zusammenfassung haben (für die Meldung bei einem unvollständigen Spielbuch). */
+    fun missingScenes(book: Gamebook): Int = book.scenes.count { it.plot.isBlank() }
+
+    /** Wie viele Szenen nur eine Notlösung haben (Anfang des Buchtextes statt Karte): eine neue Vorbereitung erzeugt sie erneut. */
+    fun roughScenes(book: Gamebook): Int = book.scenes.indices.count { book.scenes[it].plot.isNotBlank() && !cardDone(book, it) }
 
     /** Die Handlungsstränge in der Reihenfolge ihres ersten Auftretens. */
     fun threadNames(book: Gamebook): List<String> = book.scenes.map { it.thread }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }
@@ -142,19 +170,32 @@ object Gamebooks {
      */
     fun cardPrompt(book: String, scene: Scene, next: Scene?, language: String): List<WireMessage> {
         val nextBlock = next?.let { "\n\nNEXT (the beginning of the following passage):\n${it.text.trim().take(NEXT_CHARS)}" }.orEmpty()
-        val lastLines = if (next != null) {
-            "RISK: one sentence in the first person: a different, bolder or dangerous action the main character could take at the END of the passage instead of continuing with NEXT. It must be possible from exactly the place named in PLACE (no jumping to other floors, rooms far away or buildings; at most one step or one door away).\n" +
-                "DETOUR: one sentence in the first person: a different, harmless action, also possible from the place named in PLACE, that still leads on towards NEXT."
-        } else "RISK: -\nDETOUR: -"
+        val german = language.startsWith("Deu", ignoreCase = true)
+        // Die Anweisung ist englisch (kleine Modelle folgen ihr besser), die Vorlage der Werte steht in der Sprache des Buches: sonst antwortet ein Modell trotz "in Deutsch" englisch.
+        // Jede Zeile beginnt mit ihrer Beschriftung; ohne diese Vorgabe ließ das 8B die Beschriftungen weg (die App liest das zur Not an der Reihenfolge, aber besser ist es richtig).
+        val template = if (german) {
+            "SUMMARY: <Zusammenfassung in 3 bis 5 Sätzen: wer handelt, was geschieht, welche Orte und Wendepunkte; nur der Inhalt der Passage, nichts erfinden>\n" +
+                "PLACE: <Ort der Hauptfigur am ENDE der Passage (Gebäude, Stockwerk, Raum oder Ort im Freien), in wenigen Worten>\n" +
+                "ENTER: <ein kurzer Satz in der Ich-Form: die Richtung oder Handlung der Hauptfigur am ANFANG der Passage, zum Beispiel \"Ich gehe weiter die Treppe hinauf.\", wenn die Figur den Fuß auf die nächste Stufe setzt; nur die Bewegung oder Handlung selbst, nie ihr Ergebnis, nichts, was erst später in der Passage enthüllt wird, und keine Namen von Personen, die die Figur noch nicht kennt>\n" +
+                (if (next != null) {
+                    "RISK: <ein Satz in der Ich-Form: eine andere, mutigere oder gefährliche Handlung am ENDE der Passage statt des Weitergehens mit NEXT; sie muss von genau dem Ort in PLACE aus möglich sein (kein Sprung in andere Stockwerke, entfernte Räume oder Gebäude; höchstens einen Schritt oder eine Tür weit)>\n" +
+                        "DETOUR: <ein Satz in der Ich-Form: eine andere, harmlose Handlung, ebenfalls vom Ort in PLACE aus möglich, die trotzdem zu NEXT hinführt>\n"
+                } else "RISK: -\nDETOUR: -\n")
+        } else {
+            "SUMMARY: <3 to 5 sentences in $language: who acts, what happens, which places and turning points; use only the passage and invent nothing>\n" +
+                "PLACE: <where the main character is at the END of the passage (building, floor or level, room, or outdoor place), in a few words>\n" +
+                "ENTER: <one short sentence in the first person (\"I ...\") naming the direction or action the main character takes at the BEGINNING of the passage, for example \"I go on up the stairs.\" when the text says the character sets a foot on the next step; name only the movement or action itself: never its result, nothing that is revealed later in the passage, and no names of people the character has not met yet>\n" +
+                (if (next != null) {
+                    "RISK: <one sentence in the first person: a different, bolder or dangerous action the main character could take at the END of the passage instead of continuing with NEXT; it must be possible from exactly the place named in PLACE (no jumping to other floors, rooms far away or buildings; at most one step or one door away)>\n" +
+                        "DETOUR: <one sentence in the first person: a different, harmless action, also possible from the place named in PLACE, that still leads on towards NEXT>\n"
+                } else "RISK: -\nDETOUR: -\n")
+        }
         return listOf(
             WireMessage(
                 "user",
-                "You prepare a solo gamebook (choose your path) from the novel \"$book\". Read the PASSAGE and write exactly these lines, one value per line, in $language, nothing else:\n" +
-                    "SUMMARY: 3 to 5 sentences: who acts, what happens, which places and turning points. Use only the passage and invent nothing.\n" +
-                    "PLACE: where the main character is at the END of the passage (building, floor or level, room, or outdoor place), in a few words.\n" +
-                    "ENTER: one short sentence in the first person (\"I ...\") naming the direction or action the main character takes at the BEGINNING of the passage, for example \"I go on up the stairs.\" when the text says the character sets a foot on the next step. " +
-                    "Name only the movement or action itself: never its result, nothing that is revealed later in the passage, and no names of people the character has not met yet.\n" +
-                    lastLines + "\n\nPASSAGE (${scene.title}):\n${scene.text.trim().take(PASSAGE_CHARS)}$nextBlock",
+                "You prepare a solo gamebook (choose your path) from the novel \"$book\". Read the PASSAGE and answer in exactly this format: five lines, each starting with its label:\n" + template +
+                    "Every value must be written in $language, never in another language. Begin every line with SUMMARY:, PLACE:, ENTER:, RISK: or DETOUR:, and write nothing before or after.\n\n" +
+                    "PASSAGE (${scene.title}):\n${scene.text.trim().take(PASSAGE_CHARS)}$nextBlock",
             ),
         )
     }
@@ -163,9 +204,19 @@ object Gamebooks {
 
     private fun tidy(s: String): String = s.replace("**", "").replace(Regex("""\s+"""), " ").trim().trim('"', '„', '“', '”', '»', '«', '*', '_', ' ')
 
-    /** Liest die Antwort zur Karte; fehlende Zeilen bleiben leer, "-" gilt als leer. */
+    /**
+     * Liest die Antwort zur Karte; fehlende Zeilen bleiben leer, "-" gilt als leer. Schreibt das Modell die fünf Zeilen ohne Beschriftung (das tat das 8B), gilt die Reihenfolge:
+     * die letzten vier Zeilen sind Ort, Eingang, Risiko, Umweg, alles davor die Zusammenfassung.
+     */
     fun parseCard(answer: String): Card {
         val matches = LABEL.findAll(answer).toList()
+        if (matches.isEmpty()) {
+            val lines = answer.lines().map { tidy(it) }.filter { it.isNotEmpty() }
+            if (lines.size < 5) return Card("", "", "", "", "")
+            val tail = lines.takeLast(4).map { if (it == "-") "" else it }
+            val first = lines.dropLast(4).joinToString(" ")
+            return Card(first, tail[0].take(120), tail[1], tail[2], tail[3])
+        }
         val values = HashMap<String, String>()
         for ((i, m) in matches.withIndex()) {
             val end = if (i + 1 < matches.size) matches[i + 1].range.first else answer.length
@@ -235,9 +286,10 @@ object Gamebooks {
         var done = 0
         val lock = Mutex()
         val german = book.language.startsWith("Deu", ignoreCase = true)
-        suspend fun call(prompt: List<WireMessage>, maxTokens: Int, what: String): String {
+        suspend fun call(prompt: List<WireMessage>, maxTokens: Int, what: String, plain: Boolean = false): String {
             onProgress(done.coerceAtMost(total), total, what)
-            val answer = ask(prompt, maxTokens)?.let(Summaries::clean).orEmpty()
+            // Karten nicht mit der Bereinigung für Zusammenfassungen lesen: sie würde eine Zeile "SUMMARY:" ohne Wert entfernen
+            val answer = ask(prompt, maxTokens)?.let { if (plain) it.trim() else Summaries.clean(it) }.orEmpty()
             if (answer.isBlank()) {
                 currentCoroutineContext().ensureActive() // ein Abbruch ist keine Fehlermeldung des Modells
                 throw SummaryException("Das Modell hat nicht geantwortet.")
@@ -247,10 +299,11 @@ object Gamebooks {
         suspend fun doCard(i: Int) {
             val scene = scenes[i]
             val prompt = cardPrompt(book.title, scene, scenes.getOrNull(i + 1), book.language)
-            var card = parseCard(call(prompt, 380, scene.title))
-            if (card.summary.isBlank()) card = parseCard(call(prompt, 380, scene.title)) // das Format fehlt: ein zweiter Versuch
+            var card = parseCard(call(prompt, 380, scene.title, plain = true))
+            if (card.summary.isBlank()) card = parseCard(call(prompt, 380, scene.title, plain = true)) // das Format fehlt: ein zweiter Versuch
+            // Notlösung (auch beim zweiten Mal kein Format): Anfang des Buchtextes, ohne Ort; die nächste Vorbereitung erzeugt die Karte erneut
             val summary = card.summary.ifBlank { scene.text.trim().take(300) }
-            val enter = card.enter.ifBlank { if (german) "Weiter." else "Continue." }
+            val enter = card.enter
             lock.withLock {
                 book = book.copy(scenes = book.scenes.toMutableList().also { it[i] = it[i].copy(plot = summary, place = card.place, enter = enter, risk = card.risk, detour = card.detour) })
                 done++
@@ -258,7 +311,7 @@ object Gamebooks {
                 onData(book)
             }
         }
-        val pending = scenes.indices.filter { !sceneDone(book.scenes[it]) }
+        val pending = scenes.indices.filter { !cardDone(book, it) }
         if (parallel <= 1) pending.forEach { doCard(it) }
         else coroutineScope {
             val permits = Semaphore(parallel)

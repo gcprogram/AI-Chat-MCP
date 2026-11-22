@@ -1644,7 +1644,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (streaming) return
         // Ein fertig vorbereitetes Spielbuch (auch ein eingelesenes, von Hand geändertes) hat Vorrang: Zusammenfassungen und Entscheidungen sind schon da
         val key = Summaries.key(doc.name, doc.text)
-        val prepared = if (solo) storage.loadGamebook(key)?.takeIf { Gamebooks.playable(it) } else null
+        // ein Spielbuch mit Notlösungen (Karten, bei denen das Modell das Format nicht einhielt) wird nicht benutzt: die Zusammenfassung je Szene beim Spielen ist besser als der Anfang des Buchtextes
+        val prepared = if (solo) storage.loadGamebook(key)?.takeIf { Gamebooks.playable(it) && Gamebooks.roughScenes(it) == 0 } else null
         if (prepared != null) {
             dismissDoc()
             startGamebook(prepared, player, firstPerson, characters.ifEmpty { prepared.characters })

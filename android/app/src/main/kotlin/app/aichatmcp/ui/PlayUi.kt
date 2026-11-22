@@ -363,6 +363,13 @@ private fun GamebookSetup(vm: ChatViewModel, book: Gamebook, onSaveGamebook: (fi
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
         )
     }
+    if (Gamebooks.roughScenes(book) > 0) {
+        Text(
+            t("${Gamebooks.roughScenes(book)} scene(s) only have a rough note (the beginning of the book text): the game works, but those scenes get no ready-made decisions. Prepare the book again to fill them in.",
+                "${Gamebooks.roughScenes(book)} Szene(n) haben nur eine Notlösung (Anfang des Buchtextes): Das Spiel läuft, aber dort gibt es keine fertigen Entscheidungen. Bereite das Buch erneut vor, um sie zu füllen."),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+        )
+    }
     GamebookFileButtons({ vm.closeLoadedGamebook() }, { onSaveGamebook(book.title.ifBlank { "gamebook" } + ".gamebook.json", vm.gamebookJson(book)) })
     TextButton(onClick = vm::closeLoadedGamebook) { Text(t("Close", "Schließen")) }
 }

@@ -54,7 +54,7 @@ class GamebookTest {
         assertEquals("", book.scenes[22].risk)
         assertTrue(book.scenes[21].risk.isNotBlank())
         // die Anfrage nennt die Regeln: Richtung statt Ergebnis, Alternativen vom Ort aus
-        assertTrue("never its result" in model.seen.first() && "exactly the place named in PLACE" in model.seen.first())
+        assertTrue("nie ihr Ergebnis" in model.seen.first() && "genau dem Ort in PLACE" in model.seen.first() && "SUMMARY:" in model.seen.first())
         // der Anfang der nächsten Szene steht als NEXT in der Anfrage
         assertTrue("NEXT" in model.seen.first() && "Text der Szene 2." in model.seen.first())
     }
@@ -121,8 +121,11 @@ class GamebookTest {
         val book = Gamebooks.prepare(sc, skeleton(3), model::ask)
         assertEquals(4, n) // zwei Szenen ohne Format, je zwei Versuche (die letzte Szene hat ein eigenes Muster)
         assertTrue(book.scenes[0].plot.startsWith("Text der Szene 1."))
-        assertEquals("Weiter.", book.scenes[0].enter)
-        assertTrue(Gamebooks.ready(book.copy(scenes = book.scenes.map { it.copy(thread = "A") })))
+        assertEquals("", book.scenes[0].enter) // Notlösung: kein Eingang, kein Ort
+        assertFalse(Gamebooks.sceneDone(book.scenes[0]))
+        assertEquals(2, Gamebooks.roughScenes(book)) // die nächste Vorbereitung erzeugt diese Karten erneut
+        assertEquals(2, Gamebooks.requests(book.copy(scenes = book.scenes.map { it.copy(thread = "A") })))
+        assertTrue(Gamebooks.playable(book)) // spielbar, aber nur mit der Handlung und "Weiter."
     }
 
     @Test
@@ -137,6 +140,57 @@ class GamebookTest {
         // zu lange Zeilen werden am Satzende gekürzt
         val long = Gamebooks.parseCard("ENTER: Ich gehe hinauf und dann weiter. " + "Das Ergebnis ist ein langer Text. ".repeat(20))
         assertEquals("Ich gehe hinauf und dann weiter.", long.enter)
+    }
+
+    @Test
+    fun aCardInTheWrongLanguageIsPreparedAgain() {
+        val german = GbScene("S1", plot = "Lucy steigt die Treppe hinauf und hört einen Schrei aus dem Keller.", place = "Treppe", enter = "Ich gehe weiter.", risk = "Ich öffne die Tür.", detour = "Ich warte.")
+        val english = GbScene("S2", plot = "The main character and Lockwood investigate a wall in the study, suspecting that it hides something.", place = "Study", enter = "I examine the books on the shelves.", risk = "I open the bag at once.", detour = "I listen to the wall.")
+        val book = Gamebook(key = "k", title = "T", language = "Deutsch", scenes = listOf(german, english))
+        assertFalse(Gamebooks.wrongLanguage(german, "Deutsch"))
+        assertTrue(Gamebooks.wrongLanguage(english, "Deutsch"))
+        assertFalse(Gamebooks.wrongLanguage(english, "English"))
+        assertTrue(Gamebooks.wrongLanguage(german, "English"))
+        assertFalse(Gamebooks.wrongLanguage(english, "Français")) // andere Sprachen werden nicht geprüft
+        assertTrue(Gamebooks.cardDone(book, 0))
+        assertFalse(Gamebooks.cardDone(book, 1))
+        assertEquals(1, Gamebooks.roughScenes(book))
+        assertEquals(1 + 1, Gamebooks.requests(book)) // eine Karte und eine Gruppe für die Stränge
+        // kurze deutsche Sätze mit einzelnen englischen Namen oder Wörtern gelten nicht als Englisch
+        assertFalse(Gamebooks.wrongLanguage(GbScene("S", plot = "Lockwood & Co. untersucht den Fall; der Sprecher und Mrs Hope reden über the Ghost Lamp.", place = "Küche"), "Deutsch"))
+    }
+
+    @Test
+    fun aCardWithoutLabelsIsReadByOrder() {
+        // so schrieb das 8B die Karte: fünf Zeilen ohne Beschriftung (Zusammenfassung zuerst, dann Ort, Eingang, Risiko, Umweg)
+        val answer = "Lena setzt vorsichtig einen Fuß auf die nächste Stufe.\nTreppenabsatz im ersten Stock.\nIch gehe weiter die Treppe hinauf.\nIch öffne die Tür, obwohl ich nicht weiß, was dahinter ist.\nIch schließe die Tür und lausche."
+        val c = Gamebooks.parseCard(answer)
+        assertEquals("Lena setzt vorsichtig einen Fuß auf die nächste Stufe.", c.summary)
+        assertEquals("Treppenabsatz im ersten Stock.", c.place)
+        assertEquals("Ich gehe weiter die Treppe hinauf.", c.enter)
+        assertEquals("Ich öffne die Tür, obwohl ich nicht weiß, was dahinter ist.", c.risk)
+        assertEquals("Ich schließe die Tür und lausche.", c.detour)
+        // eine mehrzeilige Zusammenfassung davor bleibt zusammen
+        val multi = Gamebooks.parseCard("Erster Satz.\nZweiter Satz.\nKeller\nIch steige hinab.\n-\n-")
+        assertEquals("Erster Satz. Zweiter Satz.", multi.summary)
+        assertEquals("Ich steige hinab.", multi.enter)
+        assertEquals("", multi.risk)
+        // zu wenig Zeilen ohne Beschriftung: nichts erfinden
+        assertEquals("", Gamebooks.parseCard("Ich weiß nicht.\nVielleicht.").summary)
+        // eine Beschriftung allein in der Zeile, der Wert darunter
+        val lone = Gamebooks.parseCard("SUMMARY:\nLena geht hoch.\nPLACE:\nTreppe\nENTER: Ich gehe.\nRISK: Ich springe.\nDETOUR: Ich warte.")
+        assertEquals("Lena geht hoch.", lone.summary)
+        assertEquals("Treppe", lone.place)
+    }
+
+    @Test
+    fun theCardPromptAsksForLabelsInTheLanguageOfTheBook() {
+        val sc = scenes(2)
+        val de = Gamebooks.cardPrompt("Buch", sc[0], sc[1], "Deutsch")[0].content
+        assertTrue("SUMMARY: <Zusammenfassung" in de && "Ich gehe weiter die Treppe hinauf." in de && "must be written in Deutsch" in de && "Begin every line with SUMMARY:" in de)
+        val en = Gamebooks.cardPrompt("Book", sc[0], sc[1], "English")[0].content
+        assertTrue("SUMMARY: <3 to 5 sentences in English" in en && "I go on up the stairs." in en)
+        assertTrue("RISK: -" in Gamebooks.cardPrompt("Buch", sc[1], null, "Deutsch")[0].content)
     }
 
     @Test
