@@ -1789,8 +1789,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { timingPrefs().edit().putInt("parallel", gamebookParallel).apply() }
     }
 
-    /** Die gewählte Zahl gleichzeitiger Anfragen; ohne Wahl 3 bei einem externen Modell und 1 auf dem Handy. */
-    private fun effectiveParallel(): Int = if (gamebookParallel in 1..4) gamebookParallel else if (gamebookIsLocal()) 1 else 3
+    /** Die gewählte Zahl gleichzeitiger Anfragen; ohne Wahl 1: Beantwortet der Server sie nacheinander (LM Studio), wird es mit mehr nicht schneller. */
+    private fun effectiveParallel(): Int = if (gamebookParallel in 1..4) gamebookParallel else 1
 
     /** Die Szenen der Geschichte je Buch (ohne Vor- und Nachspann), nur einmal berechnet: das Zerlegen eines ganzen Buches ist nicht billig. */
     private val storyCache = HashMap<String, List<Scene>>()

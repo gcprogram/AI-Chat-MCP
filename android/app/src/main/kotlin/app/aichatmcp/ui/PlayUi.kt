@@ -301,14 +301,14 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
                     )
                     // gleichzeitige Anfragen: bei einem externen Modell oft mehrfach so schnell, auf dem Handy ohne Wirkung
                     Text(t("Requests at the same time:", "Gleichzeitige Anfragen:"), style = MaterialTheme.typography.labelMedium)
-                    val selected = if (vm.gamebookParallel in 1..4) vm.gamebookParallel else if (vm.gamebookIsLocal()) 1 else 3
+                    val selected = if (vm.gamebookParallel in 1..4) vm.gamebookParallel else 1
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         (1..4).forEach { n -> FilterChip(selected = selected == n, onClick = { vm.chooseGamebookParallel(n) }, label = { Text(n.toString()) }) }
                     }
                     if (vm.gamebookIsLocal()) {
                         Text(t("The model on this phone answers one request at a time: more does not help.", "Das Modell auf dem Handy beantwortet nur eine Anfrage zugleich: mehr bringt nichts."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     } else {
-                        Text(t("If your server answers one request at a time (for example LM Studio without parallel mode), more does not speed it up, but does no harm.", "Beantwortet dein Server nur eine Anfrage zugleich (etwa LM Studio ohne Parallelbetrieb), wird es nicht schneller, schadet aber nicht."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Text(t("Only raise this if your server really answers requests in parallel (for example llama.cpp with several slots). LM Studio answers one after the other: more does not speed it up.", "Erhöhe das nur, wenn dein Server wirklich parallel antwortet (etwa llama.cpp mit mehreren Plätzen). LM Studio antwortet nacheinander: mehr macht es nicht schneller."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     }
                     Button(onClick = { vm.prepareGamebook(doc) }, enabled = !vm.streaming && state.scenes > 0) {
                         Text(t("Prepare (${state.requests} requests)", "Vorbereiten (${state.requests} Anfragen)"))

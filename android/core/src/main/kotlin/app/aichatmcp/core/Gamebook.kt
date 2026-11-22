@@ -4,6 +4,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -280,6 +281,8 @@ object Gamebooks {
         ask: suspend (List<WireMessage>, Int) -> String?,
         onProgress: (done: Int, total: Int, what: String) -> Unit = { _, _, _ -> }, onData: (Gamebook) -> Unit = {},
         parallel: Int = 1,
+        /** Pause vor dem zweiten und dritten Versuch, wenn das Modell nicht antwortet (ein Server verschluckt gelegentlich eine Anfrage); in Tests 0. */
+        retryDelayMs: Long = 2000,
     ): Gamebook {
         var book = start
         val total = requests(start).coerceAtLeast(1)
@@ -288,13 +291,15 @@ object Gamebooks {
         val german = book.language.startsWith("Deu", ignoreCase = true)
         suspend fun call(prompt: List<WireMessage>, maxTokens: Int, what: String, plain: Boolean = false): String {
             onProgress(done.coerceAtMost(total), total, what)
-            // Karten nicht mit der Bereinigung für Zusammenfassungen lesen: sie würde eine Zeile "SUMMARY:" ohne Wert entfernen
-            val answer = ask(prompt, maxTokens)?.let { if (plain) it.trim() else Summaries.clean(it) }.orEmpty()
-            if (answer.isBlank()) {
+            // Eine nicht beantwortete Anfrage wird zweimal wiederholt: ein einzelner Aussetzer des Servers soll nicht den ganzen Lauf (bis zu zwei Stunden Arbeit) beenden
+            repeat(3) { attempt ->
+                // Karten nicht mit der Bereinigung für Zusammenfassungen lesen: sie würde eine Zeile "SUMMARY:" ohne Wert entfernen
+                val answer = ask(prompt, maxTokens)?.let { if (plain) it.trim() else Summaries.clean(it) }.orEmpty()
+                if (answer.isNotBlank()) return answer
                 currentCoroutineContext().ensureActive() // ein Abbruch ist keine Fehlermeldung des Modells
-                throw SummaryException("Das Modell hat nicht geantwortet.")
+                if (attempt < 2 && retryDelayMs > 0) delay(retryDelayMs * (attempt + 1))
             }
-            return answer
+            throw SummaryException("Das Modell hat nicht geantwortet.")
         }
         suspend fun doCard(i: Int) {
             val scene = scenes[i]

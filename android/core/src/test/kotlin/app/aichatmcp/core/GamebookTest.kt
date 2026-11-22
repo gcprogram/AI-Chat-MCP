@@ -70,10 +70,14 @@ class GamebookTest {
         assertTrue(saved.zipWithNext().all { (x, y) -> y <= x }) // die Zahl der fehlenden Anfragen sinkt, auch wenn die Karten durcheinander fertig werden
         // fällt eine Anfrage aus, bricht der Lauf ab und das Fertige bleibt
         var calls = 0
-        val flaky: suspend (List<WireMessage>, Int) -> String? = { p, m -> if (++calls == 5) null else Scripted().ask(p, m) }
+        val flaky: suspend (List<WireMessage>, Int) -> String? = { p, m -> if (++calls >= 5) null else Scripted().ask(p, m) }
         val done = mutableListOf<Gamebook>()
-        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(30), flaky, onData = { done += it }, parallel = 3) }
+        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(30), flaky, onData = { done += it }, parallel = 3, retryDelayMs = 0) }
         assertTrue(done.isNotEmpty() && done.last().scenes.count { Gamebooks.sceneDone(it) } >= 1)
+        // ein einzelner Aussetzer wird wiederholt und beendet den Lauf nicht
+        var hiccups = 0
+        val once: suspend (List<WireMessage>, Int) -> String? = { p, m -> if (hiccups++ == 3) null else Scripted().ask(p, m) }
+        assertTrue(Gamebooks.ready(Gamebooks.prepare(sc, skeleton(30), once, parallel = 1, retryDelayMs = 0)))
     }
 
     @Test
@@ -104,12 +108,12 @@ class GamebookTest {
     fun aFailureKeepsWhatIsDone() = runBlocking {
         val sc = scenes(4)
         val saved = mutableListOf<Gamebook>()
-        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(4), Scripted(fail = true)::ask, onData = { saved += it }) }
+        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(4), Scripted(fail = true)::ask, onData = { saved += it }, retryDelayMs = 0) }
         assertTrue(saved.isEmpty())
         // erste Szene gelingt, danach fällt das Modell aus: die erste Karte bleibt
         var calls = 0
         val flaky: suspend (List<WireMessage>, Int) -> String? = { p, m -> if (calls++ < 1) Scripted().ask(p, m) else null }
-        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(4), flaky, onData = { saved += it }) }
+        assertFailsWith<SummaryException> { Gamebooks.prepare(sc, skeleton(4), flaky, onData = { saved += it }, retryDelayMs = 0) }
         assertEquals(1, saved.last().scenes.count { Gamebooks.sceneDone(it) })
     }
 
