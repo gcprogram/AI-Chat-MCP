@@ -183,7 +183,7 @@ class SoloTest {
         assertTrue("2 bis 5 Sätze" !in p && "Höre an einer offenen Stelle auf" in p)
         // ohne Zusammenfassung (Fehler) gilt der Anfang des Originaltextes, gekürzt
         val fallback = RoleplayPrompt.system(gamebook(), 0, closing = false, solo = SoloState())
-        assertTrue("Originaltext A" in fallback && fallback.length < 2500)
+        assertTrue("Originaltext A" in fallback && fallback.length < 3200)
         assertTrue(gamebook().hasPlot(0).not() && setup.hasPlot(0))
         // das freie Rollenspiel bleibt, wie es war
         assertTrue("2 bis 5 Sätze" in RoleplayPrompt.system(setup.copy(solo = false), 0, false))

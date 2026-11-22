@@ -202,7 +202,7 @@ object RoleplayPrompt {
             append("). Keine Aufzählungen, kein Markdown.\n")
             append("- Die Handlung der Szene steht unten als Zusammenfassung. Erzähle ihre Ereignisse, Orte und Figuren in eigenen Worten und gib Gespräche nur kurz und sinngemäß wieder; der Wortlaut des Buches ist unwichtig, Namen und Ereignisse nicht. Erfinde nichts, was der Handlung widerspricht.\n")
             append("- Beschreibe, was die Spielerfigur sieht, hört und erlebt und was die anderen Figuren sagen und tun. Lege der Spielerfigur keine neuen Entscheidungen in den Mund.\n")
-            append("- Höre an einer offenen Stelle auf, an der der Spieler sich entscheiden muss. Schreibe die Möglichkeiten nicht selbst auf: die App fragt sie danach ab.\n")
+            append("- Höre an einer offenen Stelle auf, an der der Spieler sich entscheiden muss: Ende mit einer offenen Situation, nicht mit einer Frage an den Spieler und ohne Aufzählung von Möglichkeiten. Erwähne nie die App, Regeln oder Entscheidungen als solche.\n")
             append("- Weicht der Spieler mit seiner Eingabe von der Handlung ab, reagiere kurz und stimmig in der Welt und führe in diesem Abschnitt zu den Ereignissen der Szene zurück. Der Spieler kann nur tun, was vom Ort der Spielerfigur aus möglich ist.\n")
             append("- Verrate nichts aus späteren Szenen. Setze genau dort fort, wo die vorige Szene aufgehört hat, und wiederhole keine Sätze aus dem Verlauf.\n\n")
             previousBlock(setup, previous, true)?.let { append(it) }
@@ -215,7 +215,7 @@ object RoleplayPrompt {
             append("). No lists, no markdown.\n")
             append("- The plot of the scene is given below as a summary. Tell its events, places and characters in your own words and give conversations only briefly and in substance; the wording of the book does not matter, names and events do. Invent nothing that contradicts the plot.\n")
             append("- Describe what the player's character sees, hears and experiences and what the other characters say and do. Do not put new decisions into the player character's mouth.\n")
-            append("- Stop at an open moment where the player has to decide. Do not write the options yourself: the app asks for them afterwards.\n")
+            append("- Stop at an open moment where the player has to decide: end with an open situation, not with a question to the player and without listing options. Never mention the app, rules or decisions as such.\n")
             append("- If the player's input departs from the plot, react briefly and consistently in the world and lead back to the events of the scene within this passage. The player can only do what is possible from the player character's place.\n")
             append("- Reveal nothing from later scenes. Continue exactly where the previous scene stopped and do not repeat sentences from the history.\n\n")
             previousBlock(setup, previous, false)?.let { append(it) }
@@ -239,10 +239,10 @@ object RoleplayPrompt {
         if (!setup.solo || solo == null) return ""
         val g = setup.german
         return buildString {
-            append(if (g) "\nSOLO-ABENTEUER: Nach jeder Szene entscheidet der Spieler. Die Folgen legt die App fest: Erfinde nie selbst Verletzungen, Heilungen oder Tode.\n" else "\nSOLO ADVENTURE: After every scene the player decides. The app fixes the consequences: never invent injuries, healing or deaths yourself.\n")
+            append(if (g) "\nSOLO-ABENTEUER: Nach jeder Szene entscheidet der Spieler. Die Folgen sind vorgegeben (siehe unten): Erfinde nie selbst Verletzungen, Heilungen oder Tode.\n" else "\nSOLO ADVENTURE: After every scene the player decides. The consequences are given (see below): never invent injuries, healing or deaths yourself.\n")
             append(if (g) "SPIELSTAND: " else "GAME STATE: ").append(Solo.stateText(solo, g)).append('\n')
             if (outcome.isNotBlank()) append(if (g) "FOLGE DER LETZTEN ENTSCHEIDUNG (verbindlich): " else "RESULT OF THE LAST DECISION (binding): ").append(outcome).append('\n')
-            if (closing) append(if (g) "Beende die Szene so, dass der Spieler vor einer Entscheidung steht. Schreibe die Möglichkeiten nicht selbst auf: Die App fragt sie danach ab.\n" else "End the scene so that the player faces a decision. Do not write the options yourself: the app asks for them afterwards.\n")
+            if (closing) append(if (g) "Beende die Szene so, dass der Spieler vor einer Entscheidung steht. Schreibe keine Möglichkeiten auf und erwähne die App nicht.\n" else "End the scene so that the player faces a decision. Do not list options and do not mention the app.\n")
         }
     }
 

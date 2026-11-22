@@ -147,6 +147,14 @@ class GamebookTest {
     }
 
     @Test
+    fun aFirstPersonBookHasNoThreadChoice() {
+        val scenes = listOf(GbScene("S1", thread = "Lucy", plot = "P", enter = "E", place = "O"), GbScene("S2", thread = "Lucy und Kollegen", plot = "P", enter = "E", place = "O"))
+        assertEquals(2, Gamebook(key = "k", scenes = scenes).threads().size)
+        // ein Ich-Erzähler hat nur eine Sicht: die "Stränge" des Modells wären nur Figurengruppen
+        assertTrue(Gamebook(key = "k", firstPerson = true, scenes = scenes).threads().isEmpty())
+    }
+
+    @Test
     fun aCardInTheWrongLanguageIsPreparedAgain() {
         val german = GbScene("S1", plot = "Lucy steigt die Treppe hinauf und hört einen Schrei aus dem Keller.", place = "Treppe", enter = "Ich gehe weiter.", risk = "Ich öffne die Tür.", detour = "Ich warte.")
         val english = GbScene("S2", plot = "The main character and Lockwood investigate a wall in the study, suspecting that it hides something.", place = "Study", enter = "I examine the books on the shelves.", risk = "I open the bag at once.", detour = "I listen to the wall.")

@@ -49,8 +49,12 @@ data class Gamebook(
 
     fun plots(): Map<Int, String> = scenes.withIndex().filter { it.value.plot.isNotBlank() }.associate { it.index to it.value.plot }
 
-    /** Die Handlungsstränge je Szene; leer, wenn sie nicht für alle Szenen bekannt sind. */
-    fun threads(): Map<Int, String> = if (scenes.isNotEmpty() && scenes.all { it.thread.isNotBlank() }) scenes.withIndex().associate { it.index to it.value.thread } else emptyMap()
+    /**
+     * Die Handlungsstränge je Szene; leer, wenn sie nicht für alle Szenen bekannt sind oder das Buch aus einer einzigen Sicht erzählt (Ich-Erzähler): Dann sind die "Stränge"
+     * des Modells nur Gruppen von Figuren, die bei derselben Erzählerin auftreten (im Probelauf 14 Namen wie "Lucy", "Lucy und Kollegen", "Mary und Lucy"), keine parallelen Handlungen.
+     */
+    fun threads(): Map<Int, String> =
+        if (!firstPerson && scenes.isNotEmpty() && scenes.all { it.thread.isNotBlank() }) scenes.withIndex().associate { it.index to it.value.thread } else emptyMap()
 
     fun chapters(): List<String> = scenes.map { it.chapter.ifBlank { Summaries.chapterOf(it.title) } }
 }
@@ -237,7 +241,7 @@ object Gamebooks {
                 "user",
                 "Below are consecutive scenes of a book (number, title, summary). Assign each scene to the storyline it belongs to. A storyline follows one main character or group, " +
                     "or one place and plot thread; name it after the character or group (for example \"Lucy and Lockwood\") and not after a topic. Scenes that happen in parallel or independently of each other belong to different storylines. $knownLine " +
-                    "Reuse a known storyline whenever the scene continues it; add a new one (1 to 3 words, in $language) only for a really separate storyline. A book that follows one main character uses one name for all scenes.\n" +
+                    "Use as few storylines as possible (often one to three for a whole book): reuse a known storyline whenever the scene continues it or the same main character is the center; add a new one (1 to 3 words, in $language) only for a really separate storyline. A book that follows one main character uses one name for all scenes.\n" +
                     "Answer with exactly one line per scene in this form and nothing else:\n<number>: <storyline>\n\n$list",
             ),
         )

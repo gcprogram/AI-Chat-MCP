@@ -352,6 +352,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private var greetingSeq = 0
 
+    /** Die nächste Nachricht ist eine gewählte Entscheidung (nicht frei getippt): [send] lässt dann die Karte mit der markierten Wahl stehen. */
+    private var decisionSend = false
+
     /** Zeichnet Begrüßung und Verlauf neu (Companion-Wechsel, neuer Chat, geladener Chat). */
     private fun renderHistory() {
         dismissDoc()
@@ -402,7 +405,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         speechOut.stop()
         userStopped = false
-        roleplay?.let { if (it.decisions.isNotEmpty() || it.answered.isNotEmpty()) roleplay = it.copy(decisions = emptyList(), answered = emptyList(), chosen = -1) } // wer frei weiterspielt, entscheidet erst am nächsten Szenenende
+        // wer frei weiterspielt, entscheidet erst am nächsten Szenenende; eine gewählte Entscheidung lässt die Karte mit der Markierung stehen
+        val fromDecision = decisionSend
+        decisionSend = false
+        roleplay?.let { if (it.decisions.isNotEmpty() || (!fromDecision && it.answered.isNotEmpty())) roleplay = it.copy(decisions = emptyList(), answered = if (fromDecision) it.answered else emptyList(), chosen = if (fromDecision) it.chosen else -1) }
         input = ""
         session.config = effectiveConfig(config)
         modelNotice = if (config.backend == BACKEND_LOCAL && (warming || !localLlm.isLoaded(effectiveConfig(config)))) loadNoticeText() else null
@@ -1835,8 +1841,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val (scenes, start) = withContext(Dispatchers.Default) {
                     val story = storyScenesOf(doc)
                     val stored = storage.loadGamebook(key)
-                    story to (stored?.takeIf { Gamebooks.compatible(it, story) }
-                        ?: Gamebooks.skeleton(story, doc.name.substringBeforeLast('.'), language, key, BookCast.firstPerson(doc.text), BookCast.candidates(doc.text, 12)))
+                    // Ich-Form und Namen werden bei jedem Lauf neu bestimmt (die Erkennung wurde verbessert; ein älteres Spielbuch hatte falsche Werte)
+                    val first = BookCast.firstPerson(doc.text)
+                    val cast = BookCast.candidates(doc.text, 12)
+                    story to (stored?.takeIf { Gamebooks.compatible(it, story) }?.copy(firstPerson = first, characters = cast)
+                        ?: Gamebooks.skeleton(story, doc.name.substringBeforeLast('.'), language, key, first, cast))
                 }
                 if (scenes.isEmpty()) return@launch
                 prepTotal = Gamebooks.requests(start).coerceAtLeast(1)
@@ -2077,6 +2086,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             messages += UiMessage(UiKind.INFO, tNow("Scene $number/$total: ${run.setup.scenes[next].title}", "Szene $number/$total: ${run.setup.scenes[next].title}"))
         }
         input = decision.text
+        decisionSend = true
         if (over) send() else sendWhenPlotReady(next)
     }
 
