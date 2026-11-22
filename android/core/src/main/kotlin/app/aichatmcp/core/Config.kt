@@ -65,8 +65,16 @@ data class Config(
     @SerialName("keywords_enabled") val keywordsEnabled: Boolean = false,
     /** Beim Vorlesen mit Stimmen für wörtliche Rede: Reden, die die Regeln nicht zuordnen, vom Server (KI) zuordnen lassen. Standard: aus (Textausschnitte gehen an den Server). */
     @SerialName("dialogue_judge") val dialogueJudge: Boolean = false,
-    /** Sprechgeschwindigkeit der Sprachausgabe (1.0 = normal; die deutsche Stimme spricht etwa 20 % langsamer als die englische). */
-    @SerialName("speech_rate") val speechRate: Double = 1.0,
+    /** Sprechgeschwindigkeit der Sprachausgabe (1.0 = normal; die deutschen Stimmen sprechen etwa 20 % langsamer als die englischen, deshalb ist 1.2 der Standard). */
+    @SerialName("speech_rate") val speechRate: Double = 1.2,
+    /**
+     * Standardstimmen je Sprache und Rolle: Schlüssel "de/narrator", "de/female", "de/male" (Sprache = Sprach-Kürzel), Wert = Name der Stimme (Systemstimme oder
+     * "piper:<Ordner>"). Sie gelten überall: Erzähler beim Vorlesen und Spielen (bei einer Hauptfigur nach ihrem Geschlecht), Companions ohne eigene Stimme (nach
+     * Geschlecht) und die wörtliche Rede. Leer = Standardstimme der Sprache.
+     */
+    @SerialName("default_voices") val defaultVoices: Map<String, String> = emptyMap(),
+    /** Beim Vorlesen von Büchern wechselt die Stimme bei wörtlicher Rede (Stimmen für Männer und Frauen aus [defaultVoices]; nur mit einer Piper-Stimme als Erzähler). */
+    @SerialName("dialogue_voices") val dialogueVoices: Boolean = true,
     /** Piper: Stärke der Zufallsschwankung der Stimme (0.667 = Vorgabe der Stimme; höher = lebendiger, aber unruhiger). */
     @SerialName("piper_noise") val piperNoise: Double = 0.667,
     /** Piper: Schwankung der Sprechrhythmik/Betonung (0.8 = Vorgabe; höher = abwechslungsreicher, bei zu viel Stolpern). */
@@ -113,6 +121,26 @@ data class Config(
         uiLanguage = if (uiLanguage == LANGUAGE_DE) LANGUAGE_DE else LANGUAGE_EN,
         localThreads = localThreads.coerceIn(1, 16),
     )
+
+    /**
+     * Die Standardstimme für [languageTag] und [gender] (null = Erzähler): erst die Stimme der Rolle, bei Frau/Mann ohne eigene Wahl die des Erzählers;
+     * leer = Standardstimme der Sprache.
+     */
+    fun defaultVoice(languageTag: String?, gender: Gender?): String {
+        val lang = languageTag?.substringBefore('-')?.lowercase().orEmpty()
+        val narrator = defaultVoices["$lang/narrator"].orEmpty()
+        return when (gender) {
+            Gender.FEMALE -> defaultVoices["$lang/female"].orEmpty().ifEmpty { narrator }
+            Gender.MALE -> defaultVoices["$lang/male"].orEmpty().ifEmpty { narrator }
+            null -> narrator
+        }
+    }
+
+    /** Eine Standardstimme setzen (leer = löschen). [role]: "narrator", "female" oder "male". */
+    fun withDefaultVoice(languageTag: String?, role: String, voice: String): Config {
+        val key = languageTag?.substringBefore('-')?.lowercase().orEmpty() + "/" + role
+        return copy(defaultVoices = if (voice.isEmpty()) defaultVoices - key else defaultVoices + (key to voice))
+    }
 
     /** Zusätzliche Sampling-Parameter für die Anfrage; neutrale Werte werden weggelassen. */
     fun samplingParams(): Map<String, Double> = buildMap {

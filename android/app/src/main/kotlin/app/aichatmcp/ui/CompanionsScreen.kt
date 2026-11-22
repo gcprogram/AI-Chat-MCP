@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -43,7 +44,12 @@ fun CompanionsScreen(
     // (mit seinen Werkzeugen) und ein Speichern würde den alten überschreiben.
     LaunchedEffect(vm.persona.id) { if (vm.persona.id.isNotEmpty()) selected = vm.persona.id }
     ScreenFrame("Companions", onBack) {
-        DropdownField("Companion", vm.personaIds + NEW_ENTRY, if (selected.isEmpty()) NEW_ENTRY else selected, { selected = if (it == NEW_ENTRY) "" else it })
+        // Namen statt Kennungen (gleiche Namen bekommen die Kennung dazu, damit die Zeilen unterscheidbar bleiben)
+        val labels = vm.personaIds.associateWith { id -> vm.personaLabel(id).let { l -> if (vm.personaIds.count { vm.personaLabel(it) == l } > 1) "$l ($id)" else l } }
+        DropdownField(
+            "Companion", labels.values.toList() + NEW_ENTRY, if (selected.isEmpty()) NEW_ENTRY else labels[selected] ?: selected,
+            { picked -> selected = labels.entries.firstOrNull { it.value == picked }?.key ?: "" },
+        )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onImport) { Text("Datei importieren") }
             OutlinedButton(onClick = onImportFolder) { Text("Ordner importieren…") }
@@ -71,6 +77,7 @@ fun CompanionsScreen(
                 onSave = { selected = vm.savePersona(it) },
                 onDelete = { vm.deletePersona(selected); selected = vm.persona.id },
                 loadVoices = vm::loadVoiceOptions,
+                detect = vm::detectedGender,
                 piperVoices = vm.piperVoices,
                 onTestVoice = vm::testCompanionVoice,
             )
@@ -83,7 +90,7 @@ private fun PersonaForm(
     initial: Persona, available: List<String>, running: Set<String>, buttons: Map<String, List<String>>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
     onRemoveAvatar: () -> Unit, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit,
     loadVoices: (String, (List<SpeechOutput.VoiceOption>) -> Unit) -> Unit, onTestVoice: (String, String) -> Unit,
-    piperVoices: List<app.aichatmcp.core.PiperVoice>,
+    piperVoices: List<app.aichatmcp.core.PiperVoice>, detect: (Persona) -> String,
 ) {
     var name by remember { mutableStateOf(initial.name) }
     var description by remember { mutableStateOf(initial.description) }
@@ -96,8 +103,7 @@ private fun PersonaForm(
     var choices by remember { mutableStateOf(initial.toolChoices.mapValues { it.value.joinToString(", ") }) }
     var confirmDelete by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(initial.voice) }
-    var voiceMale by remember { mutableStateOf(initial.voiceMale) }
-    var voiceFemale by remember { mutableStateOf(initial.voiceFemale) }
+    var gender by remember { mutableStateOf(initial.gender) }
     var dailyUpdate by remember { mutableStateOf(initial.dailyUpdate) }
     var voiceOptions by remember { mutableStateOf<List<SpeechOutput.VoiceOption>?>(null) } // null = wird noch geladen
     LaunchedEffect(language) {
@@ -131,7 +137,7 @@ private fun PersonaForm(
     val languages = Speech.RESPONSE_LANGUAGES + listOfNotNull(language.takeIf { it.isNotBlank() && it !in Speech.RESPONSE_LANGUAGES })
     DropdownField("Sprache (Antworten, Erkennung, Vorlesen)", languages, language, { language = it })
     val options = voiceOptions.orEmpty()
-    val defaultLabel = "(Standardstimme)"
+    val defaultLabel = "(Standardstimme nach Geschlecht)"
     val voiceLabel = options.firstOrNull { it.name == voice }?.label
         ?: if (voice.isEmpty() || voiceOptions == null) defaultLabel else "(nicht verfügbar: Standardstimme)"
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -151,29 +157,20 @@ private fun PersonaForm(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
         )
     }
-    // Stimmen für wörtliche Rede: nur Piper-Stimmen (die Systemstimme lässt sich mitten im Text nicht wechseln), nur mit Piper-Erzähler
-    val piperOptions = options.filter { it.name.startsWith(PIPER_PREFIX) }
-    if (piperOptions.isNotEmpty()) {
-        Text(
-            "Wörtliche Rede beim Vorlesen von Dokumenten: Der Erzähler spricht mit der Stimme oben (muss eine Piper-Stimme sein), Reden von Männern und Frauen " +
-                "mit diesen Stimmen. Wer spricht, erkennt die App am Begleitsatz („sagte sie“), an Vornamen und am Absatzwechsel; wo das nicht klappt, spricht der Erzähler.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        listOf(
-            Triple("Stimme für männliche Rede", voiceMale) { v: String -> voiceMale = v },
-            Triple("Stimme für weibliche Rede", voiceFemale) { v: String -> voiceFemale = v },
-        ).forEach { (label, current, set) ->
-            val none = "(wie Erzähler)"
-            val shown = piperOptions.firstOrNull { it.name == current }?.label ?: if (current.isEmpty()) none else "(nicht verfügbar: Erzähler)"
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                DropdownField(
-                    label, listOf(none) + piperOptions.map { it.label }, shown,
-                    { picked -> set(piperOptions.firstOrNull { it.label == picked }?.name.orEmpty()) }, Modifier.weight(1f),
-                )
-                OutlinedButton(onClick = { onTestVoice(language, current) }, enabled = current.isNotEmpty()) { Text("Anhören") }
-            }
-        }
+    // Die Stimmen für Männer und Frauen in wörtlicher Rede und der Erzähler sind Standardstimmen (Setup > Einstellungen > Stimmen)
+    SectionTitle(t("Gender (for the default voice)", "Geschlecht (für die Standardstimme)"))
+    val detected = detect(initial.copy(name = name.trim(), description = description.trim(), gender = "", rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() }))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = gender.isEmpty(), onClick = { gender = "" }, label = { Text(t("Automatic", "Automatisch")) })
+        FilterChip(selected = gender == "female", onClick = { gender = "female" }, label = { Text(t("Female", "Weiblich")) })
+        FilterChip(selected = gender == "male", onClick = { gender = "male" }, label = { Text(t("Male", "Männlich")) })
     }
+    Text(
+        t("Without an own voice above, the companion speaks with the default voice for its gender (Setup → Settings → Voices). Detected from name and description: ",
+            "Ohne eigene Stimme oben spricht der Companion mit der Standardstimme für sein Geschlecht (Setup → Einstellungen → Stimmen). Erkannt aus Name und Beschreibung: ") +
+            when (detected) { "female" -> t("female", "weiblich"); "male" -> t("male", "männlich"); else -> t("unclear (narrator voice; the model may be asked once)", "unklar (Erzählerstimme; das Modell wird ggf. einmal gefragt)") },
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+    )
     TextSetting("Begrüßung", greeting, { greeting = it }, minLines = 2, maxLines = 5)
     TextSetting("Regeln (eine pro Zeile)", rules, { rules = it }, minLines = 2, maxLines = 8)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -220,7 +217,7 @@ private fun PersonaForm(
             onSave(
                 initial.copy(
                     name = name.trim(), description = description.trim(), language = language.trim().ifEmpty { "Deutsch" },
-                    voice = voice, voiceMale = voiceMale, voiceFemale = voiceFemale, dailyUpdate = dailyUpdate, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                    voice = voice, gender = gender, dailyUpdate = dailyUpdate, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
                     toolChoices = initial.toolChoices.filterKeys { it !in buttons } + buttons.mapNotNull { (alias, all) ->
                         val wanted = choices[alias].orEmpty().split(',', ';').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
                         val valid = all.filter { it.lowercase() in wanted }

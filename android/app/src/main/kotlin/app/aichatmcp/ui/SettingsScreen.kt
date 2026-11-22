@@ -41,7 +41,7 @@ private fun localLabel() = tNow("On this phone (llama.cpp)", "Auf diesem Handy (
 fun SettingsScreen(
     vm: ChatViewModel, onBack: () -> Unit, onPickModel: () -> Unit, onPickVision: () -> Unit, onPickVisionProj: () -> Unit,
     onPickPiper: () -> Unit, onPickWhisper: () -> Unit, onRequestNotifications: () -> Unit, onRequestCalendar: () -> Unit, onToast: (String) -> Unit,
-    onOpenModels: () -> Unit, folders: FolderActions, onReplayIntro: () -> Unit,
+    onOpenModels: () -> Unit, folders: FolderActions, onReplayIntro: () -> Unit, onOpenTools: () -> Unit,
 ) {
     val c = vm.config
     var backend by remember { mutableStateOf(c.backend) }
@@ -71,6 +71,8 @@ fun SettingsScreen(
     var keywordsEnabled by remember { mutableStateOf(c.keywordsEnabled) }
     var dialogueJudge by remember { mutableStateOf(c.dialogueJudge) }
     var speechRate by remember { mutableStateOf(c.speechRate.toString()) }
+    var defaultVoices by remember { mutableStateOf(c.defaultVoices) }
+    var dialogueVoices by remember { mutableStateOf(c.dialogueVoices) }
     var piperNoise by remember { mutableStateOf(c.piperNoise.toString()) }
     var piperNoiseW by remember { mutableStateOf(c.piperNoiseW.toString()) }
     var maxCalls by remember { mutableStateOf(c.maxToolCalls.toString()) }
@@ -100,7 +102,7 @@ fun SettingsScreen(
                         repeatPenalty = repeat.toDoubleOrNull() ?: c.repeatPenalty,
                         confirmTools = confirmTools, speakReplies = speakReplies, voiceAutoSend = voiceAutoSend, speechOnline = speechOnline, keywordsEnabled = keywordsEnabled, dialogueJudge = dialogueJudge,
                         dailyReminder = dailyReminder, catchMessages = catchMessages, roleplayTurns = roleplayTurns.toIntOrNull() ?: c.roleplayTurns, dailyReminderTime = dailyReminderTime.trim(), speechEngine = speechEngine, whisperModel = whisperModel, whisperLanguage = whisperLanguage.trim().lowercase(),
-                        speechRate = speechRate.toDoubleOrNull() ?: c.speechRate,
+                        speechRate = speechRate.toDoubleOrNull() ?: c.speechRate, defaultVoices = defaultVoices, dialogueVoices = dialogueVoices,
                         piperNoise = piperNoise.toDoubleOrNull() ?: c.piperNoise,
                         piperNoiseW = piperNoiseW.toDoubleOrNull() ?: c.piperNoiseW,
                         maxToolCalls = maxCalls.toIntOrNull() ?: c.maxToolCalls,
@@ -257,13 +259,19 @@ fun SettingsScreen(
                 Text("Antworten vorlesen", modifier = Modifier.weight(1f))
                 Switch(checked = speakReplies, onCheckedChange = { speakReplies = it })
             }
-            NumberSetting("Sprechgeschwindigkeit (1.0 = normal, Deutsch gern 1.2)", speechRate) { speechRate = it }
+            SpeedSlider(speechRate.toDoubleOrNull() ?: c.speechRate) { speechRate = it.toString() }
+            Text(
+                t("1.0 is normal. The German voices speak about 20 % slower than the English ones, so 1.2 sounds natural. Applies to every voice (system and Piper) after “Save”.",
+                    "1,0 ist normal. Die deutschen Stimmen sprechen etwa 20 % langsamer als die englischen, deshalb klingt 1,2 natürlich. Gilt für jede Stimme (System und Piper) nach „Speichern“."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+            )
+            DefaultVoicesSection(vm, defaultVoices, { defaultVoices = it }, dialogueVoices) { dialogueVoices = it }
                 SectionTitle(t("System voices", "Systemstimmen"))
             LaunchedEffect(Unit) { vm.refreshVoices() }
             Text(
-                "Vorgelesen wird, wenn oben „Antworten vorlesen“ an ist. Die Stimme wählst du je Companion im Companion-Editor: entweder eine " +
-                    "Systemstimme (Google-Sprachausgabe, braucht installierte Stimmen) oder eine Piper-Stimme (läuft ohne Google auf dem Gerät, " +
-                    "siehe unten). Ohne Auswahl gilt die Systemstimme der Sprache.",
+                "Antworten werden nur vorgelesen, wenn oben „Antworten vorlesen“ an ist (Bücher vorlesen geht immer). Die Standardstimmen stehen oben; ein Companion " +
+                    "kann im Companion-Editor eine eigene Stimme bekommen: entweder eine Systemstimme (Google-Sprachausgabe, braucht installierte Stimmen) " +
+                    "oder eine Piper-Stimme (läuft ohne Google auf dem Gerät, siehe unten).",
                 style = MaterialTheme.typography.bodySmall,
             )
             vm.voiceRows.forEach { row ->
@@ -407,6 +415,7 @@ fun SettingsScreen(
             }
             }
             6 -> {
+            Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) { Text(t("Configure tools (servers, aliases, keywords)…", "Werkzeuge einrichten (Server, Aliase, Schlüsselwörter)…")) }
             SectionTitle("Werkzeuge")
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Vor jedem Werkzeugaufruf nachfragen", modifier = Modifier.weight(1f))

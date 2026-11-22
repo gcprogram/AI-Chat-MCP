@@ -137,6 +137,7 @@ fun RoleplayBar(vm: ChatViewModel) {
                 } else {
                     TextButton(onClick = vm::nextScene, enabled = !vm.streaming && run.sceneIndex + 1 < run.setup.scenes.size) { Text(t("Next scene", "Nächste Szene")) }
                 }
+                TextButton(onClick = { vm.saveGame() }) { Text("💾") }
                 TextButton(onClick = vm::stopRoleplay, enabled = !vm.streaming) { Text(t("End", "Beenden")) }
             }
             if (solo) {

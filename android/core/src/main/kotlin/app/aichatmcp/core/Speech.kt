@@ -48,6 +48,39 @@ object Speech {
             .replace(Regex("\\s+"), " ").trim()
 
     /**
+     * Ein für die Sprachausgabe aufbereiteter Text. [original] rechnet eine Stelle im aufbereiteten Text auf die Stelle im Ausgangstext zurück
+     * (die Systemstimme meldet ihren Fortschritt als Zeichenstelle; der Vorleser setzt danach mitten im Abschnitt fort).
+     */
+    class Spoken(val text: String, private val starts: IntArray?) {
+        fun original(index: Int): Int = if (starts == null) index else starts[index.coerceIn(0, starts.size - 1)]
+    }
+
+    private val TITLE = Regex("""(?<!\p{L})(Mrs|Mr|Ms|MRS|MR|MS)\.?(?=\s+\p{Lu})""")
+    private val TITLE_SPOKEN = mapOf("mrs" to "Missis", "mr" to "Mister", "ms" to "Miss")
+
+    /**
+     * Setzt Anreden, die eine nicht englische Stimme buchstabiert ("Mrs" wird zu M-R-S), so, wie sie gesprochen werden: Mrs -> Missis, Mr -> Mister,
+     * Ms -> Miss. Englische Stimmen kennen sie. Nur vor einem Namen (Großbuchstabe), damit Kürzel wie "MR" in anderem Zusammenhang bleiben.
+     */
+    fun forSpeech(text: String, languageTag: String?): Spoken {
+        if (languageTag != null && languageTag.startsWith("en", ignoreCase = true)) return Spoken(text, null)
+        val matches = TITLE.findAll(text).toList()
+        if (matches.isEmpty()) return Spoken(text, null)
+        val out = StringBuilder()
+        val starts = ArrayList<Int>(text.length + 8)
+        var pos = 0
+        for (m in matches) {
+            for (i in pos until m.range.first) { out.append(text[i]); starts += i }
+            val spoken = TITLE_SPOKEN.getValue(m.groupValues[1].lowercase())
+            for (c in spoken) { out.append(c); starts += m.range.first }
+            pos = m.range.last + 1
+        }
+        for (i in pos until text.length) { out.append(text[i]); starts += i }
+        starts += text.length
+        return Spoken(out.toString(), starts.toIntArray())
+    }
+
+    /**
      * Teilt langen Text in Stücke (an Satzgrenzen), weil Sprachausgaben nur begrenzt viele Zeichen pro Aufruf
      * annehmen (Android: höchstens 4000).
      */

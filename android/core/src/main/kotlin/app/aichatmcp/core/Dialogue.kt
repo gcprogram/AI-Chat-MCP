@@ -24,7 +24,11 @@ object FirstNames {
             "Manfred Manuel Marc Marcel Marco Marcus Mario Markus Martin Mathias Matthias Max Maximilian Michael Mike Moritz Nikolaus Nils Norbert Oliver " +
             "Oskar Otto Patrick Paul Peter Philipp Rainer Ralf Reinhard Richard Robert Roland Rolf Rudolf Rüdiger Sebastian Siegfried Simon Stefan Stephan " +
             "Sven Theo Theodor Thomas Thorsten Tim Timo Tobias Tom Udo Ulrich Uwe Viktor Vincent Volker Walter Werner Wilhelm Willi Wolfgang Xaver " +
-            "John James William George Harry Jack Oliver Charlie Thomas Edward Arthur Michel Pierre Jean Luca Marco Giovanni Juan Carlos Pedro Miguel"
+            "John James William George Harry Jack Oliver Charlie Thomas Edward Arthur Michel Pierre Jean Luca Marco Giovanni Juan Carlos Pedro Miguel " +
+            "Anthony Andrew Ben Bill Bob Brian Christopher Colin Craig David Dean Donald Douglas Dylan Eric Ethan Gary Gavin Glen Graham Greg Henry Ian Jacob " +
+            "Joe Joel Jonathan Joshua Justin Keith Kenneth Kevin Larry Liam Logan Luke Mark Matt Matthew Nathan Neil Nicholas Noah Owen Patrick Paul Peter " +
+            "Philip Ralph Raymond Ron Ronald Russell Ryan Samuel Scott Sean Stanley Steve Steven Stuart Terry Timothy Todd Tony Victor Vincent Wayne Zachary " +
+            "Lockwood Holly Hugh Humphrey Ivan Jasper Julius Kurt Lennart Levi Malte Marlon Mats Nick Niklas Noel Pascal Ramon Ricardo Rocco Sam Silas Tilman Toni Yannick"
         ).split(' ').filter { it.isNotEmpty() }.toHashSet()
 
     private val FEMALE = (
@@ -39,7 +43,12 @@ object FirstNames {
             "Martina Mathilde Maya Meike Melanie Melissa Mia Michaela Miriam Mona Monika Nadine Natalie Nathalie Nele Nicole Nina Nora Olga Ottilie Paula " +
             "Paulina Petra Pia Ramona Rebecca Rebekka Regina Renate Rita Romy Rosa Rosemarie Ruth Sabine Sabrina Sandra Sara Sarah Silke Sophia Sophie " +
             "Stefanie Steffi Stephanie Susanne Svenja Sybille Tamara Tanja Theresa Therese Tina Ulla Ulrike Ursula Ute Uta Valentina Vanessa Vera Verena " +
-            "Veronika Viktoria Waltraud Wilhelmine Yvonne Zoe Zoë Mary Elizabeth Jane Emily Hermione Marie Claire Sophia Giulia Francesca Maria Carmen Rosa"
+            "Veronika Viktoria Waltraud Wilhelmine Yvonne Zoe Zoë Mary Elizabeth Jane Emily Hermione Marie Claire Sophia Giulia Francesca Maria Carmen Rosa " +
+            "Abigail Alexa Alison Amanda Amber Amy Andrea Angie Ashley Beth Betty Beverly Brenda Brittany Carol Catherine Cathy Charlotte Chloe Cindy Courtney Crystal " +
+            "Dana Danielle Deborah Debra Denise Diane Donna Dorothy Elaine Emma Erin Gail Gloria Grace Hannah Heather Helen Holly Jackie Jacqueline Janet Janice Jean " +
+            "Joan Joanna Joyce Julie Karen Kate Katherine Kathleen Kayla Kelly Kimberly Kylie Leah Lillian Lily Lois Lori Lucy Lucille Lynn Madison Margaret Megan " +
+            "Michelle Molly Nancy Naomi Natasha Olivia Pamela Patricia Penny Rachel Rose Samantha Shannon Sharon Shirley Stella Sue Susan Tammy Teresa Tracy Vicky " +
+            "Victoria Violet Wendy Whitney Zara Aurelia Luna Mira Nyx Lia Luzia Marlene Merle Mareike Pauline Rieke Thea Tessa Vivien Yara Zora"
         ).split(' ').filter { it.isNotEmpty() }.toHashSet()
 
     fun genderOf(name: String): Gender? = when {
@@ -171,9 +180,11 @@ class Dialogue private constructor(
         // Verben des Sagens (Stämme); mit "sie" zählt nur die Einzahl (nicht auf "-en"/"-ten" endend: "sie sagten")
         private const val VERB = "(?<!\\p{L})(?:sag|frag|rief|ruf|antwort|flüster|murmel|erwider|entgegn|mein|schri|schrei|brüll|seufz|lach|lächel|grins|schluchz|" +
             "stammel|stotter|sprach|sprich|erklär|bemerk|forder|bat|bitt|befahl|befiehl|raun|zisch|jammer|klag|hauch|flehte|fauchte|knurrte|keuchte|" +
-            "stöhnte|kicherte|spottete|warnte|mahnte|betonte|versicherte|gestand|lobte|schimpfte|fluchte|wiederholte|unterbrach|fügte)\\p{L}*"
-        private const val WHO = "(?:[Ee]r|[Ss]ie|(?:[Hh]err|[Ff]rau|[Ff]räulein)\\s+\\p{Lu}\\p{L}+|(?:[Dd]er|[Dd]ie|[Dd]as)\\s+\\p{L}+|\\p{Lu}\\p{L}+)"
-        private val VERB_THEN_WHO = Regex("($VERB)(?:\\s+\\p{L}+)?\\s+($WHO)")
+            "stöhnte|kicherte|spottete|warnte|mahnte|betonte|versicherte|gestand|lobte|schimpfte|fluchte|wiederholte|unterbrach|fügte|" +
+            "said|asked|replied|answered|whispered|shouted|cried|muttered|exclaimed|called|murmured|sighed|laughed|smiled|grinned|snapped|added|continued|" +
+            "demanded|suggested|explained|observed|remarked|declared|insisted|growled|hissed|yelled|groaned|stammered|stuttered|sobbed|sneered|offered|began|interrupted)\\p{L}*"
+        private const val WHO = "(?<!\\p{L})(?:[Ee]r|[Ss]ie|[Hh]e|[Ss]he|(?:[Hh]err|[Ff]rau|[Ff]räulein|Mrs?\\.?|Ms\\.?|Miss|Missis|Mister)\\s+\\p{Lu}\\p{L}+|(?:[Dd]er|[Dd]ie|[Dd]as)\\s+\\p{L}+|\\p{Lu}\\p{L}+)"
+        private val VERB_THEN_WHO = Regex("($VERB)(?:\\s+\\p{Ll}\\p{L}*)?\\s+($WHO)")
         private val WHO_THEN_VERB = Regex("($WHO)\\s+(?:\\p{L}+\\s+){0,2}($VERB)")
         private val MALE_NOUNS = setOf(
             "Mann", "Junge", "Vater", "Bruder", "Sohn", "Onkel", "Opa", "Großvater", "König", "Prinz", "Herr", "Lehrer", "Doktor", "Arzt", "Wirt",
@@ -227,10 +238,12 @@ class Dialogue private constructor(
         private fun genderOfWho(who: String, verb: String): Gender? {
             val lower = who.lowercase()
             return when {
-                lower == "er" -> Gender.MALE
+                lower == "er" || lower == "he" -> Gender.MALE
+                lower == "she" -> Gender.FEMALE
                 lower == "sie" -> if (verb.endsWith("en")) null else Gender.FEMALE // "sie sagten": Mehrzahl
-                lower.startsWith("herr ") -> Gender.MALE
-                lower.startsWith("frau ") || lower.startsWith("fräulein ") -> Gender.FEMALE
+                lower.startsWith("herr ") || lower.startsWith("mr ") || lower.startsWith("mr. ") || lower.startsWith("mister ") -> Gender.MALE
+                lower.startsWith("frau ") || lower.startsWith("fräulein ") || lower.startsWith("mrs ") || lower.startsWith("mrs. ") || lower.startsWith("ms ") ||
+                    lower.startsWith("ms. ") || lower.startsWith("miss ") || lower.startsWith("missis ") -> Gender.FEMALE
                 lower.startsWith("der ") || lower.startsWith("die ") || lower.startsWith("das ") -> {
                     val noun = who.substringAfter(' ').trim().replaceFirstChar { it.uppercase() }
                     when {

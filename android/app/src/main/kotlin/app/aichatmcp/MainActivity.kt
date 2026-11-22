@@ -14,6 +14,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +45,8 @@ import app.aichatmcp.ui.FolderActions
 import app.aichatmcp.ui.ModelsScreen
 import app.aichatmcp.ui.OnboardingScreen
 import app.aichatmcp.ui.CompanionsScreen
+import app.aichatmcp.ui.GalleryScreen
+import app.aichatmcp.ui.StartBar
 import app.aichatmcp.ui.Screen
 import app.aichatmcp.ui.SettingsScreen
 import app.aichatmcp.ui.I18n
@@ -83,7 +87,7 @@ private fun Root(vm: ChatViewModel = viewModel()) {
 private fun RootContent(vm: ChatViewModel) {
     val context = LocalContext.current
     var screen by remember { mutableStateOf(if (vm.config.onboardingDone) Screen.CHAT else Screen.INTRO) }
-    BackHandler(enabled = screen != Screen.CHAT && screen != Screen.INTRO) { screen = if (screen == Screen.MODELS) Screen.SETTINGS else Screen.CHAT }
+    BackHandler(enabled = screen != Screen.CHAT && screen != Screen.INTRO) { screen = if (screen == Screen.MODELS || screen == Screen.TOOLS) Screen.SETTINGS else if (screen == Screen.COMPANIONS) Screen.GALLERY else Screen.CHAT }
 
     fun toast(text: String) = Toast.makeText(context, trNow(text), Toast.LENGTH_LONG).show()
     fun read(uri: Uri): String? = runCatching {
@@ -194,10 +198,10 @@ private fun RootContent(vm: ChatViewModel) {
     var bookSave by remember { mutableStateOf(false) }
     fun writeBytes(uri: Uri, bytes: ByteArray) =
         runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } }.onSuccess { toast("Gespeichert") }.onFailure { toast("Speichern fehlgeschlagen: ${it.message}") }
-    var gamebookText by remember { mutableStateOf("") }
-    val saveGamebook = rememberLauncherForActivityResult(CreateDocumentAt("application/json")) { uri -> uri?.let { writeBytes(it, gamebookText.toByteArray(Charsets.UTF_8)) } }
-    // Kein MIME-Filter: JSON melden die Dateimanager uneinheitlich
-    val pickGamebook = rememberLauncherForActivityResult(OpenDocumentAt()) { uri -> uri?.let { u -> toast(read(u)?.let(vm::importGamebook) ?: "Datei nicht lesbar") } }
+    // Spielbücher (.game) und gespeicherte Spiele (.savegame) liegen im Ordner books; "Andere Datei…" öffnet den Dateidialog (kein MIME-Filter: die Dateimanager kennen die Endungen nicht)
+    val pickGameFile = rememberLauncherForActivityResult(OpenDocumentAt()) { uri ->
+        uri?.let { u -> toast(read(u)?.let { text -> vm.openGameFile(text) { screen = Screen.CHAT } } ?: "Datei nicht lesbar") }
+    }
     val saveMarkdown = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> uri?.let { writeBytes(it, bookVm.markdown(bookSave)) } }
     val saveDocx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) { uri ->
         uri?.let { writeBytes(it, bookVm.docx(bookSave)) }
@@ -205,7 +209,12 @@ private fun RootContent(vm: ChatViewModel) {
 
     DownloadQuestion(vm)
 
+    // Das Start-Menü (Chat, Companions, Schreiben, Vorlesen, Spielen) steht unter den Hauptbildschirmen
+    val mainScreens = setOf(Screen.CHAT, Screen.GALLERY, Screen.BOOK, Screen.READ, Screen.PLAY)
+    Column(Modifier.fillMaxSize()) {
+    Box(Modifier.weight(1f)) {
     when (screen) {
+        Screen.GALLERY -> GalleryScreen(vm, open = { screen = it })
         Screen.CHAT -> ChatScreen(
             vm, open = { screen = it },
             onExport = { exportChat.launch(ChatLog.fileName(vm.persona.id)) },
@@ -221,7 +230,7 @@ private fun RootContent(vm: ChatViewModel) {
             onRequestNotifications = ::requestNotifications,
             onRequestCalendar = { calendarPermission.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)) },
             onToast = ::toast,
-            onOpenModels = { screen = Screen.MODELS }, folders = folders, onReplayIntro = { screen = Screen.INTRO },
+            onOpenModels = { screen = Screen.MODELS }, folders = folders, onReplayIntro = { screen = Screen.INTRO }, onOpenTools = { screen = Screen.TOOLS },
         )
         Screen.MODELS -> ModelsScreen(vm, onBack = { screen = Screen.SETTINGS }, folders = folders)
         Screen.BOOK -> BookScreen(
@@ -234,16 +243,20 @@ private fun RootContent(vm: ChatViewModel) {
         )
         Screen.PLAY -> PlayScreen(
             vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) }, onStarted = { screen = Screen.CHAT },
-            onLoadGamebook = { pickGamebook.launch(vm.bookLocation) }, onSaveGamebook = { name, json -> gamebookText = json; saveGamebook.launch(name to vm.bookLocation) },
+            onLoadGamebook = { pickGameFile.launch(vm.bookLocation) },
         )
         Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(
-            vm, onBack = { screen = Screen.CHAT }, onImport = { importPersona.launch("*/*") },
+            vm, onBack = { screen = Screen.GALLERY }, onImport = { importPersona.launch("*/*") },
             onImportFolder = { pickPersonaFolder.launch(null) },
             onExport = { id -> exportPersonaId = id; exportPersona.launch("$id.json") },
             onImportAvatars = { avatarFolder.launch(null) },
             onPickAvatar = { id -> avatarTarget = id; avatarPick.launch(arrayOf("image/*")) },
         )
-        Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.CHAT }, onImportMcp = { importMcp.launch("*/*") }, onExportMcp = { t -> exportMcpText = t; exportMcp.launch("mcp_servers_phone.json") }, onImportCert = { importCert.launch("*/*") }, onImportKeywords = { pickKeywords.launch(arrayOf("*/*")) })
+        Screen.TOOLS -> ToolsScreen(vm, onBack = { screen = Screen.SETTINGS }, onImportMcp = { importMcp.launch("*/*") }, onExportMcp = { t -> exportMcpText = t; exportMcp.launch("mcp_servers_phone.json") }, onImportCert = { importCert.launch("*/*") }, onImportKeywords = { pickKeywords.launch(arrayOf("*/*")) })
     }
+    }
+    if (screen in mainScreens) StartBar(screen) { screen = it }
+    }
+
 }

@@ -63,23 +63,35 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
                 File(personasDir, "companion.json").writeText(it)
             }
         }
-        mergeNewPersonas()
     }
 
-    /** Neue mitgelieferte Companions (z. B. Aurelia) werden einmal angelegt; wer sie löscht, bekommt sie nicht wieder (gleiche Merkdatei wie bei den Werkzeugen). */
-    private fun mergeNewPersonas() {
+    /**
+     * Die früheren Hilfs-Companions "Aurelia", "Vorleser" und "Story-Game" gibt es nicht mehr (die Bildschirme Schreiben, Vorlesen und Spielen haben eigene Kopfbilder):
+     * Einmal werden ihre Dateien und Chats entfernt. Liefert die Stimmen des Vorlesers (Erzähler, Mann, Frau; mit seiner Sprache), damit sie in die Standardstimmen der
+     * Einstellungen übernommen werden können; leer, wenn es nichts zu übernehmen gibt.
+     */
+    fun retireHelperPersonas(): RetiredVoices? {
         val offered = offeredFile.takeIf { it.isFile }?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
-        val pending = NEW_PERSONAS.filter { "persona:$it" !in offered }
-        if (pending.isEmpty()) return
+        val pending = HELPER_PERSONAS.filter { "retired:$it" !in offered }
+        if (pending.isEmpty()) return null
+        var voices: RetiredVoices? = null
         for (id in pending) {
-            val target = File(personasDir, "$id.json")
-            if (!target.exists()) asset("$id.json")?.let {
-                personasDir.mkdirs()
-                target.writeText(it)
+            val file = File(personasDir, "$id.json")
+            if (id == "vorleser" && file.isFile) {
+                voices = runCatching { Persona.parse(file.readText(Charsets.UTF_8), id).getOrThrow() }.getOrNull()
+                    ?.takeIf { it.voice.isNotEmpty() || it.voiceMale.isNotEmpty() || it.voiceFemale.isNotEmpty() }
+                    ?.let { RetiredVoices(it.language, it.voice, it.voiceMale, it.voiceFemale) }
             }
+            file.delete()
+            deleteChat(id)
         }
-        offeredFile.writeText((offered + pending.map { "persona:$it" }).joinToString("\n") + "\n")
+        deleteChat("roleplay")
+        offeredFile.writeText((offered + pending.map { "retired:$it" }).joinToString("\n") + "\n")
+        return voices
     }
+
+    /** Die Stimmen des früheren Companions "Vorleser" (siehe [retireHelperPersonas]). */
+    data class RetiredVoices(val language: String, val narrator: String, val male: String, val female: String)
 
     // --- Avatare (Bilder der Companions, relativ zum Companion-Ordner: "avatars/name.png") -------------------
 
@@ -238,16 +250,18 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
 
     private val gamebooksDir get() = File(root, "gamebooks")
 
+    /** Intern liegt ein Spielbuch als `<Schlüssel>.game`; die frühere Endung `.json` wird weiter gelesen und beim nächsten Speichern ersetzt. */
     fun loadGamebook(key: String): Gamebook? =
-        runCatching { Gamebooks.parse(File(gamebooksDir, "$key.json").readText(Charsets.UTF_8)) }.getOrNull()
+        runCatching { Gamebooks.parse((File(gamebooksDir, "$key.game").takeIf { it.isFile } ?: File(gamebooksDir, "$key.json")).readText(Charsets.UTF_8)) }.getOrNull()
 
     fun saveGamebook(book: Gamebook) {
         if (book.key.isBlank()) return
         gamebooksDir.mkdirs()
-        val target = File(gamebooksDir, "${book.key}.json")
-        val temp = File(gamebooksDir, "${book.key}.json.tmp")
+        val target = File(gamebooksDir, "${book.key}.game")
+        val temp = File(gamebooksDir, "${book.key}.game.tmp")
         temp.writeText(Gamebooks.toJson(book), Charsets.UTF_8)
         if (!temp.renameTo(target)) target.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
+        File(gamebooksDir, "${book.key}.json").delete() // die ältere Fassung verwerfen: es gilt immer die neue
     }
 
     fun saveChat(personaId: String, json: String) {
@@ -263,7 +277,7 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
 
     private companion object {
         /** Standard-Einträge, die nachträglich in bestehende Konfigurationen übernommen werden (Server und Aliase). */
-        val NEW_PERSONAS = listOf("aurelia", "vorleser", "story_game")
+        val HELPER_PERSONAS = listOf("aurelia", "vorleser", "story_game")
         val NEW_DEFAULTS = listOf("organizer", "todo-add", "todo-list", "todo-done", "cal-add", "cal-list", "alarm", "timer", "messages")
     }
 }

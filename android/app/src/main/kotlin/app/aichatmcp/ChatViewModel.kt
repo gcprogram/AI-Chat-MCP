@@ -88,6 +88,15 @@ import app.aichatmcp.work.GenerationService
 import app.aichatmcp.report.ReportAction
 import app.aichatmcp.messages.MessageHub
 import app.aichatmcp.core.BookCast
+import app.aichatmcp.core.BookFileNames
+import app.aichatmcp.core.Gender
+import app.aichatmcp.core.GenderGuess
+import app.aichatmcp.core.Genders
+import app.aichatmcp.core.SaveGame
+import app.aichatmcp.core.SavedDecision
+import app.aichatmcp.core.SavedRun
+import app.aichatmcp.core.SavedSetup
+import app.aichatmcp.core.SavedSolo
 import app.aichatmcp.core.BookScenes
 import app.aichatmcp.core.Consequence
 import app.aichatmcp.core.Decision
@@ -196,6 +205,11 @@ data class ToolsState(
     val buttons: Map<String, List<String>> = emptyMap(), // button set alias -> its buttons
 )
 
+/** Mitgelieferte Dateien mit dem Kopfbild der Bildschirme "Buch schreiben", "Buch vorlesen" und "Buch spielen" (Persona-Format, aber keine Companions). */
+const val HERO_WRITE = "hero_write.json"
+const val HERO_READ = "hero_read.json"
+const val HERO_PLAY = "hero_play.json"
+
 private const val RESULT_PREVIEW_CHARS = 160
 
 /** So viele unklare Reden fragt der KI-Rückfall höchstens je Dokument ab (jede Frage kostet Zeit am Server). */
@@ -228,6 +242,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var personaIds by mutableStateOf<List<String>>(emptyList())
         private set
+
+    /** Anzeigename je Companion-Kennung (die Kennung ist der Dateiname in Kleinbuchstaben mit "_"; angezeigt wird der Name aus der Datei). */
+    var personaNames by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
+    private fun refreshPersonas() {
+        personaIds = storage.personas.list()
+        personaNames = personaIds.associateWith { id -> runCatching { storage.personas.load(id).name }.getOrDefault("").ifBlank { id } }
+    }
+
+    /** Der Name zur Kennung eines Companions (sonst die Kennung). */
+    fun personaLabel(id: String): String = personaNames[id] ?: id
+
+    /** Alle Companions mit Namen, Beschreibung, Regeln und Bild für die Übersicht (liest alle Dateien: nicht im Hauptthread aufrufen). */
+    fun allPersonas(): List<Persona> = storage.personas.list().map { storage.personas.load(it) }.sortedBy { it.name.lowercase() }
+
     var persona by mutableStateOf(Persona())
         private set
     val messages = mutableStateListOf<UiMessage>()
@@ -755,28 +785,50 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val doc = pendingDoc ?: return
         val source = doc.doc ?: DocText(doc.name, doc.kind, doc.text)
         val tag = LanguageDetect.detect(source.text)?.tag ?: languageTag() ?: Locale.getDefault().toLanguageTag()
-        // Wörtliche Rede mit eigenen Stimmen: nur mit Piper-Erzählerstimme und mindestens einer Stimme für männliche oder weibliche Rede
-        val dialogue = persona.dialogueVoices && (persona.voiceMale.isNotEmpty() || persona.voiceFemale.isNotEmpty()) && speechOut.piperFor(persona.voice, tag) != null
-        val plan = ReadPlan.of(source, dialogue = dialogue)
-        if (plan.size == 0) {
-            status = "Es gibt nichts zum Vorlesen."
-            return
-        }
-        val mark = if (fromMark) marks.get(doc.uri) else null
-        val start = mark?.let { ReadMarks.restoreIndex(it, plan.size) } ?: 0
-        speechOut.installedVoices(listOf(tag)) { installed ->
-            if (installed[tag] == true || speechOut.piperFor(persona.voice, tag) != null) beginReading(doc, plan, tag, start)
-            else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, plan, tag, start) }
+        viewModelScope.launch {
+            // Stimmen: Erzähler (bei einem Ich-Erzähler nach dem Geschlecht der Hauptfigur), Männer und Frauen in wörtlicher Rede: die Standardstimmen aus den Einstellungen
+            val firstPerson = withContext(Dispatchers.Default) { BookCast.firstPerson(source.text) }
+            var gender: Gender? = null
+            if (firstPerson) gender = narratorGender(doc, source.text, askName = false).second
+            readNarratorGender = gender
+            applyReadVoices(tag, gender)
+            val dialogue = config.dialogueVoices && (speechOut.voiceMale.isNotEmpty() || speechOut.voiceFemale.isNotEmpty()) && speechOut.piperFor(speechOut.voice, tag) != null
+            val plan = withContext(Dispatchers.Default) { ReadPlan.of(source, dialogue = dialogue) }
+            if (plan.size == 0) {
+                status = "Es gibt nichts zum Vorlesen."
+                return@launch
+            }
+            val mark = if (fromMark) marks.get(doc.uri) else null
+            val start = mark?.let { ReadMarks.restoreIndex(it, plan.size) } ?: 0
+            speechOut.installedVoices(listOf(tag)) { installed ->
+                if (installed[tag] == true || speechOut.piperFor(speechOut.voice, tag) != null) beginReading(doc, plan, tag, start)
+                else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, plan, tag, start) }
+            }
+            // Ein Ich-Erzähler ohne bekannten Namen oder Geschlecht: im Hintergrund klären und die Stimme ab dem nächsten Abschnitt anpassen
+            if (firstPerson && gender == null) {
+                val g = narratorGender(doc, source.text, askName = true).second
+                if (g != null && readerDoc === doc) { readNarratorGender = g; applyReadVoices(tag, g) }
+            }
         }
     }
 
-    /** "Read a book": Die Stimmen gehören zum Companion Vorleser; er wird der aktive Companion (falls er angelegt ist), damit Vorlesen und Stimmenwahl zu ihm gehören. */
-    fun openReadBook() {
-        if (!streaming && "vorleser" in personaIds && persona.id != "vorleser") selectPersona("vorleser")
+    /** Geschlecht der Hauptfigur des Buches, das gerade vorgelesen wird (nur bei einem Ich-Erzähler; sonst null). */
+    private var readNarratorGender: Gender? = null
+
+    /** Setzt die Stimmen fürs Vorlesen eines Buches in der Sprache [tag]; [narrator] = Geschlecht der Hauptfigur bei einem Ich-Erzähler (null = Erzählerstimme). */
+    private fun applyReadVoices(tag: String, narrator: Gender?) {
+        speechOut.voice = config.defaultVoice(tag, narrator)
+        speechOut.voiceMale = config.defaultVoice(tag, Gender.MALE)
+        speechOut.voiceFemale = config.defaultVoice(tag, Gender.FEMALE)
     }
 
-    /** Das Bild eines mitgelieferten Companions (Vorleser, Story-Game) für die Kopf-Bilder der Bildschirme; null, wenn er nicht angelegt ist. */
-    fun companionImage(id: String): File? = if (id in personaIds) storage.avatarFile(storage.personas.load(id)) else null
+    /** Die mitgelieferte Datei mit dem Kopfbild eines Bildschirms (Write, Read, Play: keine Companions); null, wenn sie fehlt. */
+    private fun heroPersona(asset: String): Persona? = runCatching {
+        Persona.parse(getApplication<Application>().assets.open(asset).bufferedReader(Charsets.UTF_8).use { it.readText() }, asset).getOrThrow()
+    }.getOrNull()
+
+    /** Das Kopfbild eines Bildschirms (Write, Read, Play); null, wenn es fehlt. */
+    fun heroImage(asset: String): File? = heroPersona(asset)?.let { storage.avatarFile(it) }
 
     /** Sprache des geladenen Buches (aus dem Text erkannt), sonst die Sprache des Companions: danach richtet sich die Liste der Stimmen. */
     fun readerLanguageName(): String {
@@ -816,7 +868,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val spoken = Speech.spokenText(text)
         if (spoken.isEmpty()) return
         val tag = Speech.languageTag(readerLanguageName()) ?: languageTag()
-        speechOut.speak(spoken, tag, persona.voice) { status = it }
+        speechOut.speak(spoken, tag, speechOut.voice) { status = it }
     }
 
     fun confirmVoicePrompt() {
@@ -831,6 +883,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun beginReading(doc: PendingDoc, plan: ReadPlan, tag: String, start: Int) {
         endReading()
+        applyReadVoices(tag, readNarratorGender) // endReading() hat die Stimmen des Chats wiederhergestellt
         readerDoc = doc
         val describer = DescribedPictures(
             viewModelScope, getApplication(), vision, doc.doc?.readable, { config.localThreads }, IMAGE_PROMPT,
@@ -865,7 +918,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = "Vorlesen beendet."
                 endReading()
                 pendingDoc = null
-                speechOut.speak(BookEnd.phrase(tag), tag, persona.voice) { } // "Ende des Buches" in der Sprache des Buches
+                speechOut.speak(BookEnd.phrase(tag), tag, speechOut.voice) { } // "Ende des Buches" in der Sprache des Buches
             }
         }
         val r = Reader(plan, SpeechReaderOutput(speechOut) { status = it }, describer, events, tag, "en-US", start)
@@ -945,6 +998,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.setItemSink(null)
         readerState = ReaderState.STOPPED
         readerNote = ""
+        syncVoice() // Chat und Spiel sprechen wieder mit ihren eigenen Stimmen
     }
 
     fun readerPlay() {
@@ -1173,7 +1227,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             outcome.onSuccess { (results, avatars) ->
-                personaIds = storage.personas.list()
+                refreshPersonas()
                 avatarVersion++
                 companionNote = CompanionImport.report(results, avatars)
             }
@@ -1269,11 +1323,84 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.speak(VOICE_SAMPLES[tag] ?: "Test", tag, voiceName) { status = it }
     }
 
-    /** Die Stimme des gewählten Companions gilt für Antworten und Vorlesen. */
+    /** "Antworten vorlesen" ein- oder ausschalten (gilt auch für den Text im Spiel "Buch spielen"). */
+    fun setSpeakReplies(on: Boolean) {
+        config = config.copy(speakReplies = on)
+        storage.saveConfig(config)
+        if (!on) speechOut.stop()
+    }
+
+    /** Stellt die Sprechgeschwindigkeit sofort um und speichert sie (Regler auf den Bildschirmen und in den Einstellungen). */
+    fun setSpeechRate(rate: Double) {
+        config = config.copy(speechRate = rate).sanitize()
+        speechOut.rate = config.speechRate.toFloat()
+        storage.saveConfig(config)
+    }
+
+    // --- Standardstimmen nach Sprache und Geschlecht ----------------------------------------------------------------
+
+    private fun genderPrefs() = getApplication<Application>().getSharedPreferences("genders", android.content.Context.MODE_PRIVATE)
+
+    private fun cachedGender(key: String): Gender? = Genders.parse(genderPrefs().getString(key, "").orEmpty())
+
+    /**
+     * Fragt das Modell nach dem Geschlecht von [name] (nur wenn die Regeln in [Genders] nichts ergaben) und merkt sich die Antwort. null = unklar oder kein Modell
+     * erreichbar; ein nur auf dem Handy laufendes Modell wird dafür nicht geladen (zu teuer für eine Stimmenwahl).
+     */
+    private suspend fun askGender(cacheKey: String, name: String, context: String): Gender? {
+        if (genderPrefs().contains(cacheKey)) return cachedGender(cacheKey)
+        val cfg = effectiveConfig(configFor(summaryChoice()))
+        if (cfg.backend == BACKEND_LOCAL && !localLlm.isLoaded(cfg)) return null
+        val answer = askModel(GenderGuess.prompt(name, context), 4, 0.0, summaryChoice()) ?: return null
+        val gender = GenderGuess.parse(answer)
+        runCatching { genderPrefs().edit().putString(cacheKey, if (gender == null) "none" else Genders.key(gender)).apply() }
+        return gender
+    }
+
+    /** Geschlecht eines Companions: seine Angabe, sonst aus Name und Beschreibung, sonst die gemerkte Antwort des Modells; null = unklar. */
+    fun personaGender(p: Persona): Gender? = Genders.parse(p.gender) ?: Genders.ofPersona(p.name, p.description, p.rules) ?: cachedGender("persona:${p.id}")
+
+    /** Wie der Companion automatisch eingeordnet wird (für die Anzeige im Editor): "female", "male" oder "" = unklar. */
+    fun detectedGender(p: Persona): String = Genders.key(Genders.ofPersona(p.name, p.description, p.rules) ?: cachedGender("persona:${p.id}"))
+
+    /** Die Stimme eines Companions: seine eigene Wahl, sonst die Standardstimme für sein Geschlecht (Einstellungen > Stimmen). */
+    fun voiceOf(p: Persona, tag: String?): String = p.voice.ifEmpty { config.defaultVoice(tag, personaGender(p)) }
+
+    /** Geschlecht der Spielerfigur im laufenden Spiel; null = unklar (dann spricht die Erzählerstimme). */
+    private var heroGender: Gender? = null
+
+    /** Ist das Geschlecht eines Companions unklar, fragt das Modell einmal (im Hintergrund) und die Stimme wird danach angepasst. */
+    private fun ensurePersonaGender() {
+        val p = persona
+        if (roleplay != null || p.id.isEmpty() || p.voice.isNotEmpty() || Genders.parse(p.gender) != null) return
+        if (Genders.ofPersona(p.name, p.description, p.rules) != null || genderPrefs().contains("persona:${p.id}")) return
+        viewModelScope.launch {
+            askGender("persona:${p.id}", p.name, p.description + " " + p.rules.joinToString(" "))
+            if (persona.id == p.id) syncVoice()
+        }
+    }
+
+    /** Die Stimmen für Antworten und Vorlesen: im Spiel nach dem Geschlecht der Spielerfigur, sonst die des Companions (eigene Wahl oder Standardstimme nach Geschlecht). */
     private fun syncVoice() {
-        speechOut.voice = persona.voice
-        speechOut.voiceMale = persona.voiceMale
-        speechOut.voiceFemale = persona.voiceFemale
+        val tag = languageTag()
+        speechOut.voice = if (roleplay != null) config.defaultVoice(tag, heroGender) else voiceOf(persona, tag)
+        speechOut.voiceMale = config.defaultVoice(tag, Gender.MALE)
+        speechOut.voiceFemale = config.defaultVoice(tag, Gender.FEMALE)
+    }
+
+    /**
+     * Geschlecht der Hauptfigur eines Buches für die Stimme des Erzählers: nur bei einem Ich-Erzähler (er ist die Hauptfigur). Aus dem Namen und dem Text
+     * ([Genders.ofCharacter]), sonst vom Modell erfragt. Der Name des Ich-Erzählers steht im Spielbuch oder im Gedächtnis der App; sonst wird er erfragt.
+     */
+    private suspend fun narratorGender(doc: PendingDoc, text: String, askName: Boolean): Pair<String, Gender?> {
+        val key = Summaries.key(doc.name, doc.text)
+        var name = storage.loadGamebook(key)?.narrator?.takeIf { it.isNotBlank() }
+            ?: getApplication<Application>().getSharedPreferences("narrators", android.content.Context.MODE_PRIVATE).getString(key, "")?.takeIf { it.isNotBlank() }
+            ?: ""
+        if (name.isEmpty() && askName) name = narratorFor(doc, withContext(Dispatchers.Default) { BookCast.candidates(doc.text, 12) })
+        if (name.isEmpty()) return "" to null
+        val gender = withContext(Dispatchers.Default) { Genders.ofCharacter(name, text) } ?: askGender("book:$key:$name", name, GenderGuess.sample(name, text))
+        return name to gender
     }
 
     fun installVoices() {
@@ -1331,12 +1458,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Liest einen Text vor, auch wenn "Antworten vorlesen" aus ist (der Nutzer hat ausdrücklich darum gebeten, z. B. "lies meine Nachrichten vor"). */
     private fun speakAlways(text: String) {
         if (docReading) return
+        syncVoice() // das Vorlesen eines Buches kann die Stimmen umgestellt haben
         val spoken = Speech.spokenText(text)
         if (spoken.isNotEmpty()) speechOut.speak(spoken, languageTag()) { status = it }
     }
 
     private fun speak(reply: String) {
         if (docReading) return // ein Text wird gerade vorgelesen: die Antwort nicht dazwischenreden lassen
+        syncVoice() // das Vorlesen eines Buches kann die Stimmen umgestellt haben
         val text = Speech.spokenText(reply)
         if (text.isNotEmpty()) speechOut.speak(text, languageTag()) { status = it }
     }
@@ -1589,7 +1718,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             message.onSuccess { (p, c) ->
-                personaIds = storage.personas.list()
+                refreshPersonas()
                 if (!streaming) {
                     val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
                     persona = storage.personas.load(id)
@@ -1742,8 +1871,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         beginGame(setup, returnTo)
     }
 
+    /** Stimme des Erzählers im Spiel: nach dem Geschlecht der Spielerfigur (Ich-Erzähler oder gewählte Figur); unklar = Erzählerstimme, das Modell klärt es im Hintergrund. */
+    private fun startHero(setup: RoleplaySetup) {
+        val hero = setup.hero
+        val text = setup.scenes.joinToString(" ") { it.text }.take(300_000)
+        heroGender = if (hero.isBlank()) null else Genders.ofCharacter(hero, text)
+        if (heroGender == null && hero.isNotBlank()) {
+            val context = GenderGuess.sample(hero, text)
+            viewModelScope.launch {
+                val g = askGender("book:${setup.title}:$hero", hero, context)
+                if (g != null && roleplay?.setup?.hero == hero) { heroGender = g; syncVoice() }
+            }
+        }
+    }
+
     /** Beginnt ein Spiel mit [setup] von vorn (auch für "Noch einmal" nach einem Spielende). */
     private fun beginGame(setup: RoleplaySetup, returnTo: String) {
+        startHero(setup)
         val start = setup.scenes.indices.firstOrNull { it !in setup.skip } ?: 0
         roleplay = RoleplayRun(setup, start, 0, returnTo, played = setup.skip + start)
         applyRoleplayPersona()
@@ -1765,7 +1909,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Modus "Originaltext": Zeigt den Text der Szene [index] ungekürzt als Antwort des Erzählers, liest ihn vor (auch bei "Antworten vorlesen" aus: dafür ist der Modus da)
+     * Modus "Originaltext": Zeigt den Text der Szene [index] ungekürzt als Antwort des Erzählers, liest ihn vor (nur mit "Antworten vorlesen", wie jede Antwort)
      * und bietet danach die Entscheidungen an. Folgt er auf die kurze Folge einer Abweichung, wird er an diese Antwort angehängt (der Verlauf bleibt abwechselnd Nutzer/Assistent).
      */
     private fun showBookScene(index: Int) {
@@ -1777,11 +1921,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             else session.addAssistant(text)
             messages += UiMessage(UiKind.ASSISTANT, text)
             speechOut.stop()
-            if (!docReading) Speech.spokenText(text).takeIf { it.isNotEmpty() }?.let { speechOut.speak(it, languageTag(), persona.voice) { status = it } }
+            // gelesen wird wie bei jeder Antwort nur mit eingeschaltetem "Antworten vorlesen"; sonst steht der Text nur im Chat
+            syncVoice()
+            if (config.speakReplies && !docReading) Speech.spokenText(text).takeIf { it.isNotEmpty() }?.let { speechOut.speak(it, languageTag(), speechOut.voice) { status = it } }
         }
         saveChat()
         updateContext()
         applyRoleplayPersona()
+        autoSaveGame()
         val r = roleplay ?: return
         if (r.solo.end != null) return
         if (Solo.candidates(r.setup.scenes.size, r.played, 1).isEmpty()) finishGame(SoloEnd.WON) else requestDecisions()
@@ -1949,6 +2096,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     onData = { b -> runCatching { storage.saveGamebook(b) } },
                     parallel = parallel,
                 )
+                // fertig: das Spielbuch liegt als *.game im Ordner Documents/AIChatMCP/books (eine ältere Datei mit demselben Namen wird ersetzt)
+                storage.loadGamebook(key)?.takeIf { Gamebooks.ready(it) }?.let { saveGamebookFile(it) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: SummaryException) {
@@ -1986,7 +2135,121 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val book = if (parsed.key.isBlank()) parsed.copy(key = Summaries.key(parsed.title, parsed.scenes.size.toString() + parsed.scenes.first().plot.take(80))) else parsed
         runCatching { storage.saveGamebook(book) }.onFailure { return tNow("Saving failed: ${it.message}", "Speichern fehlgeschlagen: ${it.message}") }
         loadedGamebook = book
+        saveGamebookFile(book) // immer in den Ordner books legen und ersetzen
         return tNow("Game book “${book.title}” loaded (${book.scenes.size} scenes).", "Spielbuch „${book.title}“ geladen (${book.scenes.size} Szenen).")
+    }
+
+    // --- Spielbücher (*.game) und gespeicherte Spiele (*.savegame) im Ordner Documents/AIChatMCP/books -------------------------------
+
+    private val bookFiles = BookFiles(getApplication())
+
+    /** Wie der Ordner für den Nutzer heißt. */
+    val bookFolder: String get() = bookFiles.label
+
+    /** Die Dateien im Ordner (Spielbücher und gespeicherte Spiele, neueste zuerst). */
+    var bookEntries by mutableStateOf<List<BookFiles.Entry>>(emptyList())
+        private set
+
+    /** Meldung zum letzten Speichern oder Laden einer Datei (für die Anzeige im Bildschirm "Buch spielen"). */
+    var fileNote by mutableStateOf("")
+
+    fun refreshBookFiles() {
+        viewModelScope.launch { bookEntries = withContext(Dispatchers.IO) { bookFiles.list() } }
+    }
+
+    /** Legt das Spielbuch als `*.game` im Ordner ab und ersetzt die gleichnamige Datei. Gibt die Meldung für den Nutzer zurück. */
+    fun saveGamebookFile(book: Gamebook): String {
+        val name = BookFileNames.gameName(book.title)
+        val ok = bookFiles.save(name, Gamebooks.toJson(book)) != null
+        refreshBookFiles()
+        fileNote = if (ok) tNow("Saved: ${bookFiles.label}/$name", "Gespeichert: ${bookFiles.label}/$name") else tNow("Saving the game book failed.", "Das Spielbuch konnte nicht gespeichert werden.")
+        return fileNote
+    }
+
+    /** "Spielbuch speichern": das Spielbuch zum geladenen Buch (oder das geladene Spielbuch) sofort in den Ordner legen. */
+    fun saveGamebookFile(doc: PendingDoc?): String {
+        val book = loadedGamebook ?: doc?.let { storage.loadGamebook(Summaries.key(it.name, it.text)) }
+            ?: return tNow("There is no game book yet.", "Es gibt noch kein Spielbuch.").also { fileNote = it }
+        return saveGamebookFile(book)
+    }
+
+    /**
+     * Öffnet eine Datei des Spiels: ein gespeichertes Spiel (`*.savegame`) wird fortgesetzt, ein Spielbuch (`*.game`, auch das ältere `*.json`) geladen.
+     * Gibt die Meldung zurück; [onStarted] läuft, wenn ein Spiel fortgesetzt wurde (die Oberfläche wechselt dann zum Chat).
+     */
+    fun openGameFile(text: String, onStarted: () -> Unit = {}): String {
+        val message = if (SaveGame.isSaveGame(text)) {
+            val save = SaveGame.parse(text) ?: return tNow("This saved game cannot be read.", "Dieses gespeicherte Spiel ist nicht lesbar.").also { fileNote = it }
+            restoreSaveGame(save).also { if (roleplay?.setup?.title == save.setup.title) onStarted() }
+        } else importGamebook(text)
+        fileNote = message
+        return message
+    }
+
+    fun openBookEntry(entry: BookFiles.Entry, onStarted: () -> Unit = {}): String {
+        val text = bookFiles.read(entry.uri) ?: return tNow("The file cannot be read.", "Die Datei lässt sich nicht lesen.").also { fileNote = it }
+        return openGameFile(text, onStarted)
+    }
+
+    private var lastAutoSave = 0L
+
+    private fun currentSaveGame(): SaveGame? {
+        val run = roleplay ?: return null
+        return SaveGame(
+            title = run.setup.title, savedAt = System.currentTimeMillis(), setup = SavedSetup.of(run.setup),
+            run = SavedRun(
+                run.sceneIndex, run.turns, run.closing, SavedSolo.of(run.solo), run.decisions.map { SavedDecision.of(it) }, run.played.toList(), run.order,
+                run.answered.map { SavedDecision.of(it) }, run.chosen, run.outcome,
+            ),
+            chat = ChatLog.toJson(session.history, persona.id, config.userName),
+        )
+    }
+
+    /** Speichert das laufende Spiel als `*.savegame` im Ordner (ersetzt die gleichnamige Datei). Gibt die Meldung zurück. */
+    fun saveGame(): String {
+        val save = currentSaveGame() ?: return tNow("No game is running.", "Es läuft kein Spiel.").also { fileNote = it }
+        val name = SaveGame.fileName(save.title)
+        val ok = bookFiles.save(name, SaveGame.toJson(save)) != null
+        refreshBookFiles()
+        fileNote = if (ok) tNow("Game saved: ${bookFiles.label}/$name", "Spiel gespeichert: ${bookFiles.label}/$name") else tNow("Saving the game failed.", "Das Spiel konnte nicht gespeichert werden.")
+        status = fileNote
+        return fileNote
+    }
+
+    /** Sichert das Spiel zwischendurch (nach jeder Szene); höchstens alle 10 Sekunden, im Hintergrund, ohne Meldung. */
+    private fun autoSaveGame() {
+        val now = System.currentTimeMillis()
+        if (now - lastAutoSave < 10_000) return
+        val save = currentSaveGame() ?: return
+        lastAutoSave = now
+        val json = SaveGame.toJson(save)
+        viewModelScope.launch(Dispatchers.IO) { bookFiles.save(SaveGame.fileName(save.title), json) }
+    }
+
+    /** Setzt ein gespeichertes Spiel fort: Szenen, Spielbuch, Spielstand, Entscheidungen und Chat kommen aus der Datei. */
+    private fun restoreSaveGame(save: SaveGame): String {
+        if (streaming) return tNow("Not possible while the model is answering.", "Während der Antwort nicht möglich.")
+        saveChat()
+        val setup = save.setup.toSetup()
+        val r = save.run
+        val returnTo = roleplay?.returnTo ?: persona.id
+        val index = r.sceneIndex.coerceIn(0, setup.scenes.lastIndex)
+        startHero(setup)
+        roleplay = RoleplayRun(
+            setup, index, r.turns, returnTo, r.closing, r.solo.toState(), r.decisions.map { it.toDecision() }, false, r.outcome,
+            r.played.toSet().ifEmpty { setOf(index) }, r.order, r.answered.map { it.toDecision() }, r.chosen,
+        )
+        applyRoleplayPersona()
+        session.reset()
+        val loaded = runCatching { ChatLog.fromJson(save.chat) }.getOrNull()
+        if (loaded != null) session.load(loaded.messages)
+        renderHistory()
+        saveChat()
+        updateContext()
+        // wurde mitten in der Wahl gespeichert (keine Entscheidungen, Spiel nicht zu Ende), fragt die App sie noch einmal ab
+        val run = roleplay
+        if (run != null && run.solo.end == null && run.decisions.isEmpty() && run.setup.solo) requestDecisions()
+        return tNow("Game “${setup.title}” continues at scene ${roleplay?.sceneNumber ?: 1}.", "Spiel „${setup.title}“ geht bei Szene ${roleplay?.sceneNumber ?: 1} weiter.")
     }
 
     fun closeLoadedGamebook() {
@@ -2011,12 +2274,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyRoleplayPersona() {
         val run = roleplay ?: return
-        // Bild und Stimme des Spielleiters kommen vom Companion "Story-Game" (wenn er angelegt ist)
-        val host = if ("story_game" in personaIds) storage.personas.load("story_game") else null
+        // Das Bild des Spielleiters ist das Kopfbild von "Play a book" (mitgelieferte Datei, kein Companion)
+        val host = heroPersona(HERO_PLAY)
         // die Szene davor (nur wenn sie zur Geschichte gehört): ihre Zusammenfassung und der Ort der Spielerfigur stehen im Prompt
         val order = run.played.toList()
         val previous = if (order.lastOrNull() == run.sceneIndex) order.getOrNull(order.size - 2)?.takeIf { it !in run.setup.skip } else null
-        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing, run.solo, run.outcome, previous).let { if (host == null) it else it.copy(avatarData = host.avatarData, voice = host.voice) }
+        persona = RoleplayPrompt.persona(run.setup, run.sceneIndex, run.closing, run.solo, run.outcome, previous).let { if (host == null) it else it.copy(avatarData = host.avatarData) }
         session.persona = persona
         syncVoice()
         updateContext()
@@ -2115,6 +2378,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
             roleplay = run.copy(decisions = options, order = options.indices.shuffled(), answered = emptyList(), chosen = -1, asking = false)
+            autoSaveGame() // stabiler Zeitpunkt: Szene gelesen, Entscheidungen angeboten
             return
         }
         val candidates = Solo.candidates(run.setup.scenes.size, run.played, if (run.setup.threads.isEmpty()) 1 else Solo.MAX_STRANDS, run.setup.threads)
@@ -2140,6 +2404,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if (current.sceneIndex != run.sceneIndex || current.setup.id != run.setup.id) return@launch // inzwischen beendet oder neu gestartet
             roleplay = current.copy(asking = false, decisions = parsed, order = parsed.indices.shuffled())
             status = "Bereit"
+            autoSaveGame()
             // während der Spieler überlegt, ist die Handlung der nächsten Szene schon zu besorgen
             if (!strands && !run.setup.verbatim) ensurePlot(candidates.first())
         }
@@ -2192,6 +2457,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         saveChat() // der laufende Chat bleibt beim bisherigen Companion erhalten
         persona = storage.personas.load(id)
         syncVoice()
+        ensurePersonaGender()
         session.persona = persona
         session.reset()
         saveConfig(config.copy(persona = id))
@@ -2221,7 +2487,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun savePersona(edited: Persona): String {
         val id = storage.personas.save(edited)
-        personaIds = storage.personas.list()
+        refreshPersonas()
         if (id == persona.id) {
             persona = edited.copy(id = id)
             syncVoice()
@@ -2235,7 +2501,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (personaIds.size <= 1) return // einer muss übrig bleiben
         storage.personas.delete(id)
         storage.deleteChat(id)
-        personaIds = storage.personas.list()
+        refreshPersonas()
         if (id == persona.id) selectPersona(personaIds.first())
     }
 
@@ -2559,6 +2825,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         storage.ensureDefaults()
         config = storage.loadConfig()
+        // Die früheren Hilfs-Companions (Aurelia, Vorleser, Story-Game) sind weg; die Stimmen des Vorlesers werden zu Standardstimmen
+        storage.retireHelperPersonas()?.let { v ->
+            val tag = Speech.languageTag(v.language) ?: "de-DE"
+            var c = config
+            if (v.narrator.isNotEmpty() && c.defaultVoice(tag, null).isEmpty()) c = c.withDefaultVoice(tag, "narrator", v.narrator)
+            if (v.male.isNotEmpty() && c.defaultVoices["${tag.substringBefore('-').lowercase()}/male"].isNullOrEmpty()) c = c.withDefaultVoice(tag, "male", v.male)
+            if (v.female.isNotEmpty() && c.defaultVoices["${tag.substringBefore('-').lowercase()}/female"].isNullOrEmpty()) c = c.withDefaultVoice(tag, "female", v.female)
+            if (c != config) { config = c; storage.saveConfig(c) }
+        }
+        // Einmalig: die deutschen Stimmen sprechen langsam, 1.2 ist jetzt der Standard (eine bisher unverändert gelassene 1.0 wird angehoben)
+        getApplication<Application>().getSharedPreferences("migrations", android.content.Context.MODE_PRIVATE).let { prefs ->
+            if (!prefs.getBoolean("speech_rate_1_2", false)) {
+                if (config.speechRate == 1.0) { config = config.copy(speechRate = 1.2); storage.saveConfig(config) }
+                prefs.edit().putBoolean("speech_rate_1_2", true).apply()
+            }
+        }
         MessageHub.enabled = config.catchMessages
         refreshModelFiles()
         localLlm.onMeasured = { m -> viewModelScope.launch { record(m) } }
@@ -2568,10 +2850,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.piperNoise = config.piperNoise.toFloat() to config.piperNoiseW.toFloat()
         piperVoices = storage.piper.list()
         whisperModels = storage.whisper.list()
-        personaIds = storage.personas.list()
+        refreshPersonas()
         val id = config.persona.takeIf { it in personaIds } ?: personaIds.firstOrNull().orEmpty()
         persona = storage.personas.load(id)
         syncVoice()
+        ensurePersonaGender()
         session = ChatSession(effectiveConfig(config), persona, registry)
         engine = ChatEngine(
             session,

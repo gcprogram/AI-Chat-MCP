@@ -237,6 +237,7 @@ class SpeechOutput(private val context: Context) {
             speakItem(parts.joinToString(" ") { it.text }, id, languageTag, flush, onProblem)
             return
         }
+        val parts = parts.map { it.copy(text = Speech.forSpeech(it.text, languageTag).text) } // "Mrs" -> "Missis" usw.
         val male = piperFor(voiceMale, languageTag) ?: narrator
         val female = piperFor(voiceFemale, languageTag) ?: narrator
         val segments = mutableListOf<PiperSpeaker.Segment>()
@@ -253,7 +254,8 @@ class SpeechOutput(private val context: Context) {
     /** Für Tests und Vorschau: erzeugt Audio einer Piper-Stimme ohne es abzuspielen. */
     fun renderPiper(name: String, text: String, speed: Float = 1f): Pair<FloatArray, Int>? = piper()?.render(name, text, speed)
 
-    fun speak(text: String, languageTag: String?, voiceName: String = voice, onProblem: (String) -> Unit) {
+    fun speak(rawText: String, languageTag: String?, voiceName: String = voice, onProblem: (String) -> Unit) {
+        val text = Speech.forSpeech(rawText, languageTag).text // "Mrs" -> "Missis" usw.
         val chunks = Speech.chunks(text)
         if (chunks.isEmpty()) return
         piperFor(voiceName, languageTag)?.let { piperVoice ->
@@ -295,6 +297,7 @@ class SpeechOutput(private val context: Context) {
     }
 
     private var itemSink: ItemSink? = null
+    private val progressMaps = java.util.concurrent.ConcurrentHashMap<String, Speech.Spoken>()
     /** Sprechgeschwindigkeit (1.0 = normal), gilt für Antworten und das Vorlesen. */
     @Volatile var rate: Float = 1.0f
 
@@ -313,7 +316,7 @@ class SpeechOutput(private val context: Context) {
             }
 
             override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
-                utteranceId?.takeIf { it.startsWith("r:") }?.let { id -> main.post { itemSink?.progress(id, start) } }
+                utteranceId?.takeIf { it.startsWith("r:") }?.let { id -> main.post { itemSink?.progress(id, progressMaps[id]?.original(start) ?: start) } }
             }
 
             @Deprecated("Deprecated in Java")
@@ -324,7 +327,10 @@ class SpeechOutput(private val context: Context) {
     }
 
     /** Spricht einen Abschnitt in [languageTag]; [flush] ersetzt alles Laufende, sonst wird angehängt. */
-    fun speakItem(text: String, id: String, languageTag: String?, flush: Boolean, onProblem: (String) -> Unit) {
+    fun speakItem(rawText: String, id: String, languageTag: String?, flush: Boolean, onProblem: (String) -> Unit) {
+        val spoken = Speech.forSpeech(rawText, languageTag) // "Mrs" -> "Missis" usw.; Fortschrittsmeldungen werden auf den Ausgangstext zurückgerechnet
+        val text = spoken.text
+        progressMaps[id] = spoken
         piperFor(voice, languageTag)?.let { piperVoice ->
             if (flush) tts?.stop()
             piper()?.speak(piperVoice, text, id, flush, rate, onProblem)

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.HERO_READ
 import app.aichatmcp.PendingDoc
 import app.aichatmcp.core.PIPER_PREFIX
 import app.aichatmcp.core.ReadMark
@@ -49,7 +50,6 @@ import app.aichatmcp.speech.SpeechOutput
  */
 @Composable
 fun ReadScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onSaveText: (fileName: String, text: String) -> Unit) {
-    LaunchedEffect(Unit) { vm.openReadBook() }
     // Während das Modell zusammenfasst, soll der Bildschirm nicht ausgehen (bei dunklem Bildschirm drosselt Samsung die Rechenleistung stark)
     val view = LocalView.current
     DisposableEffect(vm.summary.busy) {
@@ -58,7 +58,7 @@ fun ReadScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onSave
     }
     val doc = vm.pendingDoc?.takeIf { !it.image }
     val mark = doc?.let { vm.markFor(it) }
-    val image = remember { vm.companionImage("vorleser") }
+    val image = remember { vm.heroImage(HERO_READ) }
     var explain by remember { mutableStateOf(false) }
     ScreenFrame(t("Read a book", "Buch vorlesen"), onBack) {
         HeroImage(image, "Vorleser")
@@ -75,7 +75,7 @@ fun ReadScreen(vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onSave
                     "Piper voices are installed in Settings → Voices.",
                     "Lade ein Buch (TXT, MD, DOCX, PDF, EPUB oder HTML). Play liest es Abschnitt für Abschnitt vor; Pause und Stopp merken sich die Stelle, so kannst du später dort weiterlesen. " +
                         "Die Sprache wird am Text erkannt. Mit einer Piper-Stimme als Erzähler können Männer und Frauen eigene Stimmen bekommen: Die App erkennt, wer spricht, am Begleitsatz („sagte sie“), an Vornamen und am Absatzwechsel. Wo das nicht klappt, spricht der Erzähler. " +
-                        "Piper-Stimmen installierst du unter Einstellungen → Stimmen."),
+                        "Die Stimmen (Erzähler, Frau, Mann) und das Tempo stellst du unter Setup → Einstellungen → Stimmen ein; Piper-Stimmen installierst du dort auch."),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -215,63 +215,14 @@ private fun SummaryResult(title: String, text: String, vm: ChatViewModel, fileNa
     }
 }
 
-/** Stimmen für das Vorlesen: Erzähler, männliche und weibliche Rede (nur Piper) und der Schalter für den Stimmenwechsel. Gespeichert wird im Companion Vorleser. */
+/** Tempo und Hinweis auf die Stimmen: Die Stimmen selbst (Erzähler, Frau, Mann) stehen unter Einstellungen > Stimmen und gelten überall. */
 @Composable
 private fun VoiceSection(vm: ChatViewModel) {
-    val persona = vm.persona
-    val languageName = remember(vm.pendingDoc, persona.language) { vm.readerLanguageName() }
-    var options by remember { mutableStateOf<List<SpeechOutput.VoiceOption>?>(null) } // null = wird noch geladen
-    LaunchedEffect(languageName) {
-        options = null
-        vm.loadVoiceOptions(languageName) { options = it }
-    }
-    val all = options.orEmpty()
-    val piper = all.filter { it.name.startsWith(PIPER_PREFIX) }
-    SectionTitle(t("Voices", "Stimmen"))
+    SectionTitle(t("Voices and speed", "Stimmen und Tempo"))
+    SpeedSlider(vm.config.speechRate) { vm.setSpeechRate(it) }
     Text(
-        t("For the language: $languageName · saved in: ${persona.name}", "Für die Sprache: $languageName · gespeichert bei: ${persona.name}"),
+        t("The narrator, women and men use the default voices from Setup → Settings → Voices. A first-person narrator is read with the voice of their gender. Direct speech changes the voice when the narrator is a Piper voice.",
+            "Erzähler, Frauen und Männer sprechen mit den Standardstimmen aus Setup → Einstellungen → Stimmen. Ein Ich-Erzähler wird mit der Stimme seines Geschlechts gelesen. Bei wörtlicher Rede wechselt die Stimme, wenn der Erzähler eine Piper-Stimme ist."),
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
     )
-    val defaultLabel = t("(default voice)", "(Standardstimme)")
-    val narratorLabel = all.firstOrNull { it.name == persona.voice }?.label ?: if (persona.voice.isEmpty() || options == null) defaultLabel else t("(not available: default voice)", "(nicht verfügbar: Standardstimme)")
-    VoiceRow(
-        t("Narrator", "Erzähler"), listOf(defaultLabel) + all.map { it.label }, narratorLabel,
-        { picked -> vm.savePersona(persona.copy(voice = all.firstOrNull { it.label == picked }?.name.orEmpty())) },
-        onTest = { vm.testCompanionVoice(languageName, persona.voice) },
-    )
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(t("Change the voice for direct speech", "Stimme bei wörtlicher Rede wechseln"), modifier = Modifier.weight(1f))
-        Switch(checked = persona.dialogueVoices, onCheckedChange = { vm.savePersona(persona.copy(dialogueVoices = it)) })
-    }
-    if (persona.dialogueVoices) {
-        if (!persona.voice.startsWith(PIPER_PREFIX)) {
-            Text(
-                t("The voice change needs a Piper voice as narrator (the system voice cannot be switched in the middle of a text). Install Piper voices in Settings → Voices.",
-                    "Der Stimmenwechsel braucht eine Piper-Stimme als Erzähler (die Systemstimme lässt sich mitten im Text nicht wechseln). Piper-Stimmen installierst du unter Einstellungen → Stimmen."),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
-            )
-        }
-        val none = t("(like the narrator)", "(wie Erzähler)")
-        listOf(
-            Triple(t("Voice for male speech", "Stimme für männliche Rede"), persona.voiceMale) { name: String -> vm.savePersona(persona.copy(voiceMale = name)) },
-            Triple(t("Voice for female speech", "Stimme für weibliche Rede"), persona.voiceFemale) { name: String -> vm.savePersona(persona.copy(voiceFemale = name)) },
-        ).forEach { (label, current, save) ->
-            val shown = piper.firstOrNull { it.name == current }?.label ?: if (current.isEmpty()) none else t("(not available: narrator)", "(nicht verfügbar: Erzähler)")
-            VoiceRow(label, listOf(none) + piper.map { it.label }, shown, { picked -> save(piper.firstOrNull { it.label == picked }?.name.orEmpty()) }, onTest = { vm.testCompanionVoice(languageName, current) }, canTest = current.isNotEmpty())
-        }
-        if (piper.isEmpty() && options != null) {
-            Text(
-                t("There is no Piper voice for “$languageName” yet.", "Für „$languageName“ ist noch keine Piper-Stimme installiert."),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
-            )
-        }
-    }
-}
-
-@Composable
-private fun VoiceRow(label: String, options: List<String>, selected: String, onPick: (String) -> Unit, onTest: () -> Unit, canTest: Boolean = true) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        DropdownField(label, options, selected, onPick, Modifier.weight(1f), raw = true)
-        OutlinedButton(onClick = onTest, enabled = canTest) { Text(t("Listen", "Anhören")) }
-    }
 }

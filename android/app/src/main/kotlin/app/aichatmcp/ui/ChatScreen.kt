@@ -68,7 +68,7 @@ private val ToolGreen = Color(0xFF0B6B3A)
 private val ErrorRed = Color(0xFFC0392B)
 private val InfoBlue = Color(0xFF1A56C4)
 
-enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO, BOOK, READ, PLAY }
+enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO, BOOK, READ, PLAY, GALLERY }
 
 @Composable
 fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {
@@ -176,8 +176,10 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
             }
             DropdownMenu(expanded = personaMenu, onDismissRequest = { personaMenu = false }) {
                 vm.personaIds.forEach { id ->
-                    DropdownMenuItem(text = { Text(id) }, onClick = { personaMenu = false; vm.selectPersona(id) })
+                    DropdownMenuItem(text = { Text(vm.personaLabel(id)) }, onClick = { personaMenu = false; vm.selectPersona(id) })
                 }
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text(t("All companions…", "Alle Companions…")) }, onClick = { personaMenu = false; open(Screen.GALLERY) })
             }
         }
         Spacer(Modifier.weight(1f))
@@ -185,12 +187,7 @@ private fun TopBar(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Un
         Box {
             TextButton(onClick = { moreMenu = true }) { Text("⋮") }
             DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
-                DropdownMenuItem(text = { Text("Companions") }, onClick = { moreMenu = false; open(Screen.COMPANIONS) })
-                DropdownMenuItem(text = { Text("Werkzeuge") }, onClick = { moreMenu = false; open(Screen.TOOLS) })
-                DropdownMenuItem(text = { Text(t("Write a book", "Buch schreiben")) }, onClick = { moreMenu = false; open(Screen.BOOK) })
-                DropdownMenuItem(text = { Text(t("Read a book", "Buch vorlesen")) }, onClick = { moreMenu = false; open(Screen.READ) })
-                DropdownMenuItem(text = { Text(t("Play a book", "Buch spielen")) }, onClick = { moreMenu = false; open(Screen.PLAY) })
-                DropdownMenuItem(text = { Text("Einstellungen") }, onClick = { moreMenu = false; open(Screen.SETTINGS) })
+                DropdownMenuItem(text = { Text(t("Setup", "Setup")) }, onClick = { moreMenu = false; open(Screen.SETTINGS) })
                 HorizontalDivider()
                 vm.markList.take(5).forEach { mark ->
                     DropdownMenuItem(

@@ -29,11 +29,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
+import app.aichatmcp.HERO_PLAY
 import app.aichatmcp.GamebookState
 import app.aichatmcp.PendingDoc
+import app.aichatmcp.core.BookFileNames
 import app.aichatmcp.core.DecisionMode
+import app.aichatmcp.core.SaveGame
 import app.aichatmcp.core.Gamebook
 import app.aichatmcp.core.Gamebooks
 import kotlinx.coroutines.Dispatchers
@@ -45,16 +49,28 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun PlayScreen(
-    vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onStarted: () -> Unit,
-    onLoadGamebook: () -> Unit = {}, onSaveGamebook: (fileName: String, json: String) -> Unit = { _, _ -> },
+    vm: ChatViewModel, onBack: () -> Unit, onLoad: () -> Unit, onStarted: () -> Unit, onLoadGamebook: () -> Unit = {},
 ) {
-    val image = remember { vm.companionImage("story_game") }
+    LaunchedEffect(Unit) { vm.refreshBookFiles() }
+    val image = remember { vm.heroImage(HERO_PLAY) }
     var explain by remember { mutableStateOf(false) }
     val run = vm.roleplay
     val doc = vm.pendingDoc?.takeIf { !it.image }
     ScreenFrame(t("Play a book", "Buch spielen"), onBack) {
         HeroImage(image, "Story-Game")
         TypewriterText(t("Step into the story: choose a book and your character, and we play it together.", "Tritt in die Geschichte ein: Wähle ein Buch und deine Figur, dann spielen wir sie gemeinsam."))
+        // Vorlesen wie bei jeder Antwort: nur mit eingeschaltetem Schalter; sonst steht der Text nur im Chat
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(t("Read the story aloud", "Geschichte vorlesen"))
+                Text(
+                    t("Off: the text is only shown. The voice follows the main character (Setup → Voices).", "Aus: der Text wird nur angezeigt. Die Stimme richtet sich nach der Hauptfigur (Setup → Stimmen)."),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                )
+            }
+            Switch(checked = vm.config.speakReplies, onCheckedChange = vm::setSpeakReplies)
+        }
+        if (vm.config.speakReplies) SpeedSlider(vm.config.speechRate) { vm.setSpeechRate(it) }
         TextButton(onClick = { explain = !explain }) { Text(if (explain) t("Hide how it works", "Ablauf ausblenden") else t("How does it work?", "Wie funktioniert das?")) }
         if (explain) {
             Text(
@@ -75,19 +91,20 @@ fun PlayScreen(
         }
         when {
             run != null -> RunningGame(vm, onStarted)
-            vm.loadedGamebook != null -> GamebookSetup(vm, vm.loadedGamebook!!, onSaveGamebook, onStarted) // auch bei geladenem Buch: ein geladenes Spielbuch geht vor
+            vm.loadedGamebook != null -> GamebookSetup(vm, vm.loadedGamebook!!, onLoadGamebook, onStarted) // auch bei geladenem Buch: ein geladenes Spielbuch geht vor
             vm.docBusy -> WaitText(t("Reading the file", "Lese die Datei"))
             doc == null -> {
                 Button(onClick = onLoad, modifier = Modifier.fillMaxWidth()) { Text(t("Load a book…", "Buch laden…")) }
-                OutlinedButton(onClick = onLoadGamebook, modifier = Modifier.fillMaxWidth()) { Text(t("Load a saved game book (.json)…", "Gespeichertes Spielbuch laden (.json)…")) }
+                GameFiles(vm, onLoadGamebook, onStarted)
                 if (vm.status.isNotBlank() && vm.status != "Bereit") Text(vm.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
-            else -> Setup(vm, doc, onLoad, onStarted, onLoadGamebook, onSaveGamebook)
+            else -> Setup(vm, doc, onLoad, onStarted, onLoadGamebook)
         }
     }
 }
 
-/** Ein Spiel läuft schon: zurück ins Spiel oder beenden. */
+/** Ein Spiel läuft schon: zurück ins Spiel, speichern oder beenden. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
     val run = vm.roleplay ?: return
@@ -98,10 +115,16 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
                 t("Scene ${if (run.setup.solo) run.sceneNumber else run.sceneIndex + 1} of ${if (run.setup.solo) run.sceneTotal else run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}", "Szene ${if (run.setup.solo) run.sceneNumber else run.sceneIndex + 1} von ${if (run.setup.solo) run.sceneTotal else run.setup.scenes.size}: ${run.setup.scenes[run.sceneIndex].title}"),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onStarted) { Text(t("Back to the game", "Zurück ins Spiel")) }
+                OutlinedButton(onClick = { vm.saveGame() }) { Text(t("Save the game", "Spiel speichern")) }
                 OutlinedButton(onClick = vm::stopRoleplay, enabled = !vm.streaming) { Text(t("End the game", "Spiel beenden")) }
             }
+            if (vm.fileNote.isNotBlank()) Text(vm.fileNote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+            Text(
+                t("The game is also saved by itself after every scene, as “${SaveGame.fileName(run.setup.title)}” in ${vm.bookFolder}.", "Das Spiel wird auch nach jeder Szene von selbst gesichert, als „${SaveGame.fileName(run.setup.title)}“ in ${vm.bookFolder}."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+            )
         }
     }
 }
@@ -110,8 +133,7 @@ private fun RunningGame(vm: ChatViewModel, onStarted: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Setup(
-    vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStarted: () -> Unit,
-    onLoadGamebook: () -> Unit, onSaveGamebook: (fileName: String, json: String) -> Unit,
+    vm: ChatViewModel, doc: PendingDoc, onLoad: () -> Unit, onStarted: () -> Unit, onLoadGamebook: () -> Unit,
 ) {
     val choice = rememberRoleplayChoice(doc)
     var turns by remember { mutableStateOf(vm.config.roleplayTurns.toString()) }
@@ -154,7 +176,7 @@ private fun Setup(
                 t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it },
                 keyboard = KeyboardType.Number,
             )
-            GamebookCard(vm, doc, onLoadGamebook, onSaveGamebook)
+            GamebookCard(vm, doc, onLoadGamebook, onStarted)
         }
         Button(
             onClick = {
@@ -235,29 +257,10 @@ private fun durationText(seconds: Long): String {
  * Das Ergebnis lässt sich als JSON-Datei speichern, von Hand ändern und wieder einlesen; das Spiel braucht dann keinen Modellaufruf mehr für Entscheidungen.
  */
 @Composable
-private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () -> Unit, onSaveGamebook: (fileName: String, json: String) -> Unit) {
+private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () -> Unit, onStarted: () -> Unit) {
     // Der Zustand liest den Speicher und zerlegt das Buch: im Hintergrund, nicht bei jedem Zeichnen im Hauptthread (sonst ruckelt die Anzeige und die Karte erscheint spät)
     val loaded by produceState<GamebookState?>(null, doc, vm.prepBusy, vm.prepDone) { value = withContext(Dispatchers.Default) { vm.gamebookState(doc) } }
     val state = loaded
-    // Ist die Vorbereitung gerade fertig geworden, wird angeboten, das Spielbuch neben dem Buch zu speichern: im App-Speicher kommt man von außen nicht heran
-    var wasBusy by remember { mutableStateOf(false) }
-    var offerSave by remember { mutableStateOf(false) }
-    LaunchedEffect(vm.prepBusy, state?.ready) {
-        if (wasBusy && !vm.prepBusy && state?.ready == true) offerSave = true
-        wasBusy = vm.prepBusy
-    }
-    if (offerSave) {
-        AlertDialog(
-            onDismissRequest = { offerSave = false },
-            title = { Text(t("Game book ready", "Spielbuch fertig")) },
-            text = {
-                Text(t("It is kept inside the app, where you cannot reach it from outside. Save it as a file now? The dialog opens at the folder of the book.",
-                    "Es liegt im Speicher der App, den du von außen nicht erreichst. Jetzt als Datei speichern? Der Dialog öffnet sich im Ordner des Buches."))
-            },
-            confirmButton = { TextButton(onClick = { offerSave = false; vm.gamebookJson(doc)?.let { onSaveGamebook(doc.name.substringBeforeLast('.') + ".gamebook.json", it) } }) { Text(t("Save…", "Speichern…")) } },
-            dismissButton = { TextButton(onClick = { offerSave = false }) { Text(t("Later", "Später")) } },
-        )
-    }
     if (state == null) {
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { WaitText(t("Checking the game book", "Prüfe das Spielbuch"), MaterialTheme.typography.bodyMedium) } }
         return
@@ -303,10 +306,11 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
                         )
                     }
                     Text(
-                        t("The game book is kept inside the app. Save it as a file next to the book, edit it by hand (summaries, places, decisions) and load it again.", "Das Spielbuch liegt im Speicher der App. Speichere es als Datei neben dem Buch, ändere es von Hand (Zusammenfassungen, Orte, Entscheidungen) und lies es wieder ein."),
+                        t("The game book is saved by itself as “${BookFileNames.gameName(doc.name.substringBeforeLast('.'))}” in ${vm.bookFolder} (an older file with that name is replaced). You can edit it by hand (summaries, places, decisions) and load it again.",
+                            "Das Spielbuch wird von selbst als „${BookFileNames.gameName(doc.name.substringBeforeLast('.'))}“ in ${vm.bookFolder} gespeichert (eine ältere Datei mit diesem Namen wird ersetzt). Du kannst es von Hand ändern (Zusammenfassungen, Orte, Entscheidungen) und wieder einlesen."),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
                     )
-                    GamebookFileButtons(onLoadGamebook) { vm.gamebookJson(doc)?.let { onSaveGamebook(doc.name.substringBeforeLast('.') + ".gamebook.json", it) } }
+                    GameFiles(vm, onLoadGamebook, onStarted, save = { vm.saveGamebookFile(doc) })
                 }
                 else -> {
                     val perRequest = vm.gamebookSecondsPerRequest()
@@ -332,26 +336,39 @@ private fun GamebookCard(vm: ChatViewModel, doc: PendingDoc, onLoadGamebook: () 
                         Text(t("Prepare (${state.requests} requests)", "Vorbereiten (${state.requests} Anfragen)"))
                     }
                     if (vm.prepError.isNotBlank()) Text(vm.prepError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    GamebookFileButtons(onLoadGamebook, null)
+                    GameFiles(vm, onLoadGamebook, onStarted)
                 }
             }
         }
     }
 }
 
-/** "Speichern…" (nur mit [onSave]) und "Spielbuch laden…". */
+/**
+ * Die Dateien im Ordner books: Spielbücher (`*.game`) und gespeicherte Spiele (`*.savegame`) zum Antippen, dazu "Andere Datei…" für einen Dateidialog
+ * und (mit [save]) "Spielbuch speichern" (sofort in den Ordner, ersetzt die gleichnamige Datei).
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GamebookFileButtons(onLoad: () -> Unit, onSave: (() -> Unit)?) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (onSave != null) OutlinedButton(onClick = onSave) { Text(t("Save game book…", "Spielbuch speichern…")) }
-        OutlinedButton(onClick = onLoad) { Text(t("Load game book…", "Spielbuch laden…")) }
+private fun GameFiles(vm: ChatViewModel, onPick: () -> Unit, onStarted: () -> Unit, save: (() -> Unit)? = null) {
+    Text(t("Game books and saved games in ${vm.bookFolder}", "Spielbücher und gespeicherte Spiele in ${vm.bookFolder}"), style = MaterialTheme.typography.titleSmall)
+    vm.bookEntries.take(8).forEach { entry ->
+        OutlinedButton(onClick = { vm.openBookEntry(entry, onStarted) }, modifier = Modifier.fillMaxWidth()) {
+            Text((if (entry.isSaveGame) "💾 " else "📖 ") + entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
+    if (vm.bookEntries.isEmpty()) {
+        Text(t("Nothing here yet. Prepared game books and saved games appear in this list.", "Noch nichts da. Vorbereitete Spielbücher und gespeicherte Spiele erscheinen in dieser Liste."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (save != null) OutlinedButton(onClick = save) { Text(t("Save game book now", "Spielbuch jetzt speichern")) }
+        OutlinedButton(onClick = onPick) { Text(t("Other file…", "Andere Datei…")) }
+    }
+    if (vm.fileNote.isNotBlank()) Text(vm.fileNote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 }
 
 /** Ein geladenes Spielbuch (JSON): Figur wählen, Entscheidungsart, starten; der Buchtext wird nicht gebraucht. */
 @Composable
-private fun GamebookSetup(vm: ChatViewModel, book: Gamebook, onSaveGamebook: (fileName: String, json: String) -> Unit, onStarted: () -> Unit) {
+private fun GamebookSetup(vm: ChatViewModel, book: Gamebook, onLoadGamebook: () -> Unit, onStarted: () -> Unit) {
     val choice = remember(book) { RoleplayChoice(book.scenes.size, book.firstPerson, book.characters) }
     var perDay by remember { mutableStateOf(vm.config.soloScenesPerDay.toString()) }
     var mode by remember { mutableStateOf(DecisionMode.parse(vm.config.soloMode)) }
@@ -388,6 +405,6 @@ private fun GamebookSetup(vm: ChatViewModel, book: Gamebook, onSaveGamebook: (fi
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
         )
     }
-    GamebookFileButtons({ vm.closeLoadedGamebook() }, { onSaveGamebook(book.title.ifBlank { "gamebook" } + ".gamebook.json", vm.gamebookJson(book)) })
+    GameFiles(vm, onLoadGamebook, onStarted, save = { vm.saveGamebookFile(book) })
     TextButton(onClick = vm::closeLoadedGamebook) { Text(t("Close", "Schließen")) }
 }
