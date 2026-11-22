@@ -20,7 +20,7 @@ class BookFiles(private val context: Context) {
     }
 
     /** Wie der Ordner für den Nutzer heißt. */
-    val label: String get() = if (Build.VERSION.SDK_INT >= 29) "$RELATIVE/" else (fallbackDir().path)
+    val label: String get() = if (Build.VERSION.SDK_INT >= 29) RELATIVE else fallbackDir().path
 
     private fun fallbackDir(): File = File(context.getExternalFilesDir(null) ?: context.filesDir, "AIChatMCP/books").apply { mkdirs() }
 

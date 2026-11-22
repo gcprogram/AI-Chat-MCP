@@ -63,8 +63,8 @@ fun DefaultVoicesSection(vm: ChatViewModel, voices: Map<String, String>, onChang
             "Diese Stimmen gelten überall: beim Vorlesen und Spielen von Büchern, für wörtliche Rede und für Companions ohne eigene Stimme (nach ihrem Geschlecht). Ein Ich-Erzähler oder deine Spielerfigur spricht mit der Stimme ihres Geschlechts."),
         style = MaterialTheme.typography.bodySmall,
     )
-    DropdownField(t("Language", "Sprache"), VOICE_LANGUAGES, language, { language = it })
-    val default = t("(default voice of the language)", "(Standardstimme der Sprache)")
+    DropdownField(t("Language", "Sprache"), VOICE_LANGUAGES, language, { language = it }, raw = true) // Sprachnamen nie übersetzen
+    val default = t("(default voice)", "(Standardstimme)")
     val like = t("(like the narrator)", "(wie Erzähler)")
     listOf(
         "narrator" to t("Narrator", "Erzähler"),

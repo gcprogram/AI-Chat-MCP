@@ -206,12 +206,12 @@ private fun TextModeChoice(text: String, onText: (String) -> Unit) {
     Text(t("Text of the scenes", "Text der Szenen"), style = MaterialTheme.typography.titleSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = text != "book", onClick = { onText("retell") }, label = { Text(t("Retold by the narrator", "Vom Erzähler nacherzählt")) })
-        FilterChip(selected = text == "book", onClick = { onText("book") }, label = { Text(t("Original text, read aloud", "Originaltext, vorgelesen")) })
+        FilterChip(selected = text == "book", onClick = { onText("book") }, label = { Text(t("Original text", "Originaltext")) })
     }
     Text(
         if (text == "book") t(
-            "The book text of each scene is shown in full and read aloud. Then you choose what your character does next. Only when you depart from the story does the narrator write a short consequence; then the book continues with the original text. Works best with a prepared game book.",
-            "Der Buchtext jeder Szene wird ungekürzt angezeigt und vorgelesen. Danach wählst du, was deine Figur als Nächstes tut. Nur wenn du von der Geschichte abweichst, schreibt der Erzähler eine kurze Folge; dann geht es mit dem Originaltext weiter. Am besten mit vorbereitetem Spielbuch.",
+            "The book text of each scene is shown in full (and read aloud if “Read the story aloud” is on). Then you choose what your character does next. Only when you depart from the story does the narrator write a short consequence; then the book continues with the original text. Works best with a prepared game book.",
+            "Der Buchtext jeder Szene wird ungekürzt angezeigt (und vorgelesen, wenn „Geschichte vorlesen“ an ist). Danach wählst du, was deine Figur als Nächstes tut. Nur wenn du von der Geschichte abweichst, schreibt der Erzähler eine kurze Folge; dann geht es mit dem Originaltext weiter. Am besten mit vorbereitetem Spielbuch.",
         ) else t(
             "The game master tells each scene as a short passage (a quarter to half a page) from the summary and an excerpt of the book part, then you decide.",
             "Der Spielleiter erzählt jede Szene als kurzen Abschnitt (eine Viertel- bis halbe Seite) aus der Zusammenfassung und einem Auszug des Buchteils, danach entscheidest du.",

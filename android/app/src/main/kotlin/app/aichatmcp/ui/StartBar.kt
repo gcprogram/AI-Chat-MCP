@@ -66,7 +66,7 @@ fun StartBar(current: Screen, open: (Screen) -> Unit) {
                 NavigationBarItem(
                     selected = current == screen, onClick = { open(screen) },
                     icon = { Text(icon, fontSize = 20.sp) },
-                    label = { Text(label, maxLines = 1, fontSize = 11.sp) },
+                    label = { Text(label, maxLines = 1, softWrap = false, overflow = TextOverflow.Visible, fontSize = 10.sp) },
                     alwaysShowLabel = true,
                 )
             }

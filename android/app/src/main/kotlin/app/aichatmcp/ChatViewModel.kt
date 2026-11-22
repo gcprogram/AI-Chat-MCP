@@ -1386,6 +1386,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.voice = if (roleplay != null) config.defaultVoice(tag, heroGender) else voiceOf(persona, tag)
         speechOut.voiceMale = config.defaultVoice(tag, Gender.MALE)
         speechOut.voiceFemale = config.defaultVoice(tag, Gender.FEMALE)
+        android.util.Log.i("AiChat", "Stimmen ($tag, Spielerfigur ${heroGender?.let { Genders.key(it) } ?: "?"}): Erzähler=${speechOut.voice} Mann=${speechOut.voiceMale} Frau=${speechOut.voiceFemale}")
     }
 
     /**
@@ -1928,7 +1929,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         saveChat()
         updateContext()
         applyRoleplayPersona()
-        autoSaveGame()
         val r = roleplay ?: return
         if (r.solo.end != null) return
         if (Solo.candidates(r.setup.scenes.size, r.played, 1).isEmpty()) finishGame(SoloEnd.WON) else requestDecisions()
@@ -2153,8 +2153,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Meldung zum letzten Speichern oder Laden einer Datei (für die Anzeige im Bildschirm "Buch spielen"). */
     var fileNote by mutableStateOf("")
 
+    private var gamebooksExported = false
+
     fun refreshBookFiles() {
-        viewModelScope.launch { bookEntries = withContext(Dispatchers.IO) { bookFiles.list() } }
+        viewModelScope.launch {
+            bookEntries = withContext(Dispatchers.IO) {
+                // Einmal je Start: vorbereitete Spielbücher aus dem internen Speicher, die noch nicht als *.game im Ordner liegen, dort ablegen (eine vorhandene Datei bleibt, sie kann von Hand geändert sein)
+                if (!gamebooksExported) {
+                    gamebooksExported = true
+                    val have = bookFiles.list().map { it.name.lowercase() }.toSet()
+                    for (book in storage.allGamebooks()) {
+                        val name = BookFileNames.gameName(book.title)
+                        if (Gamebooks.playable(book) && name.lowercase() !in have) bookFiles.save(name, Gamebooks.toJson(book))
+                    }
+                }
+                bookFiles.list()
+            }
+        }
     }
 
     /** Legt das Spielbuch als `*.game` im Ordner ab und ersetzt die gleichnamige Datei. Gibt die Meldung für den Nutzer zurück. */
@@ -2216,12 +2231,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return fileNote
     }
 
-    /** Sichert das Spiel zwischendurch (nach jeder Szene); höchstens alle 10 Sekunden, im Hintergrund, ohne Meldung. */
+    /** Sichert das Spiel zwischendurch (sobald nach einer Szene die Entscheidungen angeboten werden); im Hintergrund, ohne Meldung. */
     private fun autoSaveGame() {
-        val now = System.currentTimeMillis()
-        if (now - lastAutoSave < 10_000) return
         val save = currentSaveGame() ?: return
-        lastAutoSave = now
+        lastAutoSave = System.currentTimeMillis()
         val json = SaveGame.toJson(save)
         viewModelScope.launch(Dispatchers.IO) { bookFiles.save(SaveGame.fileName(save.title), json) }
     }

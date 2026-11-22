@@ -254,6 +254,11 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
     fun loadGamebook(key: String): Gamebook? =
         runCatching { Gamebooks.parse((File(gamebooksDir, "$key.game").takeIf { it.isFile } ?: File(gamebooksDir, "$key.json")).readText(Charsets.UTF_8)) }.getOrNull()
 
+    /** Alle Spielbücher im internen Speicher (`.game` und die ältere Endung `.json`), zum Ablegen im Ordner books. */
+    fun allGamebooks(): List<Gamebook> =
+        gamebooksDir.listFiles { f -> f.isFile && (f.extension == "game" || f.extension == "json") }.orEmpty()
+            .mapNotNull { f -> runCatching { Gamebooks.parse(f.readText(Charsets.UTF_8)) }.getOrNull() }.distinctBy { it.key }
+
     fun saveGamebook(book: Gamebook) {
         if (book.key.isBlank()) return
         gamebooksDir.mkdirs()
