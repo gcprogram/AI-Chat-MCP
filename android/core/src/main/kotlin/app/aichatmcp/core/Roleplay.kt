@@ -248,9 +248,8 @@ object RoleplayPrompt {
         return if (g) buildString {
             append("Du bist der Erzähler eines Solo-Abenteuers (Spielbuch) nach dem Buch „${setup.title}“. Der Spieler spielt ${playerText(setup)}. Der Buchtext wird dem Spieler ungekürzt vorgelesen; du schreibst nur die kurze Folge, wenn der Spieler von der Handlung abweicht.\n")
             append("Regeln:\n")
-            append("- Schreibe einen kurzen Abschnitt von 50 bis 120 Wörtern in der zweiten Person („du“")
-            if (setup.firstPerson && setup.player.isBlank()) append(", auch wenn das Buch in der Ich-Form erzählt: der Spieler ist das Ich")
-            append("). Keine Aufzählungen, kein Markdown.\n")
+            if (setup.firstPerson && setup.player.isBlank()) append("- Schreibe einen kurzen Abschnitt von 50 bis 120 Wörtern in der Ich-Form, wie das Buch („ich“: der Spieler ist das Ich). Keine Aufzählungen, kein Markdown.\n")
+            else append("- Schreibe einen kurzen Abschnitt von 50 bis 120 Wörtern in der zweiten Person („du“). Keine Aufzählungen, kein Markdown.\n")
             append("- Die Folge der Entscheidung ist vorgegeben (siehe unten, verbindlich): Erzähle sie. Erfinde keine anderen Verletzungen, Heilungen oder Tode.\n")
             append("- Bleibe an dem Ort, an dem die Spielerfigur ist, und verwende nur Personen und Dinge aus ZULETZT GELESEN, VORHER und NEUE SZENE. Erfinde keine neuen Personen, keine Gegenstände und keine Gespräche mit Personen, die dort nicht vorkommen.\n")
             append("- Ende so, dass die NEUE SZENE danach anschließen kann (sie wird danach unverändert vorgelesen). Schreibe sie nicht selbst und nimm nichts aus ihr vorweg.\n")
@@ -262,9 +261,8 @@ object RoleplayPrompt {
         } else buildString {
             append("You are the narrator of a solo adventure (gamebook) based on the book \"${setup.title}\". The player plays ${playerText(setup)}. The book text is read to the player in full; you only write the short consequence when the player departs from the plot.\n")
             append("Rules:\n")
-            append("- Write a short passage of 50 to 120 words in the second person (\"you\"")
-            if (setup.firstPerson && setup.player.isBlank()) append(", even if the book is told in the first person: the player is the I")
-            append("). No lists, no markdown.\n")
+            if (setup.firstPerson && setup.player.isBlank()) append("- Write a short passage of 50 to 120 words in the first person, like the book (\"I\": the player is the I). No lists, no markdown.\n")
+            else append("- Write a short passage of 50 to 120 words in the second person (\"you\"). No lists, no markdown.\n")
             append("- The result of the decision is given (see below, binding): tell it. Invent no other injuries, healing or deaths.\n")
             append("- Stay at the place where the player's character is and use only people and things from LAST READ, BEFORE and NEW SCENE. Invent no new people, no objects and no conversations with people who do not appear there.\n")
             append("- End so that the NEW SCENE can follow (it is read unchanged afterwards). Do not write it yourself and anticipate nothing from it.\n")
