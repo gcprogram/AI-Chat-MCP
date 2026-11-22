@@ -110,7 +110,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
                     // reverseLayout: Eintrag 0 ist unten, die Liste bleibt am Ende verankert (wie bei Chat-Apps)
                     item { Spacer(Modifier.padding(2.dp)) }
                     vm.live?.let { live -> item { LiveItem(live, vm.persona.name) } }
-                    items(vm.messages.asReversed()) { MessageItem(it, vm.persona.name, vm.config.userName, vm::reportReply) }
+                    items(vm.messages.asReversed()) { MessageItem(it, vm.persona.name, vm.playerLabel, vm::reportReply) }
                     item { Spacer(Modifier.padding(2.dp)) }
                 }
             }

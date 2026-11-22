@@ -86,4 +86,49 @@ class RoleplayTest {
         assertTrue("Rollenregeln" in Persona(name = "Mia").systemPrompt("Alex")) // ohne Override unverändert
         assertEquals("roleplay", persona.id)
     }
+
+    @Test
+    fun theSoloNarratorNamesThePlayerCharacterAfterTheBookAndNeverTheUser() {
+        val scenes = listOf(Scene("S1", "Lucy klingelt am Haus. ".repeat(20)), Scene("S2", "Drinnen ist es dunkel."))
+        val setup = RoleplaySetup("Buch", scenes, "", true, true, solo = true, plots = mapOf(0 to "Lucy klingelt."), narrator = "Lucy", source = true)
+        val prompt = RoleplayPrompt.persona(setup, 0, false, SoloState()).systemPrompt("Tom")
+        assertTrue("Der Spieler spielt den Ich-Erzähler des Buches, Lucy" in prompt, prompt)
+        assertFalse("Tom" in prompt) // der Name des Nutzers kommt im Solo-Abenteuer nicht vor
+        assertTrue("Die Spielerfigur heißt Lucy" in prompt && "AUSZUG AUS DEM BUCH" in prompt && "Erfinde keine Personen" in prompt)
+        assertTrue("ende genau dort, wo die Handlung endet" in prompt)
+        // ohne Namen und ohne Auszug bleibt der Prompt wie zuvor
+        val plain = RoleplayPrompt.system(setup.copy(narrator = "", source = false), 0, false, SoloState())
+        assertTrue("den Ich-Erzähler des Buches (die Figur" in plain && "Die Spielerfigur heißt" !in plain && "AUSZUG" !in plain)
+        assertEquals("Lucy", setup.hero)
+        assertEquals("Anna", setup.copy(player = "Anna").hero)
+        // die Entscheidungen nennen die Figur
+        assertTrue("Lucy (dem Ich-Erzähler)" in RoleplayPrompt.decisions(setup, 0, "Text", SoloState()).last().content)
+    }
+
+    @Test
+    fun theOriginalTextModeOnlyAsksForTheShortConsequence() {
+        val book = Gamebook(key = "k", title = "T", scenes = listOf(GbScene("S1", plot = "Lucy klingelt.", place = "Vorgarten"), GbScene("S2", plot = "Es ist dunkel.")))
+        val scenes = listOf(Scene("S1", "Lucy klingelt am Haus."), Scene("S2", "Drinnen war es dunkel und still. ".repeat(30)))
+        val setup = RoleplaySetup("T", scenes, "", true, true, solo = true, plots = book.plots(), book = book, narrator = "Lucy", verbatim = true, source = true)
+        val p = RoleplayPrompt.system(setup, 1, false, SoloState(), outcome = "Die Spielerfigur entkommt unverletzt.", previous = 0)
+        assertTrue("nur die kurze Folge" in p && "50 bis 120 Wörter" in p && "Erfinde keine neuen Personen" in p, p)
+        assertTrue("VORHER (S1): Lucy klingelt." in p && "ORT DER SPIELERFIGUR ZU BEGINN: Vorgarten" in p)
+        assertTrue("ZULETZT GELESEN (Ende der vorigen Szene, wörtlich): … Lucy klingelt am Haus." in p)
+        assertTrue("NEUE SZENE (unten) beginnt so: Drinnen war es dunkel" in p && "…" in p)
+        assertTrue("Die Spielerfigur heißt Lucy" in p && "Die Spielerfigur entkommt unverletzt." in p) // die vorgegebene Folge steht dahinter
+        assertTrue(p.length < 2500, "kurz: ${p.length}")
+        // das nacherzählte Spiel bleibt die lange Erzählung
+        assertTrue("120 bis 250 Wörter" in RoleplayPrompt.system(setup.copy(verbatim = false), 1, false, SoloState()))
+    }
+
+    @Test
+    fun theNarratorNameComesOnlyFromTheListOfNames() {
+        val names = listOf("Lockwood", "Lucy", "George")
+        assertEquals("Lucy", BookCast.parseNarrator("Lucy", names))
+        assertEquals("Lucy", BookCast.parseNarrator("**Lucy** (Lucy Carlyle)", names))
+        assertEquals("", BookCast.parseNarrator("NONE", names))
+        assertEquals("", BookCast.parseNarrator("Jane", names)) // nichts Erfundenes
+        val prompt = BookCast.narratorPrompt("Text", names).single().content
+        assertTrue("Lockwood, Lucy, George" in prompt && "NONE" in prompt)
+    }
 }

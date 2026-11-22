@@ -1647,6 +1647,48 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Startet das Rollenspiel mit der geladenen Datei; [player] leer = der Ich-Erzähler. Der bisherige Chat des Companions bleibt erhalten. */
     fun startRoleplay(doc: PendingDoc, player: String, firstPerson: Boolean, solo: Boolean = false, characters: List<String> = emptyList()) {
+        if (streaming || startingGame) return
+        // Ein Ich-Erzähler hat im Buch einen Namen: die Spielerfigur soll so heißen (und nicht wie der Nutzer); er wird einmal erfragt und gemerkt
+        if (solo && firstPerson && player.isBlank()) {
+            startingGame = true
+            viewModelScope.launch {
+                try {
+                    startRoleplayWith(doc, player, firstPerson, solo, characters, narratorFor(doc, characters))
+                } finally {
+                    startingGame = false
+                }
+            }
+            return
+        }
+        startRoleplayWith(doc, player, firstPerson, solo, characters, "")
+    }
+
+    private var startingGame = false
+
+    /** Der Name des Ich-Erzählers: aus dem Spielbuch, aus dem Gedächtnis der App oder vom Modell erfragt (nur Namen aus der Liste der Figuren); leer, wenn er nicht bekannt ist. */
+    private suspend fun narratorFor(doc: PendingDoc, characters: List<String>): String {
+        val key = Summaries.key(doc.name, doc.text)
+        storage.loadGamebook(key)?.narrator?.takeIf { it.isNotBlank() }?.let { return it }
+        val prefs = getApplication<Application>().getSharedPreferences("narrators", android.content.Context.MODE_PRIVATE)
+        prefs.getString(key, "")?.takeIf { it.isNotBlank() }?.let { return it }
+        val names = characters.ifEmpty { withContext(Dispatchers.Default) { BookCast.candidates(doc.text, 12) } }
+        if (names.isEmpty()) return ""
+        status = tNow("Looking for the narrator's name…", "Suche den Namen der Erzählerin oder des Erzählers…")
+        val sample = withContext(Dispatchers.Default) { storyScenesOf(doc).take(2).joinToString("\n\n") { it.text } }
+        val name = askModel(BookCast.narratorPrompt(sample, names), 16, 0.0, summaryChoice())?.let { BookCast.parseNarrator(it, names) }.orEmpty()
+        status = "Bereit"
+        if (name.isNotEmpty()) {
+            runCatching { prefs.edit().putString(key, name).apply() }
+            storage.loadGamebook(key)?.let { runCatching { storage.saveGamebook(it.copy(narrator = name)) } }
+        }
+        return name
+    }
+
+    /** Wie die Spielerfigur im Chat heißt: im Spiel der Name aus dem Buch (der Ich-Erzähler: sein Name oder "Ich"), sonst der Name des Nutzers. */
+    val playerLabel: String
+        get() = roleplay?.let { run -> run.setup.hero.ifBlank { if (run.setup.german) "Ich" else "I" } } ?: config.userName
+
+    private fun startRoleplayWith(doc: PendingDoc, player: String, firstPerson: Boolean, solo: Boolean, characters: List<String>, narrator: String) {
         if (streaming) return
         // Ein fertig vorbereitetes Spielbuch (auch ein eingelesenes, von Hand geändertes) hat Vorrang: Zusammenfassungen und Entscheidungen sind schon da
         val key = Summaries.key(doc.name, doc.text)
@@ -1654,7 +1696,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val prepared = if (solo) storage.loadGamebook(key)?.takeIf { Gamebooks.playable(it) && Gamebooks.roughScenes(it) == 0 } else null
         if (prepared != null) {
             dismissDoc()
-            startGamebook(prepared, player, firstPerson, characters.ifEmpty { prepared.characters })
+            // mit dem Buchtext (dieselbe Zerlegung wie bei der Vorbereitung): Auszug im Prompt und Modus "Originaltext" sind möglich
+            val text = storyScenesOf(doc).takeIf { Gamebooks.compatible(prepared, it) }
+            startGamebook(prepared, player, firstPerson, characters.ifEmpty { prepared.characters }, narrator.ifBlank { prepared.narrator }, text, config.soloText == "book")
             return
         }
         // Ohne Vorbereitung: kurze Szenen wie die Teile der Zusammenfassung (gleiche Zerlegung); sonst Szenen zu etwa 3000 Zeichen
@@ -1672,20 +1716,27 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             mode = DecisionMode.parse(config.soloMode), summaryKey = if (solo) key else "",
             plots = cache?.parts?.filterValues { it.isNotBlank() }?.filterKeys { it in scenes.indices }.orEmpty(),
             skip = if (solo) Gamebooks.frontMatter(scenes) else emptySet(), // Titelseite, Copyright, Danksagung gehören nicht zur Geschichte
+            narrator = narrator, verbatim = solo && config.soloText == "book", source = true,
         )
         dismissDoc()
         beginGame(setup, returnTo)
     }
 
     /** Spielt ein vorbereitetes Spielbuch (aus dem Buch erzeugt oder eingelesen): ohne Buchtext, mit fertigen Zusammenfassungen und Entscheidungen. */
-    fun startGamebook(book: Gamebook, player: String, firstPerson: Boolean, characters: List<String> = book.characters) {
+    fun startGamebook(
+        book: Gamebook, player: String, firstPerson: Boolean, characters: List<String> = book.characters,
+        narrator: String = book.narrator,
+        /** Der Text der Szenen aus dem Buch (gleiche Zerlegung wie das Spielbuch); null = nur die Zusammenfassungen (ein geladenes Spielbuch ohne Buch). */
+        text: List<Scene>? = null, verbatim: Boolean = false,
+    ) {
         if (streaming) return
         saveChat()
         val returnTo = roleplay?.returnTo ?: persona.id
         val setup = RoleplaySetup(
-            book.title, book.sceneList(), player, firstPerson, book.language.startsWith("Deu", ignoreCase = true),
+            book.title, text ?: book.sceneList(), player, firstPerson, book.language.startsWith("Deu", ignoreCase = true),
             solo = true, scenesPerDay = config.soloScenesPerDay, known = characters.filter { it != player },
             mode = DecisionMode.parse(config.soloMode), plots = book.plots(), threads = book.threads(), book = book,
+            narrator = narrator, verbatim = verbatim && text != null, source = text != null,
         )
         loadedGamebook = null
         beginGame(setup, returnTo)
@@ -1702,8 +1753,38 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val scenes = setup.scenes
         val total = scenes.size - setup.skip.size
         messages += UiMessage(UiKind.INFO, tNow("Role play: ${scenes[start].title} (scene 1/$total)", "Rollenspiel: ${scenes[start].title} (Szene 1/$total)"))
+        if (setup.solo && setup.verbatim) { // Originaltext: keine Anfrage an das Modell, die erste Szene steht im Wortlaut im Chat
+            val begin = if (setup.german) "(Das Spiel beginnt.)" else "(The game begins.)"
+            session.addUser(begin)
+            messages += UiMessage(UiKind.USER, begin)
+            showBookScene(start)
+            return
+        }
         input = if (setup.german) "(Das Spiel beginnt. Beschreibe die erste Szene und was meine Figur gerade sieht und hört.)" else "(The game begins. Describe the first scene and what my character sees and hears.)"
         if (setup.solo) sendWhenPlotReady(start) else send()
+    }
+
+    /**
+     * Modus "Originaltext": Zeigt den Text der Szene [index] ungekürzt als Antwort des Erzählers, liest ihn vor (auch bei "Antworten vorlesen" aus: dafür ist der Modus da)
+     * und bietet danach die Entscheidungen an. Folgt er auf die kurze Folge einer Abweichung, wird er an diese Antwort angehängt (der Verlauf bleibt abwechselnd Nutzer/Assistent).
+     */
+    private fun showBookScene(index: Int) {
+        val run = roleplay ?: return
+        val text = run.setup.scenes.getOrNull(index)?.text?.trim().orEmpty()
+        if (text.isNotEmpty()) {
+            val last = session.history.lastOrNull()
+            if (last != null && last.role == "assistant" && !last.isTool) session.history[session.history.lastIndex] = last.copy(content = last.content + "\n\n" + text)
+            else session.addAssistant(text)
+            messages += UiMessage(UiKind.ASSISTANT, text)
+            speechOut.stop()
+            if (!docReading) Speech.spokenText(text).takeIf { it.isNotEmpty() }?.let { speechOut.speak(it, languageTag(), persona.voice) { status = it } }
+        }
+        saveChat()
+        updateContext()
+        applyRoleplayPersona()
+        val r = roleplay ?: return
+        if (r.solo.end != null) return
+        if (Solo.candidates(r.setup.scenes.size, r.played, 1).isEmpty()) finishGame(SoloEnd.WON) else requestDecisions()
     }
 
     /**
@@ -1810,9 +1891,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val key = Summaries.key(doc.name, doc.text)
         val scenes = storyScenesOf(doc)
         val stored = storage.loadGamebook(key)
-        if (stored != null && Gamebooks.ready(stored)) return GamebookState(stored.scenes.size, 0, Gamebooks.threadNames(stored), stored)
+        // Karten mit erfundenen Personen (Name mit Anrede, der im Text nicht vorkommt) gelten als offen: die nächste Vorbereitung erzeugt sie neu
+        val suspects = stored?.let { Gamebooks.suspect(it, scenes) }.orEmpty()
+        if (stored != null && Gamebooks.ready(stored) && suspects.isEmpty()) return GamebookState(stored.scenes.size, 0, Gamebooks.threadNames(stored), stored)
         val start = stored?.takeIf { Gamebooks.compatible(it, scenes) }
-        val requests = start?.let { Gamebooks.requests(it) } ?: (scenes.size + Gamebooks.batches(scenes.size))
+        val requests = start?.let { Gamebooks.requests(it, scenes) } ?: (scenes.size + Gamebooks.batches(scenes.size))
         return GamebookState(scenes.size, requests, emptyList(), null)
     }
 
@@ -1848,7 +1931,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         ?: Gamebooks.skeleton(story, doc.name.substringBeforeLast('.'), language, key, first, cast))
                 }
                 if (scenes.isEmpty()) return@launch
-                prepTotal = Gamebooks.requests(start).coerceAtLeast(1)
+                prepTotal = Gamebooks.requests(start, scenes).coerceAtLeast(1)
                 workStart = System.nanoTime()
                 Gamebooks.prepare(
                     scenes, start,
@@ -1990,6 +2073,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val turns = run.turns + 1
         roleplay = run.copy(turns = turns, outcome = "") // die Folge galt nur für diese Antwort
         val r = roleplay ?: return
+        if (r.setup.verbatim) { // die Folge der Abweichung ist erzählt: weiter mit dem Originaltext der nächsten Szene
+            if (r.solo.end != null || r.asking || r.decisions.isNotEmpty()) applyRoleplayPersona() else showBookScene(r.sceneIndex)
+            return
+        }
         if (r.solo.end != null || r.asking || r.decisions.isNotEmpty()) {
             applyRoleplayPersona()
             return
@@ -2040,7 +2127,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val lastReply = session.history.lastOrNull { it.role == "assistant" }?.content.orEmpty()
             val strands = Solo.useStrands(run.setup.mode, run.solo.scenesPlayed, candidates.size)
             // Stränge: Die Handlung aller Kandidaten wird für die Formulierung gebraucht; bei Handlung/Risiko/Umweg genügt der Textanfang der nächsten Szene (die Zusammenfassung kommt danach)
-            if (strands) for (c in candidates) ensurePlot(c)
+            if (strands && !run.setup.verbatim) for (c in candidates) ensurePlot(c)
             val setup = roleplay?.setup ?: return@launch
             val parsed = if (strands) {
                 val raw = askModel(RoleplayPrompt.strandDecisions(setup, run.sceneIndex, lastReply, candidates), 300, 0.7)
@@ -2054,7 +2141,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             roleplay = current.copy(asking = false, decisions = parsed, order = parsed.indices.shuffled())
             status = "Bereit"
             // während der Spieler überlegt, ist die Handlung der nächsten Szene schon zu besorgen
-            if (!strands) ensurePlot(candidates.first())
+            if (!strands && !run.setup.verbatim) ensurePlot(candidates.first())
         }
     }
 
@@ -2085,9 +2172,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val number = run.played.count { it !in run.setup.skip } + 1
             messages += UiMessage(UiKind.INFO, tNow("Scene $number/$total: ${run.setup.scenes[next].title}", "Szene $number/$total: ${run.setup.scenes[next].title}"))
         }
+        if (run.setup.verbatim && !over && (decision.kind == DecisionKind.STORY || decision.kind == DecisionKind.STRAND)) {
+            // dem Buch folgen: der Originaltext der nächsten Szene, ohne Anfrage an das Modell
+            speechOut.stop()
+            session.addUser(decision.text)
+            messages += UiMessage(UiKind.USER, decision.text)
+            showBookScene(next)
+            return
+        }
         input = decision.text
         decisionSend = true
-        if (over) send() else sendWhenPlotReady(next)
+        // Abweichung (Risiko, Umweg) oder Ende: das Modell erzählt die vorgegebene Folge; im Originalmodus braucht es dafür keine Zusammenfassung
+        if (over || run.setup.verbatim) send() else sendWhenPlotReady(next)
     }
 
     fun selectPersona(id: String) {

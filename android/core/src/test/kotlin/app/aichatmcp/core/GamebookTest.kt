@@ -319,4 +319,61 @@ class GamebookTest {
         assertEquals(listOf(1, 2), Solo.candidates(4, setOf(0), 3, threads)) // ohne Kapitel: je Strang die nächste, auch über Kapitel hinweg
         assertEquals("Weiter.", Solo.fallbackStory(true).text)
     }
+
+    @Test
+    fun namesWithATitleThatDoNotBelongInTheCardAreFound() {
+        val passage = "Mrs Andrews brachte die Heimsuchung. " + "Der Nebel lag über der Straße. ".repeat(60) + "Lucy klingelte. Mrs Martin öffnete die Tür und sprach mit Lockwood."
+        val card = Gamebooks.Card("Lucy und Lockwood treffen Mrs Martin.", "Vor dem Haus", "Ich klingele.", "Ich sehe durch den Briefschlitz, ob Mrs. Andrews da ist.", "Ich warte auf Mrs Martin.")
+        // Mrs Andrews steht nur am Anfang (Rückschau), nicht am Ende: für das Risiko ist sie nicht anwesend
+        val found = Gamebooks.invented(card, passage, "Im Haus ist es dunkel.")
+        assertEquals(listOf("Andrews"), found.risk)
+        assertTrue(found.summary.isEmpty() && found.detour.isEmpty() && found.enter.isEmpty())
+        // ganz unbekannt: auch in der Zusammenfassung
+        val fresh = Gamebooks.invented(card.copy(summary = "Lucy trifft Mrs Hudson."), passage, null)
+        assertEquals(listOf("Hudson"), fresh.summary)
+        // der Eingang darf nur Personen nennen, die der Spieler aus früheren Szenen kennt
+        val early = card.copy(enter = "Ich warte, während Mrs Martin die Treppe hinaufkommt.", risk = "", detour = "")
+        assertEquals(listOf("Martin"), Gamebooks.invented(early, passage, null) { "Frühere Szenen: Lockwood klingelt." }.enter)
+        assertEquals(emptyList(), Gamebooks.invented(early, passage, null) { "Mrs Martin war schon da." }.enter)
+        assertEquals(emptyList(), Gamebooks.invented(Gamebooks.Card("Mrs Hopes Tochter kommt.", "x", "Weiter.", "", ""), "Mrs Hope ist krank.", null).summary) // Genitiv
+        // gesäubert: Satz, Eingang, Risiko fallen weg
+        val bad = Gamebooks.Invented(summary = listOf("Hudson"), enter = listOf("Martin"), risk = listOf("Andrews"))
+        val clean = Gamebooks.scrub(card.copy(summary = "Lucy trifft Mrs Hudson. Lockwood wartet.", enter = "Ich rufe nach Mrs Martin."), bad, passage, true)
+        assertEquals("Lockwood wartet.", clean.summary)
+        assertEquals("Weiter.", clean.enter)
+        assertEquals("", clean.risk)
+        assertEquals("Ich warte auf Mrs Martin.", clean.detour)
+        assertFalse(Gamebooks.invented(clean, passage, null) { "Mrs Martin war schon da." }.any)
+    }
+
+    @Test
+    fun aCardWithAnInventedPersonIsAskedAgainAndThenCleaned() = runBlocking {
+        val sc = listOf(Scene("Kapitel 1 (1/2)", "Lucy klingelt am Haus. Lockwood wartet."), Scene("Kapitel 1 (2/2)", "Drinnen ist es dunkel."))
+        val prompts = mutableListOf<String>()
+        val model: suspend (List<WireMessage>, Int) -> String? = { p, _ ->
+            val text = p.last().content
+            prompts += text
+            if ("<number>: <storyline>" in text) "1: Lucy\n2: Lucy" else "SUMMARY: Lucy trifft Mrs Andrews vor dem Haus.\nPLACE: Vorgarten\nENTER: Ich klingele.\nRISK: Ich rufe nach Mrs Andrews.\nDETOUR: Ich warte."
+        }
+        val book = Gamebooks.prepare(sc, Gamebooks.skeleton(sc, "Das Buch", "Deutsch", "k", true, emptyList()), model, retryDelayMs = 0)
+        assertTrue(prompts.any { "do not use them: Andrews" in it }) // die zweite Anfrage nennt den verbotenen Namen
+        assertTrue(book.scenes.none { "Andrews" in it.plot + it.enter + it.risk + it.detour }) // und was bleibt, ist entfernt
+        assertTrue(book.scenes[0].plot.isNotBlank() && Gamebooks.cardDone(book, 0))
+        assertTrue(Gamebooks.suspect(book, sc).isEmpty()) // ist nicht mehr verdächtig: wird nicht bei jedem Lauf neu erzeugt
+    }
+
+    @Test
+    fun existingCardsWithInventedNamesCountAsOpenRequests() {
+        val sc = listOf(Scene("K (1/2)", "Lucy klingelt."), Scene("K (2/2)", "Es ist dunkel."))
+        val book = Gamebook(
+            key = "k", title = "T", language = "Deutsch",
+            scenes = listOf(
+                GbScene("K (1/2)", plot = "Mrs Andrews erscheint.", place = "Garten", enter = "Ich klingele.", thread = "A"),
+                GbScene("K (2/2)", plot = "Es ist dunkel.", place = "Diele", enter = "Ich trete ein.", thread = "A"),
+            ),
+        )
+        assertEquals(0, Gamebooks.requests(book))
+        assertEquals(1, Gamebooks.requests(book, sc)) // eine Karte mit erfundener Person
+        assertEquals(setOf(0), Gamebooks.suspect(book, sc))
+    }
 }

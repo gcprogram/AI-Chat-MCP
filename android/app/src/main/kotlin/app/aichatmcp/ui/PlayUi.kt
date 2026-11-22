@@ -118,6 +118,7 @@ private fun Setup(
     var solo by remember { mutableStateOf(vm.config.soloAdventure) }
     var perDay by remember { mutableStateOf(vm.config.soloScenesPerDay.toString()) }
     var mode by remember { mutableStateOf(DecisionMode.parse(vm.config.soloMode)) }
+    var textMode by remember { mutableStateOf(vm.config.soloText) }
     // Während das Spielbuch vorbereitet wird, soll der Bildschirm nicht ausgehen (bei dunklem Bildschirm drosselt Samsung die Rechenleistung stark)
     val view = LocalView.current
     DisposableEffect(vm.prepBusy) {
@@ -147,11 +148,7 @@ private fun Setup(
             Switch(checked = solo, onCheckedChange = { solo = it })
         }
         if (solo) {
-            Text(
-                t("The game master tells each scene as a short passage (a quarter to half a page) from a summary of the book part, then you decide.",
-                    "Der Spielleiter erzählt jede Szene als kurzen Abschnitt (eine Viertel- bis halbe Seite) aus einer Zusammenfassung des Buchteils, danach entscheidest du."),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
-            )
+            TextModeChoice(textMode) { textMode = it }
             ModeChoice(mode) { mode = it }
             TextSetting(
                 t("Scenes per day (then a night passes)", "Szenen je Tag (danach vergeht eine Nacht)"), perDay, { perDay = it },
@@ -165,7 +162,7 @@ private fun Setup(
                 val days = perDay.toIntOrNull()?.takeIf { it in 1..20 } ?: vm.config.soloScenesPerDay
                 var config = vm.config
                 if (n != null && n >= 0) config = config.copy(roleplayTurns = n)
-                config = config.copy(soloAdventure = solo, soloScenesPerDay = days, soloMode = mode.name.lowercase())
+                config = config.copy(soloAdventure = solo, soloScenesPerDay = days, soloMode = mode.name.lowercase(), soloText = textMode)
                 if (config != vm.config) vm.saveConfig(config)
                 vm.startRoleplay(doc, choice.playerName, choice.asFirstPerson, solo = solo, characters = choice.names)
                 onStarted()
@@ -178,6 +175,27 @@ private fun Setup(
         OutlinedButton(onClick = onLoad) { Text(t("Another book…", "Anderes Buch…")) }
         TextButton(onClick = vm::dismissDoc) { Text(t("Discard", "Verwerfen")) }
     }
+}
+
+/** Der Text der Szenen im Solo-Abenteuer: vom Spielleiter nacherzählt oder der Originaltext des Buches, ungekürzt angezeigt und vorgelesen. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TextModeChoice(text: String, onText: (String) -> Unit) {
+    Text(t("Text of the scenes", "Text der Szenen"), style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = text != "book", onClick = { onText("retell") }, label = { Text(t("Retold by the narrator", "Vom Erzähler nacherzählt")) })
+        FilterChip(selected = text == "book", onClick = { onText("book") }, label = { Text(t("Original text, read aloud", "Originaltext, vorgelesen")) })
+    }
+    Text(
+        if (text == "book") t(
+            "The book text of each scene is shown in full and read aloud. Then you choose what your character does next. Only when you depart from the story does the narrator write a short consequence; then the book continues with the original text. Works best with a prepared game book.",
+            "Der Buchtext jeder Szene wird ungekürzt angezeigt und vorgelesen. Danach wählst du, was deine Figur als Nächstes tut. Nur wenn du von der Geschichte abweichst, schreibt der Erzähler eine kurze Folge; dann geht es mit dem Originaltext weiter. Am besten mit vorbereitetem Spielbuch.",
+        ) else t(
+            "The game master tells each scene as a short passage (a quarter to half a page) from the summary and an excerpt of the book part, then you decide.",
+            "Der Spielleiter erzählt jede Szene als kurzen Abschnitt (eine Viertel- bis halbe Seite) aus der Zusammenfassung und einem Auszug des Buchteils, danach entscheidest du.",
+        ),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+    )
 }
 
 /** Die Art der Entscheidungen im Solo-Abenteuer wählen (Handlung/Risiko/Umweg, Stränge, gemischt) mit kurzer Erklärung. */

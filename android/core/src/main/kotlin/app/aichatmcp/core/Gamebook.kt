@@ -42,6 +42,8 @@ data class Gamebook(
     val language: String = "Deutsch",
     val firstPerson: Boolean = false,
     val characters: List<String> = emptyList(),
+    /** Name des Ich-Erzählers im Buch (z. B. "Lucy"); leer = unbekannt. Das Spiel fragt ihn beim ersten Start und merkt ihn sich hier; von Hand änderbar. */
+    val narrator: String = "",
     val scenes: List<GbScene> = emptyList(),
 ) {
     /** Die Szenen für das Spiel: Titel und Zusammenfassung als Text. */
@@ -142,12 +144,80 @@ object Gamebooks {
     /** Ist die Karte der Szene [i] fertig und in der Sprache des Buches? Sonst wird sie bei der nächsten Vorbereitung erneut erzeugt. */
     fun cardDone(book: Gamebook, i: Int): Boolean = sceneDone(book.scenes[i]) && !wrongLanguage(book.scenes[i], book.language)
 
+    private val TITLE_NAME = Regex("""\b(?:Mrs?\.?|Miss|Ms\.?|Herr|Frau|Dr\.?|Professor|Lady|Lord|Sir|Inspector|Inspektor|Madame|Monsieur)\s+(\p{Lu}[\p{L}'’-]{2,})""")
+
+    /** Wie viele Zeichen vom Ende der Passage gelten für Risiko und Umweg als "dabei": Eine Person, die nur am Anfang erwähnt wird, ist am Ende nicht anwesend. */
+    private const val TAIL_CHARS = 1200
+
+    /** Welche Namen mit Anrede in welchem Feld der Karte nicht dorthin gehören ([invented]). */
+    data class Invented(
+        val summary: List<String> = emptyList(), val enter: List<String> = emptyList(),
+        val risk: List<String> = emptyList(), val detour: List<String> = emptyList(),
+    ) {
+        val any: Boolean get() = summary.isNotEmpty() || enter.isNotEmpty() || risk.isNotEmpty() || detour.isNotEmpty()
+        val names: List<String> get() = (summary + enter + risk + detour).distinct()
+    }
+
+    private fun titled(text: String): List<String> = TITLE_NAME.findAll(text).map { it.groupValues[1] }.distinct().toList()
+
+    private fun knownIn(name: String, source: String): Boolean {
+        val n = name.lowercase()
+        return n in source || (n.length > 4 && (n.dropLast(1) in source || n.removeSuffix("es") in source)) // auch "Hopes" (Genitiv) für "Hope"
+    }
+
+    /**
+     * Namen mit Anrede ("Mrs Andrews") in der Karte, die dort nicht hingehören: Das Modell hat die Person erfunden, aus dem falschen Teil des Buches genommen oder verrät
+     * sie zu früh (im ersten Probelauf mit dem 8B tauchte "Mrs Andrews" in einer Entscheidung auf, obwohl sie nur in einer Rückschau erwähnt wird).
+     * Zusammenfassung: der Name muss in der Passage oder dem Anfang der nächsten stehen. Eingang: der Spieler muss die Person schon kennen, sie muss in früheren Szenen
+     * vorkommen ([before], wird nur bei Bedarf gelesen). Risiko und Umweg: die Person muss am Ende der Passage dabei sein (letzte [TAIL_CHARS] Zeichen).
+     */
+    fun invented(card: Card, passage: String, next: String?, before: () -> String = { "" }): Invented {
+        val p = passage.lowercase()
+        val nx = next.orEmpty().take(NEXT_CHARS).lowercase()
+        val tail = p.takeLast(TAIL_CHARS)
+        val enter = titled(card.enter).let { names -> if (names.isEmpty()) names else before().lowercase().let { b -> names.filterNot { knownIn(it, b) } } }
+        return Invented(
+            summary = titled(card.summary).filterNot { knownIn(it, "$p $nx") },
+            enter = enter,
+            risk = titled(card.risk).filterNot { knownIn(it, tail) },
+            detour = titled(card.detour).filterNot { knownIn(it, tail) },
+        )
+    }
+
+    private fun cardOf(s: GbScene) = Card(s.plot, s.place, s.enter, s.risk, s.detour)
+
+    /** Der Text aller Szenen vor [i] (was der Spieler schon kennt). */
+    private fun textBefore(scenes: List<Scene>, i: Int): String = scenes.take(i).joinToString(" ") { it.text }
+
+    /** Welche fertigen Karten enthalten Namen, die nicht dorthin gehören ([invented])? Brauchen den Text der Szenen; die nächste Vorbereitung erzeugt sie neu. */
+    fun suspect(book: Gamebook, scenes: List<Scene>): Set<Int> =
+        if (!compatible(book, scenes)) emptySet()
+        else book.scenes.indices.filter { cardDone(book, it) && invented(cardOf(book.scenes[it]), scenes[it].text, scenes.getOrNull(it + 1)?.text) { textBefore(scenes, it) }.any }.toSet()
+
+    /**
+     * Entfernt die unerlaubten Namen aus der Karte: Sätze der Zusammenfassung mit dem Namen fallen weg (bleibt nichts, gilt der Textanfang), ein Eingang mit dem Namen wird
+     * "Weiter.", Risiko und Umweg mit dem Namen entfallen. So ist die Karte danach sauber und wird nicht bei jeder Vorbereitung erneut erzeugt.
+     */
+    fun scrub(card: Card, bad: Invented, passage: String, german: Boolean): Card {
+        fun has(s: String, names: List<String>) = names.any { Regex("""\b${Regex.escape(it)}""").containsMatchIn(s) }
+        val sentences = card.summary.split(Regex("""(?<=[.!?…])\s+""")).filter { it.isNotBlank() && !has(it, bad.summary) }
+        return card.copy(
+            summary = sentences.joinToString(" ").ifBlank { passage.trim().take(300) },
+            enter = if (has(card.enter, bad.enter)) (if (german) "Weiter." else "Continue.") else card.enter,
+            risk = if (has(card.risk, bad.risk)) "" else card.risk,
+            detour = if (has(card.detour, bad.detour)) "" else card.detour,
+        )
+    }
+
     fun batches(count: Int): Int = (count + BATCH - 1) / BATCH
 
     private fun batchDone(b: Int, book: Gamebook): Boolean = (b * BATCH until minOf(book.scenes.size, (b + 1) * BATCH)).all { book.scenes[it].thread.isNotBlank() }
 
     /** Wie viele Anfragen noch fehlen: eine je Szene ohne Karte und eine je Gruppe von Szenen ohne Strang. */
-    fun requests(book: Gamebook): Int = book.scenes.indices.count { !cardDone(book, it) } + (0 until batches(book.scenes.size)).count { !batchDone(it, book) }
+    fun requests(book: Gamebook, scenes: List<Scene>? = null): Int {
+        val suspects = scenes?.let { suspect(book, it) }.orEmpty() // Karten mit unerlaubten Namen werden erneut erzeugt (nur bekannt, wenn der Buchtext vorliegt)
+        return book.scenes.indices.count { !cardDone(book, it) || it in suspects } + (0 until batches(book.scenes.size)).count { !batchDone(it, book) }
+    }
 
     fun ready(book: Gamebook): Boolean = book.scenes.isNotEmpty() && requests(book) == 0
 
@@ -173,7 +243,7 @@ object Gamebooks {
      * Die Anfrage zu einer Szene: Zusammenfassung, Ort am Ende und die drei Entscheidungen. [scene] ist der Text der Szene, [next] der Anfang der folgenden.
      * Das Modell soll den Verlauf zur Richtung machen (kein Ergebnis verraten) und die Alternativen vom Ort aus möglich halten.
      */
-    fun cardPrompt(book: String, scene: Scene, next: Scene?, language: String): List<WireMessage> {
+    fun cardPrompt(book: String, scene: Scene, next: Scene?, language: String, avoid: List<String> = emptyList()): List<WireMessage> {
         val nextBlock = next?.let { "\n\nNEXT (the beginning of the following passage):\n${it.text.trim().take(NEXT_CHARS)}" }.orEmpty()
         val german = language.startsWith("Deu", ignoreCase = true)
         // Die Anweisung ist englisch (kleine Modelle folgen ihr besser), die Vorlage der Werte steht in der Sprache des Buches: sonst antwortet ein Modell trotz "in Deutsch" englisch.
@@ -183,7 +253,7 @@ object Gamebooks {
                 "PLACE: <Ort der Hauptfigur am ENDE der Passage (Gebäude, Stockwerk, Raum oder Ort im Freien), in wenigen Worten>\n" +
                 "ENTER: <ein kurzer Satz in der Ich-Form: die Richtung oder Handlung der Hauptfigur am ANFANG der Passage, zum Beispiel \"Ich gehe weiter die Treppe hinauf.\", wenn die Figur den Fuß auf die nächste Stufe setzt; nur die Bewegung oder Handlung selbst, nie ihr Ergebnis, nichts, was erst später in der Passage enthüllt wird, und keine Namen von Personen, die die Figur noch nicht kennt>\n" +
                 (if (next != null) {
-                    "RISK: <ein Satz in der Ich-Form: eine andere, mutigere oder gefährliche Handlung am ENDE der Passage statt des Weitergehens mit NEXT; sie muss von genau dem Ort in PLACE aus möglich sein (kein Sprung in andere Stockwerke, entfernte Räume oder Gebäude; höchstens einen Schritt oder eine Tür weit)>\n" +
+                    "RISK: <ein Satz in der Ich-Form: eine andere, mutigere oder gefährliche Handlung am ENDE der Passage statt des Weitergehens mit NEXT; sie muss von genau dem Ort in PLACE aus möglich sein (kein Sprung in andere Stockwerke, entfernte Räume oder Gebäude; höchstens einen Schritt oder eine Tür weit) und darf nur Personen und Dinge betreffen, die am Ende der Passage wirklich anwesend sind (nicht Personen, die nur erwähnt oder erinnert werden)>\n" +
                         "DETOUR: <ein Satz in der Ich-Form: eine andere, harmlose Handlung, ebenfalls vom Ort in PLACE aus möglich, die trotzdem zu NEXT hinführt>\n"
                 } else "RISK: -\nDETOUR: -\n")
         } else {
@@ -191,7 +261,7 @@ object Gamebooks {
                 "PLACE: <where the main character is at the END of the passage (building, floor or level, room, or outdoor place), in a few words>\n" +
                 "ENTER: <one short sentence in the first person (\"I ...\") naming the direction or action the main character takes at the BEGINNING of the passage, for example \"I go on up the stairs.\" when the text says the character sets a foot on the next step; name only the movement or action itself: never its result, nothing that is revealed later in the passage, and no names of people the character has not met yet>\n" +
                 (if (next != null) {
-                    "RISK: <one sentence in the first person: a different, bolder or dangerous action the main character could take at the END of the passage instead of continuing with NEXT; it must be possible from exactly the place named in PLACE (no jumping to other floors, rooms far away or buildings; at most one step or one door away)>\n" +
+                    "RISK: <one sentence in the first person: a different, bolder or dangerous action the main character could take at the END of the passage instead of continuing with NEXT; it must be possible from exactly the place named in PLACE (no jumping to other floors, rooms far away or buildings; at most one step or one door away) and may only involve people and things that are really present at the end of the passage (not people who are only mentioned or remembered)>\n" +
                         "DETOUR: <one sentence in the first person: a different, harmless action, also possible from the place named in PLACE, that still leads on towards NEXT>\n"
                 } else "RISK: -\nDETOUR: -\n")
         }
@@ -199,7 +269,9 @@ object Gamebooks {
             WireMessage(
                 "user",
                 "You prepare a solo gamebook (choose your path) from the novel \"$book\". Read the PASSAGE and answer in exactly this format: five lines, each starting with its label:\n" + template +
-                    "Every value must be written in $language, never in another language. Begin every line with SUMMARY:, PLACE:, ENTER:, RISK: or DETOUR:, and write nothing before or after.\n\n" +
+                    "Every value must be written in $language, never in another language. Use only names of people that occur in PASSAGE or NEXT and never invent a person." +
+                    (if (avoid.isEmpty()) "" else " These names are not allowed in this answer (the person is not present there or the main character does not know them yet), so do not use them: ${avoid.joinToString(", ")}.") +
+                    " Begin every line with SUMMARY:, PLACE:, ENTER:, RISK: or DETOUR:, and write nothing before or after.\n\n" +
                     "PASSAGE (${scene.title}):\n${scene.text.trim().take(PASSAGE_CHARS)}$nextBlock",
             ),
         )
@@ -289,7 +361,8 @@ object Gamebooks {
         retryDelayMs: Long = 2000,
     ): Gamebook {
         var book = start
-        val total = requests(start).coerceAtLeast(1)
+        val total = requests(start, scenes).coerceAtLeast(1)
+        val suspects = suspect(start, scenes)
         var done = 0
         val lock = Mutex()
         val german = book.language.startsWith("Deu", ignoreCase = true)
@@ -310,6 +383,15 @@ object Gamebooks {
             val prompt = cardPrompt(book.title, scene, scenes.getOrNull(i + 1), book.language)
             var card = parseCard(call(prompt, 380, scene.title, plain = true))
             if (card.summary.isBlank()) card = parseCard(call(prompt, 380, scene.title, plain = true)) // das Format fehlt: ein zweiter Versuch
+            // erfundene Personen (Name mit Anrede, der im Text nicht vorkommt): einmal mit der Liste der verbotenen Namen erneut fragen, was bleibt, wird entfernt
+            val nextText = scenes.getOrNull(i + 1)?.text
+            var bad = if (card.summary.isBlank()) Invented() else invented(card, scene.text, nextText) { textBefore(scenes, i) }
+            if (bad.any) {
+                val again = parseCard(call(cardPrompt(book.title, scene, scenes.getOrNull(i + 1), book.language, bad.names), 380, scene.title, plain = true))
+                if (again.summary.isNotBlank()) card = again
+                bad = invented(card, scene.text, nextText) { textBefore(scenes, i) }
+                if (bad.any) card = scrub(card, bad, scene.text, german)
+            }
             // Notlösung (auch beim zweiten Mal kein Format): Anfang des Buchtextes, ohne Ort; die nächste Vorbereitung erzeugt die Karte erneut
             val summary = card.summary.ifBlank { scene.text.trim().take(300) }
             val enter = card.enter
@@ -320,7 +402,7 @@ object Gamebooks {
                 onData(book)
             }
         }
-        val pending = scenes.indices.filter { !cardDone(book, it) }
+        val pending = scenes.indices.filter { !cardDone(book, it) || it in suspects }
         if (parallel <= 1) pending.forEach { doCard(it) }
         else coroutineScope {
             val permits = Semaphore(parallel)
