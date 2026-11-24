@@ -59,6 +59,11 @@ object ModelCatalog {
             "Google's small model built for phones; good language skills, weaker with tools.",
             listOf(RemoteFile(hf("lmstudio-community/gemma-3n-E2B-it-GGUF", "gemma-3n-E2B-it-Q4_K_M.gguf"), "gemma-3n-E2B-it-Q4_K_M.gguf", 2788 * MB)),
         ),
+        CatalogEntry(
+            "gemma-4-e4b", ModelKind.CHAT, "Gemma 4 E4B",
+            "Google's newer Gemma for phones; good language skills, tool calls untested. Large download (5.3 GB), needs a phone with 12 GB of RAM.",
+            listOf(RemoteFile(hf("lmstudio-community/gemma-4-E4B-it-GGUF", "gemma-4-E4B-it-Q4_K_M.gguf"), "gemma-4-E4B-it-Q4_K_M.gguf", 5335 * MB)),
+        ),
     )
 
     val whisper = listOf(

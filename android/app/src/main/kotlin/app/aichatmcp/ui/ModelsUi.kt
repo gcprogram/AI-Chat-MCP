@@ -50,6 +50,7 @@ private fun noteDe(id: String): String? = when (id) {
     "qwen3-1.7b" -> "Klein und schnell, für ältere Handys. Einfachere Antworten, bei Werkzeugen weniger zuverlässig; zeigt manchmal „Denk“-Text."
     "gemmasutra-4b" -> "Für Rollenspiel und Geschichten feinabgestimmt; schreibt Werkzeugaufrufe schlecht. Rollenspiel-Modell."
     "gemma-3n-e2b" -> "Googles kleines Modell für Handys: gute Sprache, bei Werkzeugen schwächer."
+    "gemma-4-e4b" -> "Googles neueres Gemma für Handys: gute Sprache, Werkzeugaufrufe ungetestet. Großer Download (5,3 GB), braucht ein Handy mit 12 GB Arbeitsspeicher."
     "whisper-small" -> "Spracheingabe offline in vielen Sprachen. Gute Genauigkeit, auf dem Handy schnell genug."
     "smolvlm-500m" -> "Beschreibt Bilder als Text, damit ein Chat-Modell darüber sprechen kann. Zwei Dateien, geladen nur während der Beschreibung."
     "piper-de_DE-thorsten-medium" -> "Natürliche deutsche Männerstimme."
