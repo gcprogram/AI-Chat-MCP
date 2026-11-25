@@ -1,8 +1,8 @@
-"""Chat-Persönlichkeit (Companion): Datei in personas/*.json -> System-Prompt.
+"""Chat-Persönlichkeit (Companion): Datei in companions/*.json -> System-Prompt.
 
 Der System-Prompt legt die Rollen fest (wer ist 'ich', wer ist 'du'), verbietet Protokollzeilen und
 Monologe und wird vom Chat bei jeder Anfrage als erste Nachricht mitgesendet, aber nie angezeigt.
-Ein Companion hat zusätzlich ein Avatar-Bild (personas/avatars/) und eine Auswahl freigeschalteter Werkzeuge."""
+Ein Companion hat zusätzlich ein Avatar-Bild (companions/avatars/) und eine Auswahl freigeschalteter Werkzeuge."""
 from __future__ import annotations
 
 import base64
@@ -17,7 +17,7 @@ from pathlib import Path
 from .config import APP_DIR
 
 log = logging.getLogger(__name__)
-PERSONAS_DIR = APP_DIR / "personas"
+PERSONAS_DIR = APP_DIR / "companions"
 AVATAR_SUBDIR = "avatars"
 TOOL_MODES = ("marker", "native")
 
@@ -29,7 +29,7 @@ class Persona:
     language: str = "Deutsch"
     greeting: str = ""
     rules: list[str] = field(default_factory=list)  # zusätzliche, persönlichkeitsspezifische Regeln
-    avatar: str = ""  # Dateiname relativ zu personas/ (z. B. "avatars/mia.png") oder absoluter Pfad (älteres Format)
+    avatar: str = ""  # Dateiname relativ zu companions/ (z. B. "avatars/mia.png") oder absoluter Pfad (älteres Format)
     avatar_data: str = ""  # Bild in der Datei (Base64, kleines JPEG): Companion und Bild bleiben beisammen; hat Vorrang vor "avatar"
     tools: list[str] = field(default_factory=list)  # freigeschaltete Werkzeuge (Aliase aus mcp_servers.json)
     approved_tools: list[str] = field(default_factory=list)  # davon vorab genehmigt: laufen ohne Rückfrage

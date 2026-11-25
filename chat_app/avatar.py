@@ -26,7 +26,7 @@ class AvatarError(Exception):
 
 
 def store_avatar(source: Path | str, persona_id: str, personas_dir: Path) -> str:
-    """Kopiert das Bild nach personas/avatars/<id>.<ext> (der Companion bleibt dadurch in sich geschlossen)
+    """Kopiert das Bild nach companions/avatars/<id>.<ext> (der Companion bleibt dadurch in sich geschlossen)
     und liefert den relativen Pfad für die Persona-Datei."""
     source = Path(source)
     if not source.is_file():

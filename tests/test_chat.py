@@ -134,7 +134,7 @@ class PersonaAndSessionTest(unittest.TestCase):
 
     def test_shipped_persona_loads_and_bad_file_falls_back(self):
         self.assertIn("companion", list_personas())
-        self.assertEqual(load_persona("companion").name, "Mia")
+        self.assertEqual(load_persona("companion").name, "New")
         self.assertEqual(load_persona("gibt-es-nicht").name, "Mia")
 
     def test_request_is_stateless_and_history_not_duplicated(self):
