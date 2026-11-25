@@ -213,7 +213,9 @@ data class ToolSpec(
         var sample = example.ifEmpty { usage }
         if (buttons.isNotEmpty()) {
             val labels = allowedButtons(only)
-            note = " Buttons: ${labels.joinToString(", ")}."
+            val seconds = formatSeconds((defaults["seconds"] as? Double) ?: BUTTON_DEFAULT_SECONDS)
+            note = " Buttons: ${labels.joinToString(", ")}. Optional 2nd argument: seconds until it is switched off " +
+                "(default $seconds), e.g. [[mcp:$alias|${labels.firstOrNull() ?: "P1"}|3.5]]."
             if (example.isEmpty() || exampleLabel() !in labels) sample = "[[mcp:$alias|${labels.firstOrNull() ?: "P1"}]]"
         }
         return "- $alias: $desc$note Example: $sample".replace("  ", " ")
@@ -227,6 +229,25 @@ data class ToolSpec(
         val wanted = only.map { it.trim().lowercase() }.toSet()
         return buttons.filter { it.lowercase() in wanted }
     }
+}
+
+/** Fernbedienung: ohne Angabe wird nach 5 Minuten "off" gesendet. */
+const val BUTTON_DEFAULT_SECONDS = 300.0
+const val BUTTON_MIN_SECONDS = 0.5
+const val BUTTON_MAX_SECONDS = 3600.0
+
+private fun formatSeconds(seconds: Double): String = if (seconds % 1.0 == 0.0) seconds.toLong().toString() else seconds.toString()
+
+/** Dauer eines Tastendrucks in Sekunden: "3", "3.5", "3,5", "3s", "2m"/"2min" (auch als Zahl). Sonst [ToolArgError]. */
+fun parseDuration(value: Any?): Double {
+    val text = value.toString().trim().lowercase()
+    val match = Regex("(\\d+(?:[.,]\\d+)?)\\s*(s|sek|sec|m|min)?").matchEntire(text)
+        ?: throw ToolArgError("Ungültige Dauer '$value'. Erlaubt: Sekunden, z. B. 3 oder 3.5 (auch 30s oder 2m).")
+    val seconds = match.groupValues[1].replace(',', '.').toDouble() * (if (match.groupValues[2] in listOf("m", "min")) 60 else 1)
+    if (seconds < BUTTON_MIN_SECONDS || seconds > BUTTON_MAX_SECONDS) {
+        throw ToolArgError("Dauer ${formatSeconds(seconds)} s außerhalb von ${formatSeconds(BUTTON_MIN_SECONDS)} bis ${formatSeconds(BUTTON_MAX_SECONDS)} Sekunden.")
+    }
+    return seconds
 }
 
 fun firstSentence(text: String, limit: Int = 140): String {
@@ -309,6 +330,19 @@ class ToolRegistry {
 
     /** Pause in einem Makro (in Millisekunden); in Tests ersetzbar. */
     var sleeper: (Long) -> Unit = { Thread.sleep(it) }
+
+    private val offTimer by lazy { java.util.Timer("remote-off", true) }
+    private val offCancels = mutableMapOf<String, () -> Unit>() // Server -> Abbruch des geplanten "off" nach einem Tastendruck
+
+    /** Plant eine Aktion nach der Zeit (Millisekunden) und liefert die Funktion zum Abbrechen; in Tests ersetzbar. */
+    var offScheduler: (Long, () -> Unit) -> (() -> Unit) = { ms, action ->
+        val task = object : java.util.TimerTask() {
+            override fun run() = action()
+        }
+        offTimer.schedule(task, ms)
+        val cancel: () -> Unit = { task.cancel() }
+        cancel
+    }
 
     /** Startet den Server (blockierend) und registriert seine Werkzeuge. Mit exposeRaw=false nur über Aliase. */
     fun addServer(name: String, server: McpClient, overrides: JsonObject? = null, exposeRaw: Boolean = true): List<String> {
@@ -406,10 +440,16 @@ class ToolRegistry {
             confirmEl is JsonPrimitive && confirmEl.booleanOrNull != null -> confirmEl.booleanOrNull
             else -> throw IllegalArgumentException("'confirm' muss true oder false sein")
         }
+        val defaultSeconds = try {
+            parseDuration((entry["seconds"] as? JsonPrimitive)?.content ?: BUTTON_DEFAULT_SECONDS)
+        } catch (e: ToolArgError) {
+            throw IllegalArgumentException("'seconds': ${e.message}")
+        }
         return ToolSpec(
             alias = alias, server = server, remoteName = "send",
             description = entry.string("hint")?.takeIf { it.isNotEmpty() } ?: "Presses a button on the remote control",
-            params = listOf(Param("button", "string", true, "Label of the button")), example = entry.string("example").orEmpty(),
+            params = listOf(Param("button", "string", true, "Label of the button"), Param("seconds", "number", false, "Seconds until the device is switched off again")),
+            defaults = mapOf("seconds" to defaultSeconds), example = entry.string("example").orEmpty(),
             result = mode, status = entry.string("status").orEmpty(), confirm = confirm,
             remember = (entry["remember"] as? JsonPrimitive)?.booleanOrNull ?: false, buttons = labels,
         )
@@ -580,7 +620,30 @@ class ToolRegistry {
     }
 
     fun shutdown() {
+        synchronized(offCancels) {
+            offCancels.values.forEach { it() }
+            offCancels.clear()
+        }
         servers.values.forEach { runCatching { it.close() } }
+    }
+
+    private fun cancelOff(server: String) {
+        synchronized(offCancels) { offCancels.remove(server)?.invoke() }
+    }
+
+    /** Sendet nach [seconds] Sekunden "off". Jeder neue Tastendruck ersetzt den Timer (die App kennt immer nur einen aktiven Code). */
+    private fun scheduleOff(server: String, seconds: Double, timeoutSec: Double) {
+        synchronized(offCancels) {
+            offCancels.remove(server)?.invoke()
+            val token = arrayOfNulls<() -> Unit>(1)
+            val cancel = offScheduler((seconds * 1000).toLong()) {
+                val mine = synchronized(offCancels) { if (offCancels[server] === token[0]) offCancels.remove(server) else null }
+                // Handy weg oder Fernsteuerung aus: die App schaltet selbst nach ihrer Auto-Aus-Zeit ab
+                if (mine != null) runCatching { servers[server]?.callTool("off", emptyMap(), timeoutSec) }
+            }
+            token[0] = cancel
+            offCancels[server] = cancel
+        }
     }
 
     fun available(): List<String> = tools.keys.sorted()
@@ -674,9 +737,19 @@ class ToolRegistry {
         val label = allowed.firstOrNull { it.equals(asked, ignoreCase = true) }
             ?: codes[asked.lowercase()]?.let { code -> allowed.firstOrNull { codes[it.lowercase()] == code } } // auch Hex/Dezimalcode einer erlaubten Taste
             ?: return ToolOutcome(spec.alias, false, "Unbekannte Taste '$asked'. Erlaubt: ${allowed.joinToString(", ")}.")
+        val isOff = label.equals("off", ignoreCase = true) && (spec.server to "off") in remote
+        var seconds = 0.0
+        if (!isOff) {
+            val given = spec.bind(call.args)["seconds"]
+            seconds = try {
+                parseDuration(if (given == null || given == "") spec.defaults["seconds"] ?: BUTTON_DEFAULT_SECONDS else given)
+            } catch (e: ToolArgError) {
+                return ToolOutcome(spec.alias, false, e.message.orEmpty())
+            }
+        }
         val (rawText, isError) = try {
             val client = servers.getValue(spec.server)
-            if (label.equals("off", ignoreCase = true) && (spec.server to "off") in remote) client.callTool("off", emptyMap(), timeoutSec)
+            if (isOff) client.callTool("off", emptyMap(), timeoutSec)
             else client.callTool("send", mapOf("code" to codes.getValue(label.lowercase())), timeoutSec)
         } catch (e: McpException) {
             return ToolOutcome(spec.alias, false, e.message.orEmpty())
@@ -684,6 +757,14 @@ class ToolRegistry {
         var text = neutralize(rawText).ifEmpty { "(leeres Ergebnis)" }
         if (text.length > maxChars) text = text.substring(0, maxChars).trimEnd() + " […gekürzt]"
         if (isError) return ToolOutcome(spec.alias, false, text)
-        return ToolOutcome(spec.alias, true, text, spec.result, spec.status.ifEmpty { "${spec.alias}: $label" }, spec.remember)
+        var suffix = ""
+        if (isOff) {
+            cancelOff(spec.server)
+        } else {
+            scheduleOff(spec.server, seconds, timeoutSec)
+            suffix = ", off nach ${formatSeconds(seconds)} s"
+            text += "\n(off nach ${formatSeconds(seconds)} s)"
+        }
+        return ToolOutcome(spec.alias, true, text, spec.result, spec.status.ifEmpty { "${spec.alias}: $label$suffix" }, spec.remember)
     }
 }

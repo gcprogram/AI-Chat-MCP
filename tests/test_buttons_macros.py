@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import unittest
 from unittest import mock
@@ -88,7 +89,8 @@ class ButtonSetTest(unittest.TestCase):
             out = reg.run(find_call(text), ["tv"])
             self.assertTrue(out.ok, (text, out.text))
         self.assertEqual([("send", "0x02"), ("send", "0x0b"), ("send", "0x11"), ("off", ""), ("send", "0x01")], fake.sent)
-        self.assertEqual("tv: P2", reg.run(find_call("[[mcp:tv|P2]]"), ["tv"]).status)
+        self.assertEqual("tv: P2, off nach 300 s", reg.run(find_call("[[mcp:tv|P2]]"), ["tv"]).status)
+        self.assertEqual("tv: off", reg.run(find_call("[[mcp:tv|off]]"), ["tv"]).status)
 
     def test_macro_can_press_buttons_of_a_button_set(self):
         reg, fake = registry({**self.ALIAS, "demo": {"macro": ["tv|P1", 2, "tv|off"]}})
@@ -132,6 +134,95 @@ class ButtonSetTest(unittest.TestCase):
         reg.add_aliases({"tv": {"server": "aus", "buttons": True}, "weather": {"server": "wetter", "tool": "forecast"}}, frozenset({"aus"}))
         self.assertEqual([], reg.available())
         self.assertEqual(["tv", "weather"], reg.selectable())  # beide stehen in der Konfiguration
+
+
+class FakeTimer:
+    """Ersatz für threading.Timer: merkt sich Dauer und Funktion, läuft erst bei fire()."""
+    created: list = []
+
+    def __init__(self, seconds, function):
+        self.seconds, self.function, self.cancelled, self.daemon = seconds, function, False, False
+        FakeTimer.created.append(self)
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        self.cancelled = True
+
+    def fire(self):
+        if not self.cancelled:
+            self.function()
+
+
+class ButtonDurationTest(unittest.TestCase):
+    ALIAS = ButtonSetTest.ALIAS
+
+    def setUp(self):
+        FakeTimer.created = []
+        patcher = mock.patch("chat_app.tools.threading.Timer", FakeTimer)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_default_is_five_minutes_then_off(self):
+        reg, fake = registry(self.ALIAS)
+        out = reg.run(find_call("[[mcp:tv|P1]]"), ["tv"])
+        self.assertEqual("tv: P1, off nach 300 s", out.status)
+        self.assertEqual([300.0], [t.seconds for t in FakeTimer.created])
+        FakeTimer.created[0].fire()
+        self.assertEqual([("send", "0x01"), ("off", "")], fake.sent)
+
+    def test_seconds_with_decimals_and_units(self):
+        reg, fake = registry(self.ALIAS)
+        for text, expected in (("P1|3", 3.0), ("P1|3.5", 3.5), ("P1|3,5", 3.5), ("P1|30s", 30.0), ("P1|2m", 120.0),
+                               ("P1|seconds=7", 7.0)):
+            FakeTimer.created.clear()
+            self.assertTrue(reg.run(find_call(f"[[mcp:tv|{text}]]"), ["tv"]).ok, text)
+            self.assertEqual([expected], [t.seconds for t in FakeTimer.created], text)
+
+    def test_new_button_replaces_the_pending_off_and_off_cancels_it(self):
+        reg, fake = registry(self.ALIAS)
+        reg.run(find_call("[[mcp:tv|P1|10]]"), ["tv"])
+        reg.run(find_call("[[mcp:tv|P2|20]]"), ["tv"])
+        first, second = FakeTimer.created
+        self.assertTrue(first.cancelled)
+        first.fire()  # veraltet: darf P2 nicht abschalten
+        self.assertEqual([("send", "0x01"), ("send", "0x02")], fake.sent)
+        reg.run(find_call("[[mcp:tv|off]]"), ["tv"])
+        self.assertTrue(second.cancelled)
+        self.assertEqual(2, len(FakeTimer.created))  # off plant selbst keinen Timer
+
+    def test_invalid_duration_sends_nothing(self):
+        reg, fake = registry(self.ALIAS)
+        for bad in ("abc", "0", "99999", "-5"):
+            out = reg.run(find_call(f"[[mcp:tv|P1|{bad}]]"), ["tv"])
+            self.assertFalse(out.ok, bad)
+            self.assertIn("Dauer", out.text)
+        self.assertEqual([], fake.sent)
+        self.assertEqual([], FakeTimer.created)
+
+    def test_alias_can_change_the_default_and_prompt_mentions_it(self):
+        reg, _ = registry({"tv": {**self.ALIAS["tv"], "seconds": 60}})
+        self.assertEqual([], reg.errors)
+        self.assertIn("default 60", reg.prompt_section(["tv"]))
+        reg.run(find_call("[[mcp:tv|P1]]"), ["tv"])
+        self.assertEqual([60.0], [t.seconds for t in FakeTimer.created])
+        reg2, _ = registry({"tv": {**self.ALIAS["tv"], "seconds": "nope"}})
+        self.assertIn("seconds", reg2.errors[0])
+
+    def test_native_tool_offers_seconds(self):
+        reg, fake = registry(self.ALIAS)
+        props = reg.native_tools(["tv"])[0]["function"]["parameters"]["properties"]
+        self.assertEqual("number", props["seconds"]["type"])
+        call = dataclasses.replace(find_call("[[mcp:tv|P1]]"), arguments={"button": "P2", "seconds": 4})
+        self.assertTrue(reg.run(call, ["tv"]).ok)
+        self.assertEqual([4.0], [t.seconds for t in FakeTimer.created])
+
+    def test_failed_off_does_not_raise(self):
+        reg, fake = registry(self.ALIAS)
+        reg.run(find_call("[[mcp:tv|P1|1]]"), ["tv"])
+        with mock.patch.object(FakeRemote, "call_tool", side_effect=OSError("weg")):
+            FakeTimer.created[0].fire()  # darf keine Ausnahme werfen
 
 
 class PersonaChoicesTest(unittest.TestCase):

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -219,7 +220,9 @@ class ToolSpec:
         example = self.example or self.usage
         if self.buttons:
             labels = self.allowed_buttons(only)
-            note = f" Buttons: {', '.join(labels)}."
+            seconds = f"{self.defaults.get('seconds', BUTTON_DEFAULT_SECONDS):g}"
+            note = (f" Buttons: {', '.join(labels)}. Optional 2nd argument: seconds until it is switched off "
+                    f"(default {seconds}), e.g. [[mcp:{self.alias}|{labels[0] if labels else 'P1'}|3.5]].")
             if not self.example or self.example_label() not in labels:
                 example = f"[[mcp:{self.alias}|{labels[0] if labels else 'P1'}]]"
         return f"- {self.alias}: {description}{note} Example: {example}".replace("  ", " ")
@@ -234,6 +237,22 @@ class ToolSpec:
             return list(self.buttons)
         wanted = {o.strip().lower() for o in only}
         return [b for b in self.buttons if b.lower() in wanted]
+
+
+BUTTON_DEFAULT_SECONDS = 300.0  # Fernbedienung: ohne Angabe wird nach 5 Minuten "off" gesendet
+BUTTON_MIN_SECONDS, BUTTON_MAX_SECONDS = 0.5, 3600.0
+
+
+def parse_duration(value: Any) -> float:
+    """Dauer eines Tastendrucks in Sekunden: "3", "3.5", "3,5", "3s", "2m"/"2min" (auch als Zahl). Sonst ToolArgError."""
+    text = str(value).strip().lower()
+    match = re.fullmatch(r"(\d+(?:[.,]\d+)?)\s*(s|sek|sec|m|min)?", text)
+    if not match:
+        raise ToolArgError(f"Ungültige Dauer '{value}'. Erlaubt: Sekunden, z. B. 3 oder 3.5 (auch 30s oder 2m).")
+    seconds = float(match[1].replace(",", ".")) * (60 if match[2] in ("m", "min") else 1)
+    if not BUTTON_MIN_SECONDS <= seconds <= BUTTON_MAX_SECONDS:
+        raise ToolArgError(f"Dauer {seconds:g} s außerhalb von {BUTTON_MIN_SECONDS:g} bis {BUTTON_MAX_SECONDS:g} Sekunden.")
+    return seconds
 
 
 def _first_sentence(text: str, limit: int = 140) -> str:
@@ -299,6 +318,7 @@ class ToolRegistry:
         self.errors: list[str] = []
         self._buttons: dict[str, dict[str, str]] = {}  # Server -> Schlüssel (Label, Hex, Dezimal; klein) -> Code "0x11"
         self._button_labels: dict[str, list[str]] = {}  # Server -> Beschriftungen in der Reihenfolge der Fernbedienung
+        self._off_timers: dict[str, threading.Timer] = {}  # Server -> geplantes "off" nach einem Tastendruck
         self.declared: list[str] = []  # alle Aliase der Konfiguration, auch die gerade nicht verfügbaren (Server aus/nicht erreichbar)
 
     # --- Aufbau --------------------------------------------------------------------------------
@@ -401,9 +421,16 @@ class ToolRegistry:
         confirm = entry.get("confirm")
         if confirm is not None and not isinstance(confirm, bool):
             raise ValueError("'confirm' muss true oder false sein")
+        default_seconds = entry.get("seconds", BUTTON_DEFAULT_SECONDS)  # Standarddauer bis "off", pro Alias einstellbar
+        try:
+            default_seconds = parse_duration(default_seconds)
+        except ToolArgError as exc:
+            raise ValueError(f"'seconds': {exc}") from exc
         return ToolSpec(
             alias=alias, server=server, remote_name="send", description=str(entry.get("hint") or "Presses a button on the remote control"),
-            params=[Param("button", "string", True, "Label of the button")], example=str(entry.get("example") or ""),
+            params=[Param("button", "string", True, "Label of the button"),
+                    Param("seconds", "number", False, "Seconds until the device is switched off again")],
+            defaults={"seconds": default_seconds}, example=str(entry.get("example") or ""),
             result=mode, status=str(entry.get("status") or ""), confirm=confirm, remember=bool(entry.get("remember", False)),
             buttons=labels)
 
@@ -553,8 +580,35 @@ class ToolRegistry:
         self.add_aliases(data.get("aliases"), disabled | failed)  # ein Fehler pro Server, nicht einer pro Alias
 
     def shutdown(self) -> None:
+        for timer in list(self._off_timers.values()):
+            timer.cancel()
+        self._off_timers.clear()
         for server in self.servers.values():
             server.close()
+
+    def _cancel_off(self, server: str) -> None:
+        timer = self._off_timers.pop(server, None)
+        if timer is not None:
+            timer.cancel()
+
+    def _schedule_off(self, server: str, seconds: float, timeout: float) -> None:
+        """Sendet nach `seconds` Sekunden "off" an die Fernbedienung. Jeder neue Tastendruck ersetzt den Timer
+        (die App kennt immer nur einen aktiven Code)."""
+        self._cancel_off(server)
+
+        def fire() -> None:
+            if self._off_timers.get(server) is not timer:
+                return  # inzwischen ersetzt
+            self._off_timers.pop(server, None)
+            try:
+                self.servers[server].call_tool("off", {}, timeout)
+            except Exception as exc:  # Handy weg/Fernsteuerung aus: die App schaltet selbst nach ihrer Auto-Aus-Zeit ab
+                log.warning("Auto-off für '%s' fehlgeschlagen: %s", server, exc)
+
+        timer = threading.Timer(seconds, fire)
+        timer.daemon = True
+        self._off_timers[server] = timer
+        timer.start()
 
     # --- Nutzung -------------------------------------------------------------------------------
 
@@ -693,8 +747,16 @@ class ToolRegistry:
             label = next((b for b in allowed if code and self.button_codes(spec.server).get(b.lower()) == code), None)
         if label is None:
             return ToolOutcome(spec.alias, False, f"Unbekannte Taste '{asked}'. Erlaubt: {', '.join(allowed)}.")
+        is_off = label.lower() == "off" and (spec.server, "off") in self.remote
+        seconds = 0.0
+        if not is_off:
+            given = value.get("seconds")
+            try:
+                seconds = parse_duration(spec.defaults.get("seconds", BUTTON_DEFAULT_SECONDS) if given in (None, "") else given)
+            except ToolArgError as exc:
+                return ToolOutcome(spec.alias, False, str(exc))
         try:
-            if label.lower() == "off" and (spec.server, "off") in self.remote:
+            if is_off:
                 text, is_error = self.servers[spec.server].call_tool("off", {}, timeout)
             else:
                 text, is_error = self.servers[spec.server].call_tool("send", {"code": self.button_codes(spec.server)[label.lower()]}, timeout)
@@ -705,4 +767,11 @@ class ToolRegistry:
             text = text[:max_chars].rstrip() + " […gekürzt]"
         if is_error:
             return ToolOutcome(spec.alias, False, text)
-        return ToolOutcome(spec.alias, True, text, spec.result, spec.status or f"{spec.alias}: {label}", spec.remember)
+        if is_off:
+            self._cancel_off(spec.server)
+            suffix = ""
+        else:
+            self._schedule_off(spec.server, seconds, timeout)
+            suffix = f", off nach {seconds:g} s"
+            text += f"\n(off nach {seconds:g} s)"
+        return ToolOutcome(spec.alias, True, text, spec.result, spec.status or f"{spec.alias}: {label}{suffix}", spec.remember)

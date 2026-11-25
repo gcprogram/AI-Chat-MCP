@@ -78,7 +78,90 @@ class ButtonsMacrosTest {
             assertTrue(out.ok, "$text: ${out.text}")
         }
         assertEquals(listOf("send" to "0x02", "send" to "0x0b", "send" to "0x11", "off" to "", "send" to "0x01"), fake.sent)
-        assertEquals("tv: P2", reg.run(findCall("[[mcp:tv|P2]]")!!, listOf("tv")).status)
+        assertEquals("tv: P2, off nach 300 s", reg.run(findCall("[[mcp:tv|P2]]")!!, listOf("tv")).status)
+        assertEquals("tv: off", reg.run(findCall("[[mcp:tv|off]]")!!, listOf("tv")).status)
+    }
+
+    /** Geplante "off"-Aufrufe im Speicher: Dauer in Sekunden, Abbruch, Auslösen von Hand. */
+    private class Scheduled(val seconds: Double, val action: () -> Unit) {
+        var cancelled = false
+        fun fire() { if (!cancelled) action() }
+    }
+
+    private fun scheduledRegistry(aliases: String): Triple<ToolRegistry, FakeRemote, MutableList<Scheduled>> {
+        val (reg, fake, _) = registry(aliases)
+        val scheduled = mutableListOf<Scheduled>()
+        reg.offScheduler = { ms, action ->
+            val entry = Scheduled(ms / 1000.0, action)
+            scheduled += entry
+            ({ entry.cancelled = true })
+        }
+        return Triple(reg, fake, scheduled)
+    }
+
+    @Test
+    fun defaultIsFiveMinutesThenOff() {
+        val (reg, fake, scheduled) = scheduledRegistry(tvAlias)
+        val out = reg.run(findCall("[[mcp:tv|P1]]")!!, listOf("tv"))
+        assertEquals("tv: P1, off nach 300 s", out.status)
+        assertEquals(listOf(300.0), scheduled.map { it.seconds })
+        scheduled.single().fire()
+        assertEquals(listOf("send" to "0x01", "off" to ""), fake.sent)
+    }
+
+    @Test
+    fun secondsWithDecimalsAndUnits() {
+        val (reg, _, scheduled) = scheduledRegistry(tvAlias)
+        for ((text, expected) in listOf("P1|3" to 3.0, "P1|3.5" to 3.5, "P1|3,5" to 3.5, "P1|30s" to 30.0, "P1|2m" to 120.0, "P1|seconds=7" to 7.0)) {
+            scheduled.clear()
+            assertTrue(reg.run(findCall("[[mcp:tv|$text]]")!!, listOf("tv")).ok, text)
+            assertEquals(listOf(expected), scheduled.map { it.seconds }, text)
+        }
+    }
+
+    @Test
+    fun newButtonReplacesThePendingOffAndOffCancelsIt() {
+        val (reg, fake, scheduled) = scheduledRegistry(tvAlias)
+        reg.run(findCall("[[mcp:tv|P1|10]]")!!, listOf("tv"))
+        reg.run(findCall("[[mcp:tv|P2|20]]")!!, listOf("tv"))
+        val (first, second) = scheduled
+        assertTrue(first.cancelled)
+        first.action() // veraltet: darf P2 nicht abschalten
+        assertEquals(listOf("send" to "0x01", "send" to "0x02"), fake.sent)
+        reg.run(findCall("[[mcp:tv|off]]")!!, listOf("tv"))
+        assertTrue(second.cancelled)
+        assertEquals(2, scheduled.size) // off plant selbst keinen Timer
+    }
+
+    @Test
+    fun invalidDurationSendsNothing() {
+        val (reg, fake, scheduled) = scheduledRegistry(tvAlias)
+        for (bad in listOf("abc", "0", "99999", "-5")) {
+            val out = reg.run(findCall("[[mcp:tv|P1|$bad]]")!!, listOf("tv"))
+            assertFalse(out.ok, bad)
+            assertTrue("Dauer" in out.text, out.text)
+        }
+        assertEquals(emptyList(), fake.sent)
+        assertEquals(emptyList(), scheduled)
+    }
+
+    @Test
+    fun aliasCanChangeTheDefaultAndPromptMentionsIt() {
+        val (reg, _, scheduled) = scheduledRegistry("""{"tv":{"server":"remote","buttons":true,"seconds":60}}""")
+        assertEquals(emptyList(), reg.errors)
+        assertTrue("default 60" in reg.promptSection(listOf("tv")))
+        reg.run(findCall("[[mcp:tv|P1]]")!!, listOf("tv"))
+        assertEquals(listOf(60.0), scheduled.map { it.seconds })
+        val (reg2, _, _) = scheduledRegistry("""{"tv":{"server":"remote","buttons":true,"seconds":"nope"}}""")
+        assertTrue("seconds" in reg2.errors.single(), reg2.errors.toString())
+    }
+
+    @Test
+    fun failedOffDoesNotThrow() {
+        val (reg, fake, scheduled) = scheduledRegistry(tvAlias)
+        reg.run(findCall("[[mcp:tv|P1|1]]")!!, listOf("tv"))
+        fake.failOff = true
+        scheduled.single().fire()
     }
 
     @Test
