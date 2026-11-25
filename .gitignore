@@ -31,3 +31,6 @@ android/keystore.properties
 *.jks
 *.keystore
 android/report.properties
+
+# Buchtexte und Spielbuecher: persoenlich, nicht im Repo
+books/
