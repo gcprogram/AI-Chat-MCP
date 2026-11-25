@@ -161,6 +161,8 @@ class ToolSpec:
     macro: list[tuple] = field(default_factory=list)
     # Tastensatz einer Fernbedienung ("buttons": true): erlaubte Beschriftungen (Argument "button"), zuletzt "off"
     buttons: list[str] = field(default_factory=list)
+    # Beispieltexte je Taste, vom Server (Werkzeug "buttons", Feld "example"): was die Taste bewirkt
+    button_examples: dict[str, str] = field(default_factory=dict)
 
     @property
     def usage(self) -> str:
@@ -221,10 +223,17 @@ class ToolSpec:
         if self.buttons:
             labels = self.allowed_buttons(only)
             seconds = f"{self.defaults.get('seconds', BUTTON_DEFAULT_SECONDS):g}"
-            note = (f" Buttons: {', '.join(labels)}. Optional 2nd argument: seconds until it is switched off "
-                    f"(default {seconds}), e.g. [[mcp:{self.alias}|{labels[0] if labels else 'P1'}|3.5]].")
+            shown = ", ".join(f"{b} ({self.button_examples[b]})" if self.button_examples.get(b) else b for b in labels)
+            first = next((b for b in labels if b.lower() not in REMOTE_COMMANDS), labels[0] if labels else "P1")
+            note = (f" Buttons: {shown}. Optional 2nd argument: seconds until it is switched off "
+                    f"(default {seconds}), e.g. [[mcp:{self.alias}|{first}|3.5]].")
+            lower = {b.lower() for b in labels}
+            if "profiles" in lower:
+                note += f" [[mcp:{self.alias}|profiles]] lists the remote controls (profiles)."
+            if "switch" in lower:
+                note += f" [[mcp:{self.alias}|switch|<profile>]] selects one; the buttons change then."
             if not self.example or self.example_label() not in labels:
-                example = f"[[mcp:{self.alias}|{labels[0] if labels else 'P1'}]]"
+                example = f"[[mcp:{self.alias}|{first}]]"
         return f"- {self.alias}: {description}{note} Example: {example}".replace("  ", " ")
 
     def example_label(self) -> str:
@@ -239,6 +248,7 @@ class ToolSpec:
         return [b for b in self.buttons if b.lower() in wanted]
 
 
+REMOTE_COMMANDS = ("profiles", "switch")  # Wörter neben den Tasten: Fernbedienungen lesen / wechseln (Werkzeuge "profiles"/"switch" des Servers)
 BUTTON_DEFAULT_SECONDS = 300.0  # Fernbedienung: ohne Angabe wird nach 5 Minuten "off" gesendet
 BUTTON_MIN_SECONDS, BUTTON_MAX_SECONDS = 0.5, 3600.0
 
@@ -318,6 +328,7 @@ class ToolRegistry:
         self.errors: list[str] = []
         self._buttons: dict[str, dict[str, str]] = {}  # Server -> Schlüssel (Label, Hex, Dezimal; klein) -> Code "0x11"
         self._button_labels: dict[str, list[str]] = {}  # Server -> Beschriftungen in der Reihenfolge der Fernbedienung
+        self._button_examples: dict[str, dict[str, str]] = {}  # Server -> Beschriftung -> Beispieltext
         self._off_timers: dict[str, threading.Timer] = {}  # Server -> geplantes "off" nach einem Tastendruck
         self.declared: list[str] = []  # alle Aliase der Konfiguration, auch die gerade nicht verfügbaren (Server aus/nicht erreichbar)
 
@@ -393,17 +404,46 @@ class ToolRegistry:
                 raise ValueError(f"Tasten von '{server}' nicht lesbar: {text[:80]}") from None
             codes: dict[str, str] = {}
             labels: list[str] = []
+            examples: dict[str, str] = {}
             for item in items:
                 if not isinstance(item, dict) or not isinstance(item.get("code"), int):
                     continue
                 code = f"0x{item['code']:02x}"
                 labels.append(str(item.get("label") or code))
+                if str(item.get("example") or "").strip():
+                    examples[labels[-1]] = " ".join(str(item["example"]).split())
                 for key in (item.get("label"), item.get("hex"), code, str(item["code"])):
                     if key not in (None, ""):
                         codes.setdefault(str(key).strip().lower(), code)
             self._buttons[server] = codes
             self._button_labels[server] = labels
+            self._button_examples[server] = examples
         return self._buttons[server]
+
+    def _button_set_labels(self, server: str) -> list[str]:
+        """Beschriftungen für den Tastensatz: die Tasten (und Makros) des aktiven Profils, dann off, profiles, switch (soweit der Server sie kann)."""
+        labels = list(self._button_labels[server])
+        if (server, "off") in self.remote:
+            labels.append("off")
+        labels.extend(c for c in REMOTE_COMMANDS if (server, c) in self.remote)
+        return labels
+
+    def refresh_buttons(self, server: str) -> list[str]:
+        """Liest die Tasten eines Servers neu (nach "switch", oder wenn das Profil in der Fernbedienung geändert wurde)
+        und aktualisiert alle Tastensatz-Aliase des Servers. Liefert die neue Liste; ist der Server nicht erreichbar, bleibt alles unverändert."""
+        old = (self._buttons.get(server), self._button_labels.get(server), self._button_examples.get(server))
+        for cache in (self._buttons, self._button_labels, self._button_examples):
+            cache.pop(server, None)
+        try:
+            self.button_codes(server)
+        except (ValueError, McpError):
+            self._buttons[server], self._button_labels[server], self._button_examples[server] = old  # type: ignore[assignment]
+            raise
+        labels = self._button_set_labels(server)
+        for alias, spec in list(self.tools.items()):
+            if spec.buttons and spec.server == server:
+                self.tools[alias] = replace(spec, buttons=labels, button_examples=dict(self._button_examples[server]))
+        return labels
 
     def _build_button_set(self, alias: str, entry: dict) -> ToolSpec:
         """Alias "buttons": true: EIN Werkzeug für alle Tasten der Fernbedienung, die Taste ist das Argument (wie der Ort beim Wetter).
@@ -412,9 +452,7 @@ class ToolRegistry:
         if (server, "send") not in self.remote:
             raise ValueError(f"Werkzeug '{server}/send' nicht gefunden (Server nicht gestartet?)")
         self.button_codes(server)
-        labels = list(self._button_labels[server])
-        if (server, "off") in self.remote:
-            labels.append("off")
+        labels = self._button_set_labels(server)
         mode = str(entry.get("result") or RESULT_DISCARD)
         if mode not in RESULT_MODES:
             raise ValueError(f"'result' muss {', '.join(RESULT_MODES)} sein")
@@ -429,10 +467,11 @@ class ToolRegistry:
         return ToolSpec(
             alias=alias, server=server, remote_name="send", description=str(entry.get("hint") or "Presses a button on the remote control"),
             params=[Param("button", "string", True, "Label of the button"),
-                    Param("seconds", "number", False, "Seconds until the device is switched off again")],
+                    Param("seconds", "number", False, "Seconds until the device is switched off again"),
+                    Param("profile", "string", False, "Profile name, only for the button 'switch'")],
             defaults={"seconds": default_seconds}, example=str(entry.get("example") or ""),
             result=mode, status=str(entry.get("status") or ""), confirm=confirm, remember=bool(entry.get("remember", False)),
-            buttons=labels)
+            buttons=labels, button_examples=dict(self._button_examples.get(server, {})))
 
     def _build_macro(self, alias: str, entry: dict) -> ToolSpec:
         raw = entry.get("macro")
@@ -578,6 +617,20 @@ class ToolRegistry:
                 failed.add(name)
         disabled = frozenset(n for n, e in servers.items() if isinstance(e, dict) and e.get("disabled"))
         self.add_aliases(data.get("aliases"), disabled | failed)  # ein Fehler pro Server, nicht einer pro Alias
+
+    def reload(self, path: Path | str = MCP_CONFIG_PATH, base_dir: Path = APP_DIR) -> None:
+        """Startet alle Server neu und liest mcp_servers.json noch einmal (Companion-Editor "Reload MCPs").
+        Dasselbe Objekt bleibt erhalten, weil Sitzung und Editor darauf zeigen."""
+        self.shutdown()
+        self.servers.clear()
+        self.tools.clear()
+        self.remote.clear()
+        self.errors.clear()
+        self.declared.clear()
+        self._buttons.clear()
+        self._button_labels.clear()
+        self._button_examples.clear()
+        self.start_from_config(path, base_dir)
 
     def shutdown(self) -> None:
         for timer in list(self._off_timers.values()):
@@ -734,6 +787,39 @@ class ToolRegistry:
         return ToolOutcome(spec.alias, True, "\n".join(lines)[:max_chars], spec.result,
                            spec.status or f"{spec.alias} ausgeführt", spec.remember)
 
+    def _run_remote_command(self, spec: ToolSpec, command: str, value: dict, max_chars: int, timeout: float) -> ToolOutcome:
+        """"profiles": die Fernbedienungen (Profile) des Servers lesen. "switch": eine davon wählen, danach die Tasten neu lesen.
+        Beides geht als Ergebnis an das Modell: es muss die Namen bzw. die neuen Tasten kennen."""
+        server = self.servers[spec.server]
+        if command == "profiles":
+            text, is_error = server.call_tool("profiles", {}, timeout)
+            if is_error:
+                return ToolOutcome(spec.alias, False, neutralize(text)[:max_chars])
+            try:
+                items = json.loads(text)
+                lines = [f"- {i['name']}{' (active)' if i.get('active') else ''}"
+                         f"{': ' + ' '.join(str(i['description']).split()) if i.get('description') else ''}"
+                         for i in items if isinstance(i, dict) and i.get("name")]
+                text = "Profiles:\n" + "\n".join(lines) if lines else text
+            except (ValueError, TypeError):
+                pass  # unbekanntes Format: Rohtext weitergeben
+            return ToolOutcome(spec.alias, True, neutralize(text)[:max_chars], RESULT_MODEL, f"{spec.alias}: profiles", spec.remember)
+        name = str(value.get("profile") or value.get("seconds") or "").strip()
+        if not name:
+            return ToolOutcome(spec.alias, False, f"Es fehlt: Profilname. Richtiges Format: [[mcp:{spec.alias}|switch|<profile>]]. Namen: [[mcp:{spec.alias}|profiles]].")
+        text, is_error = server.call_tool("switch", {"profile": name}, timeout)
+        if is_error:
+            return ToolOutcome(spec.alias, False, neutralize(text)[:max_chars])
+        self._cancel_off(spec.server)  # die App hat beim Wechsel abgeschaltet
+        try:
+            labels = self.refresh_buttons(spec.server)
+            current = self.tools[spec.alias]
+            shown = ", ".join(f"{b} ({current.button_examples[b]})" if current.button_examples.get(b) else b for b in labels)
+            text = f"{neutralize(text)}\nButtons: {shown}"
+        except (ValueError, McpError) as exc:
+            text = f"{neutralize(text)}\n(Tasten nicht neu gelesen: {exc})"
+        return ToolOutcome(spec.alias, True, text[:max_chars], RESULT_MODEL, f"{spec.alias}: switch {name}", spec.remember)
+
     def _run_button(self, spec: ToolSpec, call: ToolCall, only: list[str] | None, max_chars: int, timeout: float) -> ToolOutcome:
         """Drückt eine Taste eines Tastensatzes: das Argument "button" (Beschriftung, Hex oder Dezimalcode) gegen die erlaubten Tasten prüfen."""
         value = spec.bind(call.args) if call.arguments is None else {k: _unquote(v) for k, v in call.arguments.items()}
@@ -747,6 +833,8 @@ class ToolRegistry:
             label = next((b for b in allowed if code and self.button_codes(spec.server).get(b.lower()) == code), None)
         if label is None:
             return ToolOutcome(spec.alias, False, f"Unbekannte Taste '{asked}'. Erlaubt: {', '.join(allowed)}.")
+        if label.lower() in REMOTE_COMMANDS:
+            return self._run_remote_command(spec, label.lower(), value, max_chars, timeout)
         is_off = label.lower() == "off" and (spec.server, "off") in self.remote
         seconds = 0.0
         if not is_off:

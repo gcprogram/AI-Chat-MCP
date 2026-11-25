@@ -44,7 +44,7 @@ def alias_entries(server: str, tools: list[dict], buttons: list[dict] | None, pr
                      "example": f"[[mcp:{name}|{labels[0] if labels else 'P1'}]]"}
     for tool in tools:
         name = str(tool.get("name") or "")
-        if not name or (remote and name in ("send", "buttons", "off")):
+        if not name or (remote and name in ("send", "buttons", "off", "profiles", "switch")):
             continue
         out[normalize_name(prefix + slug(name))] = {"server": server, "tool": name,
                                                     "hint": _first_sentence(tool.get("description", "")) or name}

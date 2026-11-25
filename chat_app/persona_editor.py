@@ -7,6 +7,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .avatar import FILE_TYPES, AvatarError, AvatarView, encode_avatar, load_photo
+from .config import MCP_CONFIG_PATH
 from .persona import (Persona, delete_persona, list_personas, load_persona, remove_avatar_file, save_persona,
                       unique_id)
 
@@ -60,8 +61,16 @@ class PersonaEditor(tk.Toplevel):
         ttk.Button(avatar, text="Entfernen", command=self.clear_avatar).pack(side=tk.LEFT)
 
         ttk.Label(self, text="Werkzeuge:").grid(row=7, column=0, sticky="nw", padx=10, pady=5)
-        self.tools_frame = ttk.Frame(self)
-        self.tools_frame.grid(row=7, column=1, sticky="w", padx=10, pady=5)
+        tools_box = ttk.Frame(self)
+        tools_box.grid(row=7, column=1, sticky="w", padx=10, pady=5)
+        tool_actions = ttk.Frame(tools_box)
+        tool_actions.pack(anchor="w", pady=(0, 4))
+        ttk.Button(tool_actions, text="Cleanup", command=self.cleanup_tools).pack(side=tk.LEFT)
+        ttk.Button(tool_actions, text="Reload MCPs", command=self.reload_mcps).pack(side=tk.LEFT, padx=6)
+        ttk.Label(tool_actions, foreground="#666666",
+                  text="Cleanup wählt alle Werkzeuge ab. Reload MCPs liest die Server neu; Neues bleibt abgewählt.").pack(side=tk.LEFT)
+        self.tools_frame = ttk.Frame(tools_box)
+        self.tools_frame.pack(anchor="w")
 
         ttk.Label(self, text="Werkzeug-Modus:").grid(row=8, column=0, sticky="nw", padx=10, pady=5)
         mode = ttk.Frame(self)
@@ -185,6 +194,52 @@ class PersonaEditor(tk.Toplevel):
             if valid and len(valid) < len(spec.buttons):
                 result[alias] = valid
         return result
+
+    def cleanup_tools(self) -> None:
+        """Alle Werkzeuge dieses Companions abwählen (Freischaltung, "ohne Rückfrage", erlaubte Tasten, auch nicht mehr vorhandene).
+        Gespeichert wird erst mit "Speichern"."""
+        if not messagebox.askyesno("Cleanup", "Alle Werkzeuge dieses Companions abwählen?\n(Gespeichert wird erst mit „Speichern“.)", parent=self):
+            return
+        self._build_tool_checks([], [], {})
+        self.hidden_tools, self.hidden_approved, self.hidden_choices = [], [], {}
+
+    def reload_mcps(self) -> None:
+        """Server neu starten und alle Werkzeuge (bei der Fernbedienung auch jede Taste) neu einlesen. Was dieser Companion
+        freigeschaltet hat, bleibt; neue Werkzeuge und neue Tasten kommen deaktiviert dazu (Tasten: "alle" wird dafür zur
+        ausdrücklichen Liste). Ist ein Server nicht erreichbar, bleibt seine Freischaltung unverändert."""
+        registry = self.app.registry
+        persona = self._collect()
+        before = {a: list(s.buttons) for a, s in registry.tools.items() if s.buttons}
+        pinned = dict(persona.tool_choices)
+        for alias, known in before.items():
+            if alias in persona.tools and alias not in pinned:
+                pinned[alias] = known  # bisher "alle": die damals bekannten Tasten festhalten, damit neue deaktiviert bleiben
+        self.config(cursor="watch")
+        self.update_idletasks()
+        try:
+            registry.reload(MCP_CONFIG_PATH)
+        except Exception as exc:  # noqa: BLE001 - Anzeige für den Nutzer
+            messagebox.showerror("Reload MCPs", f"Server konnten nicht neu gelesen werden: {exc}", parent=self)
+            return
+        finally:
+            self.config(cursor="")
+        self._build_tool_checks(persona.tools, persona.approved_tools, pinned)
+        report = []
+        for alias, spec in registry.tools.items():
+            if spec.buttons and alias in before:
+                new = [b for b in spec.buttons if b not in before[alias]]
+                gone = [b for b in before[alias] if b not in spec.buttons]
+                if new:
+                    report.append(f"{alias}: neue Tasten (deaktiviert): {', '.join(new)}")
+                if gone:
+                    report.append(f"{alias}: nicht mehr vorhanden: {', '.join(gone)}")
+        if registry.errors:
+            report.append("Nicht erreichbar: " + " | ".join(registry.errors))
+        report.append("Gespeichert wird erst mit „Speichern“.")
+        messagebox.showinfo("Reload MCPs", "\n".join(report), parent=self)
+        update = getattr(self.app, "_on_tools_ready", None)
+        if callable(update):
+            update(None)
 
     def _load(self, persona_id: str) -> None:
         self._fill(load_persona(persona_id, self.app.personas_dir))

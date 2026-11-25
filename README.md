@@ -128,17 +128,19 @@ Fernbedienung als **ein** Werkzeug (die Taste ist das Argument, wie der Ort beim
 
 ```json
 "aliases": {
-  "tv": {"server": "remote", "buttons": true, "hint": "Remote control of the TV", "example": "[[mcp:tv|P1]]"},
-  "tv-demo": {"macro": ["tv|P1", 3, "tv|off"], "hint": "Short TV demo"}
+  "use": {"server": "remote", "buttons": true, "hint": "Remote control of the TV, video player and Blu-ray player"},
+  "tv-demo": {"macro": ["use|P1", 3, "use|off"], "hint": "Short TV demo"}
 }
 ```
 
-Das Modell schreibt `[[mcp:tv|P3]]` oder `[[mcp:tv|off]]`. Die Beschriftungen holt sich die App beim Start vom Server (Werkzeug `buttons`), sie
+Das Modell schreibt `[[mcp:use|P3]]` oder `[[mcp:use|off]]`. Die Beschriftungen holt sich die App beim Start vom Server (Werkzeug `buttons`), sie
 stehen automatisch im Prompt (`Buttons: P1, P2, …, off`) und werden beim Aufruf geprüft (Fehlermeldung mit der Liste der erlaubten Tasten).
 
-**Pro Companion nur ein Teil der Tasten:** In der Companion-Datei steht `"tool_choices": {"tv": ["P1", "P2", "off"]}` (im Editor: „Erlaubte Tasten“,
+**Pro Companion nur ein Teil der Tasten:** In der Companion-Datei steht `"tool_choices": {"use": ["P1", "P2", "off"]}` (im Editor: „Erlaubte Tasten“,
 leer = alle). Nur diese sind im Prompt sichtbar und nur diese werden ausgeführt. Im Editor lässt sich ein Companion für jedes Werkzeug der
 Konfiguration einrichten, auch wenn der Server gerade nicht läuft (es gilt, sobald er wieder da ist).
+
+**Mehrere Fernbedienungen, Beispiele, Makros der Fernbedienung (26.11.2026):** Die Broadcast-Remote-App kann mehrere Fernbedienungen (Profile) nachbilden. Mit den Werten `profiles` und `switch` neben den Tasten liest das Modell sie und wechselt: `[[mcp:use|profiles]]`, `[[mcp:use|switch|video]]`; danach liest die App die Tasten neu, und das Ergebnis (neue Tastenliste) geht ans Modell. Beispieltexte je Taste (`example`) und Makro-Tasten (`"macro": true`, in der Fernbedienungs-App ohne JSON anlegbar) kommen vom Server und stehen im Prompt als `Buttons: P1 (ZDF), HDMI1 (TV auf HDMI1)`; das Beispiel `[[mcp:use|P1|3.5]]` baut der AIChat selbst. Der Alias heißt `use` (kurz, passt für TV, Video und Blu-ray). Im Companion-Editor: **Cleanup** wählt alle Werkzeuge des Companions ab, **Reload MCPs** startet die Server neu und liest alle Werkzeuge und Tasten neu; was der Companion freigeschaltet hat, bleibt, Neues kommt deaktiviert dazu.
 
 **Aliase vom Server lesen** (statt von Hand abzuschreiben): PC `set PYTHONPATH=. && python -m chat_app.server_import remote --prefix tv- [--dry-run]`,
 Android: Werkzeuge → „Werkzeuge von einem Server lesen“. Bei einer Fernbedienung entsteht ein Alias mit `"buttons": true`, sonst je Werkzeug ein Alias; Vorhandenes wird nicht verändert, beim Server wird `"raw": false` gesetzt. Die Hinweise (`hint`) danach anpassen.
@@ -146,7 +148,7 @@ Android: Werkzeuge → „Werkzeuge von einem Server lesen“. Bei einer Fernbed
 | Feld | Bedeutung |
 |---|---|
 | `server`, `tool` | echtes MCP-Werkzeug (Pflicht, außer bei `button` und `macro`) |
-| `buttons` | `true`: **alle** Tasten einer Fernbedienung (Server mit den Werkzeugen `buttons` und `send`, z. B. Broadcast-Remote) in einem Alias; die Taste ist das Argument (`[[mcp:tv\|P1]]`, `off` ruft das Werkzeug `off` auf) |
+| `buttons` | `true`: **alle** Tasten einer Fernbedienung (Server mit den Werkzeugen `buttons` und `send`, z. B. Broadcast-Remote) in einem Alias; die Taste ist das Argument (`[[mcp:use\|P1]]`, `off` ruft das Werkzeug `off` auf) |
 | `button` | genau eine Taste **mit ihrer Beschriftung**: `{"server": "remote", "button": "P1"}`. Der Code kommt vom Server (`buttons`), er steht nicht noch einmal in `mcp_servers.json`; Standard `result: discard`, `status` = Beschriftung. Auch Hex-Code (`"0x11"`) geht |
 | `macro` | mehrere Aufrufe nacheinander: `{"macro": ["tv-p1", 3, "tv-off"], "hint": "…"}`. Ein Schritt ist ein Alias (mit Argumenten: `"alias\|Argument"`) oder eine Zahl = Pause in Sekunden (1–60, auch `{"wait": 3}`); höchstens 20 Schritte, keine Makros in Makros, der erste Fehler beendet das Makro; Standard `result: discard` |
 | `args` | feste Argumente, die das Modell nicht sieht und nicht ändern kann |

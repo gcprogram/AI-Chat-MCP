@@ -9,11 +9,11 @@
     ],
     "avatar": "",
     "tools": [
-        "tv",
+        "use",
         "weather"
     ],
     "approved_tools": [
-        "tv",
+        "use",
         "weather"
     ],
     "tool_mode": "marker",

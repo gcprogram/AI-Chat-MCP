@@ -157,6 +157,7 @@ data class ToolSpec(
     val keywords: List<Keyword> = emptyList(), // reguläre Ausdrücke: kommen sie in einem Text vor, läuft das Werkzeug ohne das Modell
     val macro: List<MacroStep> = emptyList(), // Makro: mehrere Aufrufe nacheinander (dann ohne eigenen Server-Aufruf)
     val buttons: List<String> = emptyList(), // Tastensatz einer Fernbedienung ("buttons": true): erlaubte Beschriftungen (Argument "button"), zuletzt "off"
+    val buttonExamples: Map<String, String> = emptyMap(), // Beispieltexte je Taste vom Server (Werkzeug "buttons", Feld "example")
     val speak: Boolean = false, // das angezeigte Ergebnis (show/both) wird vorgelesen
 ) {
     val usage: String get() = "[[mcp:" + (listOf(alias) + params.map { "<${it.name}>" }).joinToString("|") + "]]"
@@ -214,9 +215,14 @@ data class ToolSpec(
         if (buttons.isNotEmpty()) {
             val labels = allowedButtons(only)
             val seconds = formatSeconds((defaults["seconds"] as? Double) ?: BUTTON_DEFAULT_SECONDS)
-            note = " Buttons: ${labels.joinToString(", ")}. Optional 2nd argument: seconds until it is switched off " +
-                "(default $seconds), e.g. [[mcp:$alias|${labels.firstOrNull() ?: "P1"}|3.5]]."
-            if (example.isEmpty() || exampleLabel() !in labels) sample = "[[mcp:$alias|${labels.firstOrNull() ?: "P1"}]]"
+            val shown = labels.joinToString(", ") { b -> buttonExamples[b]?.takeIf { it.isNotBlank() }?.let { "$b ($it)" } ?: b }
+            val first = labels.firstOrNull { it.lowercase() !in REMOTE_COMMANDS } ?: labels.firstOrNull() ?: "P1"
+            note = " Buttons: $shown. Optional 2nd argument: seconds until it is switched off " +
+                "(default $seconds), e.g. [[mcp:$alias|$first|3.5]]."
+            val lower = labels.map { it.lowercase() }.toSet()
+            if ("profiles" in lower) note += " [[mcp:$alias|profiles]] lists the remote controls (profiles)."
+            if ("switch" in lower) note += " [[mcp:$alias|switch|<profile>]] selects one; the buttons change then."
+            if (example.isEmpty() || exampleLabel() !in labels) sample = "[[mcp:$alias|$first]]"
         }
         return "- $alias: $desc$note Example: $sample".replace("  ", " ")
     }
@@ -230,6 +236,9 @@ data class ToolSpec(
         return buttons.filter { it.lowercase() in wanted }
     }
 }
+
+/** Wörter neben den Tasten: Fernbedienungen (Profile) lesen / wechseln (Werkzeuge "profiles"/"switch" des Servers). */
+val REMOTE_COMMANDS = listOf("profiles", "switch")
 
 /** Fernbedienung: ohne Angabe wird nach 5 Minuten "off" gesendet. */
 const val BUTTON_DEFAULT_SECONDS = 300.0
@@ -324,6 +333,7 @@ class ToolRegistry {
     val errors = mutableListOf<String>()
     private val buttons = mutableMapOf<String, Map<String, String>>() // Server -> Schlüssel (Beschriftung, Hex, Dezimal; klein) -> Code "0x11"
     private val buttonLabels = mutableMapOf<String, List<String>>() // Server -> Beschriftungen in der Reihenfolge der Fernbedienung
+    private val buttonExamples = mutableMapOf<String, Map<String, String>>() // Server -> Beschriftung -> Beispieltext
 
     /** Alle Aliase der Konfiguration, auch die gerade nicht verfügbaren (Server aus/nicht erreichbar). */
     val declared = mutableListOf<String>()
@@ -410,17 +420,47 @@ class ToolRegistry {
         } ?: throw IllegalArgumentException("Tasten von '$server' nicht lesbar: ${text.take(80)}")
         val codes = linkedMapOf<String, String>()
         val labels = mutableListOf<String>()
+        val examples = linkedMapOf<String, String>()
         for (item in items) {
             val o = item as? JsonObject ?: continue
             val number = (o["code"] as? JsonPrimitive)?.content?.toIntOrNull() ?: continue
             val code = "0x" + number.toString(16).padStart(2, '0')
             labels += o.string("label")?.takeIf { it.isNotBlank() } ?: code
+            o.string("example")?.takeIf { it.isNotBlank() }?.let { examples[labels.last()] = it.trim().split(Regex("\\s+")).joinToString(" ") }
             for (key in listOf(o.string("label"), o.string("hex"), code, number.toString())) {
                 if (!key.isNullOrBlank()) codes.putIfAbsent(key.trim().lowercase(), code)
             }
         }
         buttonLabels[server] = labels
+        buttonExamples[server] = examples
         codes
+    }
+
+    /** Beschriftungen für den Tastensatz: die Tasten (und Makros) des aktiven Profils, dann off, profiles, switch (soweit der Server sie kann). */
+    private fun buttonSetLabels(server: String): List<String> =
+        buttonLabels.getValue(server) + (if ((server to "off") in remote) listOf("off") else emptyList()) +
+            REMOTE_COMMANDS.filter { (server to it) in remote }
+
+    /**
+     * Liest die Tasten eines Servers neu (nach "switch", oder wenn das Profil in der Fernbedienung geändert wurde) und aktualisiert
+     * alle Tastensatz-Aliase des Servers. Ist der Server nicht erreichbar, bleibt alles unverändert (die Ausnahme geht weiter).
+     */
+    fun refreshButtons(server: String): List<String> {
+        val before = Triple(buttons[server], buttonLabels[server], buttonExamples[server])
+        buttons.remove(server); buttonLabels.remove(server); buttonExamples.remove(server)
+        try {
+            buttonCodes(server)
+        } catch (e: Exception) {
+            before.first?.let { buttons[server] = it }
+            before.second?.let { buttonLabels[server] = it }
+            before.third?.let { buttonExamples[server] = it }
+            throw e
+        }
+        val labels = buttonSetLabels(server)
+        for ((alias, spec) in tools.entries.toList()) {
+            if (spec.buttons.isNotEmpty() && spec.server == server) tools[alias] = spec.copy(buttons = labels, buttonExamples = buttonExamples.getValue(server))
+        }
+        return labels
     }
 
     /**
@@ -431,7 +471,7 @@ class ToolRegistry {
         val server = entry.string("server").orEmpty()
         require((server to "send") in remote) { "Werkzeug '$server/send' nicht gefunden (Server nicht gestartet?)" }
         buttonCodes(server)
-        val labels = buttonLabels.getValue(server) + if ((server to "off") in remote) listOf("off") else emptyList()
+        val labels = buttonSetLabels(server)
         val mode = entry.string("result") ?: RESULT_DISCARD
         require(mode in RESULT_MODES) { "'result' muss ${RESULT_MODES.joinToString(", ")} sein" }
         val confirmEl = entry["confirm"]
@@ -448,10 +488,15 @@ class ToolRegistry {
         return ToolSpec(
             alias = alias, server = server, remoteName = "send",
             description = entry.string("hint")?.takeIf { it.isNotEmpty() } ?: "Presses a button on the remote control",
-            params = listOf(Param("button", "string", true, "Label of the button"), Param("seconds", "number", false, "Seconds until the device is switched off again")),
+            params = listOf(
+                Param("button", "string", true, "Label of the button"),
+                Param("seconds", "number", false, "Seconds until the device is switched off again"),
+                Param("profile", "string", false, "Profile name, only for the button 'switch'"),
+            ),
             defaults = mapOf("seconds" to defaultSeconds), example = entry.string("example").orEmpty(),
             result = mode, status = entry.string("status").orEmpty(), confirm = confirm,
             remember = (entry["remember"] as? JsonPrimitive)?.booleanOrNull ?: false, buttons = labels,
+            buttonExamples = buttonExamples[server].orEmpty(),
         )
     }
 
@@ -726,6 +771,47 @@ class ToolRegistry {
         return ToolOutcome(spec.alias, true, lines.joinToString("\n").take(maxChars), spec.result, spec.status.ifEmpty { "${spec.alias} ausgeführt" }, spec.remember)
     }
 
+    /**
+     * "profiles": die Fernbedienungen (Profile) des Servers lesen. "switch": eine davon wählen, danach die Tasten neu lesen.
+     * Beides geht als Ergebnis an das Modell: es muss die Namen bzw. die neuen Tasten kennen.
+     */
+    private fun runRemoteCommand(spec: ToolSpec, command: String, value: Map<String, Any?>, maxChars: Int, timeoutSec: Double): ToolOutcome {
+        val client = servers.getValue(spec.server)
+        try {
+            if (command == "profiles") {
+                val (raw, isError) = client.callTool("profiles", emptyMap(), timeoutSec)
+                if (isError) return ToolOutcome(spec.alias, false, neutralize(raw).take(maxChars))
+                val lines = (try { AppJson.parseToJsonElement(raw) as? JsonArray } catch (_: Exception) { null })?.mapNotNull { el ->
+                    val o = el as? JsonObject ?: return@mapNotNull null
+                    val name = o.string("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val active = if ((o["active"] as? JsonPrimitive)?.booleanOrNull == true) " (active)" else ""
+                    val description = o.string("description")?.takeIf { it.isNotBlank() }?.let { ": " + it.trim().split(Regex("\\s+")).joinToString(" ") }.orEmpty()
+                    "- $name$active$description"
+                }.orEmpty()
+                val text = if (lines.isNotEmpty()) "Profiles:\n" + lines.joinToString("\n") else raw
+                return ToolOutcome(spec.alias, true, neutralize(text).take(maxChars), RESULT_MODEL, "${spec.alias}: profiles", spec.remember)
+            }
+            val name = (value["profile"]?.toString()?.takeIf { it.isNotBlank() } ?: value["seconds"]?.toString().orEmpty()).trim()
+            if (name.isEmpty()) {
+                return ToolOutcome(spec.alias, false, "Es fehlt: Profilname. Richtiges Format: [[mcp:${spec.alias}|switch|<profile>]]. Namen: [[mcp:${spec.alias}|profiles]].")
+            }
+            val (raw, isError) = client.callTool("switch", mapOf("profile" to name), timeoutSec)
+            if (isError) return ToolOutcome(spec.alias, false, neutralize(raw).take(maxChars))
+            cancelOff(spec.server) // die App hat beim Wechsel abgeschaltet
+            val text = try {
+                val labels = refreshButtons(spec.server)
+                val current = tools.getValue(spec.alias)
+                val shown = labels.joinToString(", ") { b -> current.buttonExamples[b]?.let { "$b ($it)" } ?: b }
+                "${neutralize(raw)}\nButtons: $shown"
+            } catch (e: Exception) {
+                "${neutralize(raw)}\n(Tasten nicht neu gelesen: ${e.message})"
+            }
+            return ToolOutcome(spec.alias, true, text.take(maxChars), RESULT_MODEL, "${spec.alias}: switch $name", spec.remember)
+        } catch (e: McpException) {
+            return ToolOutcome(spec.alias, false, e.message.orEmpty())
+        }
+    }
+
     /** Drückt eine Taste eines Tastensatzes: das Argument "button" (Beschriftung, Hex oder Dezimalcode) gegen die erlaubten Tasten prüfen. */
     private fun runButton(spec: ToolSpec, call: ToolCall, only: List<String>?, maxChars: Int, timeoutSec: Double): ToolOutcome {
         val asked = spec.bind(call.args)["button"]?.toString().orEmpty().trim()
@@ -737,6 +823,7 @@ class ToolRegistry {
         val label = allowed.firstOrNull { it.equals(asked, ignoreCase = true) }
             ?: codes[asked.lowercase()]?.let { code -> allowed.firstOrNull { codes[it.lowercase()] == code } } // auch Hex/Dezimalcode einer erlaubten Taste
             ?: return ToolOutcome(spec.alias, false, "Unbekannte Taste '$asked'. Erlaubt: ${allowed.joinToString(", ")}.")
+        if (label.lowercase() in REMOTE_COMMANDS) return runRemoteCommand(spec, label.lowercase(), spec.bind(call.args), maxChars, timeoutSec)
         val isOff = label.equals("off", ignoreCase = true) && (spec.server to "off") in remote
         var seconds = 0.0
         if (!isOff) {

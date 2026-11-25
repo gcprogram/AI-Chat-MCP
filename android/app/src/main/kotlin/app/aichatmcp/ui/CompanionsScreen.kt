@@ -69,6 +69,7 @@ fun CompanionsScreen(
                 available = vm.tools.selectable.ifEmpty { vm.tools.available },
                 running = vm.tools.available.toSet(),
                 buttons = vm.tools.buttons,
+                onReloadTools = vm::reloadTools,
                 avatarFile = vm.avatarFile(if (selected.isEmpty()) Persona() else vm.loadPersona(selected)).also { vm.avatarVersion },
                 personaId = selected,
                 onPickAvatar = { onPickAvatar(selected) },
@@ -87,7 +88,7 @@ fun CompanionsScreen(
 
 @Composable
 private fun PersonaForm(
-    initial: Persona, available: List<String>, running: Set<String>, buttons: Map<String, List<String>>, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
+    initial: Persona, available: List<String>, running: Set<String>, buttons: Map<String, List<String>>, onReloadTools: () -> Unit, avatarFile: java.io.File?, personaId: String, onPickAvatar: () -> Unit,
     onRemoveAvatar: () -> Unit, canDelete: Boolean, onSave: (Persona) -> Unit, onDelete: () -> Unit,
     loadVoices: (String, (List<SpeechOutput.VoiceOption>) -> Unit) -> Unit, onTestVoice: (String, String) -> Unit,
     piperVoices: List<app.aichatmcp.core.PiperVoice>, detect: (Persona) -> String,
@@ -185,6 +186,21 @@ private fun PersonaForm(
     }
 
     SectionTitle("Werkzeuge")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Cleanup: alle Werkzeuge dieses Companions abwählen (auch nicht mehr vorhandene); gespeichert wird mit "Speichern"
+        OutlinedButton(onClick = { tools = emptySet(); approved = emptySet(); choices = emptyMap(); dropHidden = true }) { Text("Cleanup") }
+        // Reload MCPs: Server neu lesen. Was freigeschaltet ist, bleibt; Neues kommt deaktiviert dazu (bisher "alle Tasten" wird dafür
+        // zur ausdrücklichen Liste der jetzt bekannten Tasten)
+        OutlinedButton(onClick = {
+            choices = choices + buttons.filter { (alias, _) -> alias in tools && choices[alias].isNullOrBlank() }.mapValues { it.value.joinToString(", ") }
+            onReloadTools()
+        }) { Text("Reload MCPs") }
+    }
+    Text(
+        t("Cleanup deselects all tools. Reload MCPs reads the servers again; new tools and buttons stay off. Saved with Save.",
+            "Cleanup wählt alle Werkzeuge ab. Reload MCPs liest die Server neu; neue Werkzeuge und Tasten bleiben abgewählt. Gespeichert wird mit „Speichern“."),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+    )
     if (available.isEmpty()) {
         Text("Keine Werkzeuge verfügbar (siehe Werkzeuge im Menü).", style = MaterialTheme.typography.bodySmall)
     } else {
@@ -218,7 +234,7 @@ private fun PersonaForm(
                 initial.copy(
                     name = name.trim(), description = description.trim(), language = language.trim().ifEmpty { "Deutsch" },
                     voice = voice, gender = gender, dailyUpdate = dailyUpdate, greeting = greeting.trim(), rules = rules.lines().map { it.trim() }.filter { it.isNotEmpty() },
-                    toolChoices = initial.toolChoices.filterKeys { it !in buttons } + buttons.mapNotNull { (alias, all) ->
+                    toolChoices = initial.toolChoices.filterKeys { it !in buttons && !dropHidden } + buttons.mapNotNull { (alias, all) ->
                         val wanted = choices[alias].orEmpty().split(',', ';').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
                         val valid = all.filter { it.lowercase() in wanted }
                         if (alias in tools && valid.isNotEmpty() && valid.size < all.size) alias to valid else null

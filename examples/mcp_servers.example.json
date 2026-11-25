@@ -85,14 +85,17 @@
             "result": "model",
             "confirm": false
         },
-        "tv": {
+        "use": {
             "server": "remote",
             "buttons": true,
-            "hint": "Remote control of the TV: switches the program (button P1 to P18) or turns it off",
-            "example": "[[mcp:tv|P1]]"
+            "hint": "Remote control of the TV, video player and Blu-ray player: presses a button (see Buttons) or turns the device off. profiles lists the remote controls, switch selects one"
         },
         "tv-demo": {
-            "macro": ["tv|P1", 3, "tv|off"],
+            "macro": [
+                "use|P1",
+                3,
+                "use|off"
+            ],
             "hint": "Short TV demo: program 1, then off after 3 seconds"
         }
     }

@@ -46,7 +46,7 @@ object ServerImport {
             )
         }
         for (tool in tools) {
-            if (remote && tool.name in listOf("send", "buttons", "off")) continue
+            if (remote && tool.name in listOf("send", "buttons", "off", "profiles", "switch")) continue
             out[normalizeName(prefix + slug(tool.name))] =
                 obj("server" to server, "tool" to tool.name, "hint" to firstSentence(tool.description).ifEmpty { tool.name })
         }

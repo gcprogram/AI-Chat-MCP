@@ -225,6 +225,141 @@ class ButtonDurationTest(unittest.TestCase):
             FakeTimer.created[0].fire()  # darf keine Ausnahme werfen
 
 
+PROFILES = {
+    "tv": [{"code": 1, "hex": "01", "label": "P1", "example": "ZDF"}, {"code": 2, "hex": "02", "label": "P2"}],
+    "video": [{"code": 5, "hex": "05", "label": "Play", "example": "start the video"},
+              {"code": 250, "hex": "fa", "label": "HDMI1", "macro": True, "example": "TV to HDMI1"}],
+}
+REMOTE_TOOLS = TOOLS + [{"name": "profiles", "description": "Lists profiles."},
+                        {"name": "switch", "description": "Selects a profile.",
+                         "inputSchema": {"type": "object", "properties": {"profile": {"type": "string"}}, "required": ["profile"]}}]
+
+
+class MultiProfileRemote(FakeRemote):
+    """Fernbedienung mit mehreren Profilen (tv, video); "switch" wechselt die Tasten."""
+
+    def __init__(self):
+        super().__init__()
+        self.active = "tv"
+        self.reachable = True
+
+    def list_tools(self, timeout=30.0):
+        return REMOTE_TOOLS
+
+    def call_tool(self, name, arguments, timeout=60.0):
+        if not self.reachable:
+            raise OSError("Handy nicht erreichbar")
+        if name == "buttons":
+            return json.dumps(PROFILES[self.active]), False
+        if name == "profiles":
+            return json.dumps([{"name": n, "active": n == self.active, "description": f"Remote {n}"} for n in PROFILES]), False
+        if name == "switch":
+            wanted = str(arguments.get("profile", "")).lower()
+            if wanted not in PROFILES:
+                return f"Error: no profile named '{wanted}' (see profiles)", True
+            self.active = wanted
+            return f"Profile {wanted} active, {len(PROFILES[wanted])} buttons (see buttons).", False
+        return super().call_tool(name, arguments, timeout)
+
+
+class ProfileSwitchTest(unittest.TestCase):
+    ALIAS = {"use": {"server": "remote", "buttons": True, "hint": "Remote control"}}
+
+    def setUp(self):
+        patcher = mock.patch("chat_app.tools.threading.Timer", FakeTimer)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        FakeTimer.created = []
+        self.fake = MultiProfileRemote()
+        self.reg = ToolRegistry()
+        self.reg.add_server("remote", self.fake, expose_raw=False)
+        self.reg.add_aliases(self.ALIAS)
+        self.assertEqual([], self.reg.errors)
+
+    def test_profiles_and_switch_are_buttons_words_and_examples_come_from_the_server(self):
+        spec = self.reg.tools["use"]
+        self.assertEqual(["P1", "P2", "off", "profiles", "switch"], spec.buttons)
+        line = self.reg.prompt_section(["use"])
+        self.assertIn("Buttons: P1 (ZDF), P2, off, profiles, switch.", line)
+        self.assertIn("[[mcp:use|switch|<profile>]]", line)
+        self.assertIn("e.g. [[mcp:use|P1|3.5]]", line)
+        self.assertLess(len(line.splitlines()), 12)
+
+    def test_profiles_lists_the_remote_controls_for_the_model(self):
+        out = self.reg.run(find_call("[[mcp:use|profiles]]"), ["use"])
+        self.assertTrue(out.ok, out.text)
+        self.assertEqual("model", out.mode)
+        self.assertIn("- tv (active): Remote tv", out.text)
+        self.assertIn("- video: Remote video", out.text)
+        self.assertEqual([], FakeTimer.created)  # kein Auto-Aus für einen Lesebefehl
+
+    def test_switch_changes_the_buttons_and_reports_them(self):
+        self.reg.run(find_call("[[mcp:use|P1|60]]"), ["use"])
+        pending = FakeTimer.created[0]
+        out = self.reg.run(find_call("[[mcp:use|switch|VIDEO]]"), ["use"])
+        self.assertTrue(out.ok, out.text)
+        self.assertEqual("model", out.mode)
+        self.assertIn("Profile video active", out.text)
+        self.assertIn("Buttons: Play (start the video), HDMI1 (TV to HDMI1), off, profiles, switch", out.text)
+        self.assertEqual(["Play", "HDMI1", "off", "profiles", "switch"], self.reg.tools["use"].buttons)
+        self.assertTrue(pending.cancelled)  # das alte "off nach 60 s" gehört zum alten Profil
+        self.assertTrue(self.reg.run(find_call("[[mcp:use|HDMI1]]"), ["use"]).ok)
+        self.assertEqual(("send", "0xfa"), self.fake.sent[-1])
+        self.assertFalse(self.reg.run(find_call("[[mcp:use|P1]]"), ["use"]).ok)  # P1 gibt es im neuen Profil nicht
+
+    def test_switch_with_unknown_or_missing_profile_is_an_error_and_keeps_the_buttons(self):
+        out = self.reg.run(find_call("[[mcp:use|switch|nope]]"), ["use"])
+        self.assertFalse(out.ok)
+        self.assertIn("no profile named", out.text)
+        self.assertIn("Es fehlt: Profilname", self.reg.run(find_call("[[mcp:use|switch]]"), ["use"]).text)
+        self.assertEqual(["P1", "P2", "off", "profiles", "switch"], self.reg.tools["use"].buttons)
+
+    def test_native_arguments_use_the_profile_parameter(self):
+        call = dataclasses.replace(find_call("[[mcp:use|switch]]"), arguments={"button": "switch", "profile": "video"})
+        self.assertTrue(self.reg.run(call, ["use"]).ok)
+        self.assertEqual("video", self.fake.active)
+        props = self.reg.native_tools(["use"])[0]["function"]["parameters"]["properties"]
+        self.assertIn("profile", props)
+
+    def test_companion_choices_can_forbid_switching(self):
+        choices = {"use": ["P1", "off"]}
+        self.assertFalse(self.reg.run(find_call("[[mcp:use|switch|video]]"), ["use"], choices=choices).ok)
+        self.assertEqual("tv", self.fake.active)
+        self.assertNotIn("|switch", self.reg.prompt_section(["use"], choices))
+        self.assertNotIn("profiles", self.reg.prompt_section(["use"], choices))
+
+    def test_refresh_keeps_everything_when_the_server_is_unreachable(self):
+        before = list(self.reg.tools["use"].buttons)
+        self.fake.reachable = False
+        with self.assertRaises(Exception):
+            self.reg.refresh_buttons("remote")
+        self.assertEqual(before, self.reg.tools["use"].buttons)
+        self.fake.reachable = True
+        self.fake.active = "video"
+        self.assertEqual(["Play", "HDMI1", "off", "profiles", "switch"], self.reg.refresh_buttons("remote"))
+
+    def test_reload_starts_from_scratch_and_keeps_the_same_object(self):
+        import tempfile
+        from pathlib import Path
+        self.reg.run(find_call("[[mcp:use|P1|60]]"), ["use"])
+        pending = FakeTimer.created[0]
+        registry_id = id(self.reg)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.reg.reload(Path(tmp) / "nicht_da.json")  # ohne Konfiguration bleibt nichts übrig
+        self.assertEqual(registry_id, id(self.reg))
+        self.assertEqual(([], [], []), (self.reg.available(), self.reg.errors, self.reg.declared))
+        self.assertTrue(pending.cancelled)
+
+    def test_server_without_profiles_has_no_extra_words(self):
+        reg, _ = registry(self.ALIAS)
+        self.assertEqual(["P1", "P2", "Wave", "0x11", "off"], reg.tools["use"].buttons)
+        self.assertNotIn("profiles", reg.prompt_section(["use"]))
+
+    def test_import_makes_no_aliases_for_profiles_and_switch(self):
+        entries = server_import.alias_entries("remote", REMOTE_TOOLS, PROFILES["tv"], "use-")
+        self.assertEqual(["use", "use-status"], list(entries))  # send/buttons/off/profiles/switch stecken im Alias "use"
+
+
 class PersonaChoicesTest(unittest.TestCase):
     def test_tool_choices_roundtrip_and_are_omitted_when_empty(self):
         import tempfile
