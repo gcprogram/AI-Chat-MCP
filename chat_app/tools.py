@@ -597,7 +597,7 @@ class ToolRegistry:
         if not path.exists():
             return
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))  # tolerates a BOM (Notepad, PowerShell 5)
             servers = data.get("servers") or data.get("mcpServers") or {}
             if not isinstance(servers, dict):
                 raise ValueError("'servers' ist kein Objekt")
