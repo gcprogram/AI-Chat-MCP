@@ -17,13 +17,13 @@ import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.net.InetAddress
 import java.net.URI
-import java.security.KeyStore
+import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLException
-import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 /*
@@ -31,7 +31,8 @@ import javax.net.ssl.X509TrustManager
  * oder als SSE-Strom. Schutz der Zugangsdaten:
  * - Header-Werte dürfen ${NAME} enthalten (der Token steht nie in der Konfigurationsdatei);
  * - http:// ist nur für lokale Adressen erlaubt (localhost, Heimnetz, .local), sonst https://;
- * - ein selbst signiertes Zertifikat wird als einziger Vertrauensanker angegeben;
+ * - ein selbst signiertes Zertifikat wird angegeben; geprüft wird sein öffentlicher Schlüssel (Pinning), nicht das
+ *   Zertifikat selbst: die App stellt es neu aus, wenn sich die IP-Adressen des Handys ändern, der Schlüssel bleibt gleich;
  * - Weiterleitungen werden nicht verfolgt (sonst ginge der Token an einen fremden Host).
  */
 
@@ -41,6 +42,24 @@ private const val MAX_RESPONSE_BYTES = 2_000_000L
 private val ENV_RE = Regex("\\$\\{(\\w+)\\}")
 
 private class SessionLost(message: String) : Exception(message)
+
+/**
+ * Vertraut nur einem Server, dessen Zertifikat den öffentlichen Schlüssel des angegebenen Zertifikats trägt. Dass der
+ * Server den privaten Schlüssel besitzt, beweist der TLS-Handshake selbst; Name, Kette und Laufzeit zählen nicht.
+ */
+internal class PinnedTrustManager(private val pinned: X509Certificate) : X509TrustManager {
+    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) =
+        throw CertificateException("kein Client-Zertifikat erwartet")
+
+    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+        val leaf = chain.firstOrNull() ?: throw CertificateException("Server hat kein Zertifikat geschickt")
+        if (!leaf.publicKey.encoded.contentEquals(pinned.publicKey.encoded)) {
+            throw CertificateException("Schlüssel des Servers stimmt nicht mit dem Zertifikat in 'cert' überein")
+        }
+    }
+
+    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf(pinned)
+}
 
 fun expandSecrets(text: String, what: String, lookup: (String) -> String?): String =
     ENV_RE.replace(text) { m ->
@@ -104,11 +123,10 @@ class HttpMcpClient(
         certPem?.let { pem ->
             try {
                 val certificate = CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(pem.toByteArray()))
-                val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null); setCertificateEntry("server", certificate) }
-                val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
-                val manager = factory.trustManagers.filterIsInstance<X509TrustManager>().first()
+                val manager = PinnedTrustManager(certificate as X509Certificate)
                 val context = SSLContext.getInstance("TLS").apply { init(null, arrayOf(manager), null) }
                 builder.sslSocketFactory(context.socketFactory, manager)
+                builder.hostnameVerifier { _, _ -> true } // der Schlüssel ersetzt Name und Kette
             } catch (e: Exception) {
                 throw McpException("Zertifikat nicht lesbar: ${e.message}", e)
             }
@@ -203,7 +221,12 @@ class HttpMcpClient(
                 return readReply(response, message["id"]!!)
             }
         } catch (e: SSLException) {
-            val hint = if (certPem == null) " Zertifikat nicht vertrauenswürdig: Zertifikat der App importieren." else ""
+            val hint = when {
+                certPem == null -> " Zertifikat nicht vertrauenswürdig: Zertifikat der App importieren."
+                "Schlüssel des Servers" in e.message.orEmpty() ->
+                    " Das Zertifikat der App gehört zu einem anderen Schlüssel (App neu installiert oder Daten gelöscht?): neu importieren."
+                else -> ""
+            }
             throw McpException("Server '$name' nicht erreichbar: ${e.message}.$hint", e)
         } catch (e: IOException) { // Zeitüberschreitung, Verbindungsabbruch
             throw McpException("Server '$name' nicht erreichbar: ${e.message}", e)

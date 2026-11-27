@@ -4,11 +4,13 @@ Nur Standardbibliothek. Gedacht für MCP-Server im Heimnetz oder im Internet, z.
 Handy (ohne stdio-Bridge). Schutz der Zugangsdaten:
 - Header-Werte dürfen `${UMGEBUNGSVARIABLE}` enthalten (der Token steht so nie in der Konfigurationsdatei);
 - `http://` ist nur für lokale Adressen erlaubt (localhost, Heimnetz, `.local`), sonst `https://`;
-- ein selbst signiertes Zertifikat wird über `cert` als einziger Vertrauensanker angegeben (nichts landet im
-  Zertifikatsspeicher des Systems);
+- ein selbst signiertes Zertifikat wird über `cert` angegeben (nichts landet im Zertifikatsspeicher des Systems).
+  Geprüft wird der öffentliche Schlüssel des Zertifikats (Pinning), nicht das Zertifikat selbst: Die App stellt
+  das Zertifikat neu aus, wenn sich die IP-Adressen des Handys ändern, der Schlüssel bleibt gleich;
 - Weiterleitungen werden nicht verfolgt (sonst ginge der Token an einen fremden Host)."""
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import logging
@@ -32,6 +34,82 @@ _ENV_RE = re.compile(r"\$\{(\w+)\}")
 
 class _SessionLost(McpError):
     """Der Server kennt die Sitzung nicht mehr (HTTP 404 auf eine Anfrage mit Sitzungs-ID)."""
+
+
+def _der_item(data: bytes, pos: int) -> tuple[int, int, int]:
+    """Liest den Kopf eines DER-Elements: (Tag, Beginn des Inhalts, Ende des Elements)."""
+    tag, length, start = data[pos], data[pos + 1], pos + 2
+    if length & 0x80:
+        count = length & 0x7F
+        if count == 0 or count > 4:
+            raise ValueError("DER-Länge nicht unterstützt")
+        length, start = int.from_bytes(data[pos + 2:pos + 2 + count], "big"), pos + 2 + count
+    if start + length > len(data):
+        raise ValueError("DER-Element abgeschnitten")
+    return tag, start, start + length
+
+
+def spki_of_cert(der: bytes) -> bytes:
+    """Der öffentliche Schlüssel (SubjectPublicKeyInfo, DER) eines X.509-Zertifikats."""
+    try:
+        _, body, _ = _der_item(der, 0)  # Certificate
+        _, pos, _ = _der_item(der, body)  # tbsCertificate
+        tag, _, end = _der_item(der, pos)
+        if tag == 0xA0:  # optionale Version
+            pos = end
+        for _ in range(5):  # Seriennummer, Signatur, Aussteller, Gültigkeit, Inhaber
+            pos = _der_item(der, pos)[2]
+        tag, _, end = _der_item(der, pos)
+        if tag != 0x30:
+            raise ValueError("kein SubjectPublicKeyInfo")
+        return der[pos:end]
+    except IndexError as exc:
+        raise ValueError("Zertifikat nicht lesbar") from exc
+
+
+def pinned_key(path: str) -> bytes:
+    """Liest eine PEM-Datei und liefert den öffentlichen Schlüssel ihres (ersten) Zertifikats."""
+    with open(os.path.expanduser(path), encoding="ascii", errors="replace") as handle:
+        match = re.search(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", handle.read(), re.S)
+    if not match:
+        raise ValueError("kein Zertifikat (PEM) in der Datei")
+    return spki_of_cert(ssl.PEM_cert_to_DER_cert(match[0]))
+
+
+class _PinnedConnection(http.client.HTTPSConnection):
+    """HTTPS-Verbindung, die nur zu dem Server hält, dessen Zertifikat den angegebenen Schlüssel trägt.
+    Die Prüfung läuft in connect(), also bevor irgendetwas (auch der Token) gesendet wird; dass der Server den
+    zugehörigen privaten Schlüssel besitzt, beweist der TLS-Handshake selbst."""
+    pinned_spki = b""
+
+    def connect(self) -> None:
+        super().connect()
+        try:
+            actual = spki_of_cert(self.sock.getpeercert(binary_form=True) or b"")  # type: ignore[union-attr]
+        except ValueError:
+            actual = b""
+        if actual != self.pinned_spki:
+            self.close()
+            raise ssl.SSLError("Schlüssel des Servers stimmt nicht mit dem Zertifikat in 'cert' überein")
+
+
+class _PinnedHandler(urllib.request.HTTPSHandler):
+    def __init__(self, spki: bytes):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.check_hostname = False  # der Schlüssel ersetzt Name und Kette
+        context.verify_mode = ssl.CERT_NONE
+        super().__init__(context=context)
+        self._spki = spki
+
+    def https_open(self, req):
+        spki = self._spki
+
+        def connection(host, **kwargs):
+            conn = _PinnedConnection(host, **kwargs)
+            conn.pinned_spki = spki
+            return conn
+        return self.do_open(connection, req, context=self._context)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -86,10 +164,9 @@ class HttpMcpServer(McpClient):
         self._resolved = {key: expand_env(str(value), f"den Header '{key}'") for key, value in self.headers.items()}
         handlers: list = [_NoRedirect]
         if self.cert:
-            path = os.path.expanduser(self.cert)
             try:
-                handlers.append(urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=path)))
-            except (OSError, ssl.SSLError) as exc:
+                handlers.append(_PinnedHandler(pinned_key(self.cert)))
+            except (OSError, ValueError, ssl.SSLError) as exc:
                 raise McpError(f"Zertifikat '{self.cert}' nicht lesbar: {exc}") from exc
         self._opener = urllib.request.build_opener(*handlers)
         try:
@@ -176,8 +253,12 @@ class HttpMcpServer(McpClient):
             raise McpError(f"Server '{self.name}': HTTP {exc.code}{hint}.") from exc
         except urllib.error.URLError as exc:
             reason = str(exc.reason)
-            hint = " Zertifikat nicht vertrauenswürdig: 'cert' in der Konfiguration angeben." \
-                if "CERTIFICATE_VERIFY_FAILED" in reason else ""
+            if "stimmt nicht mit dem Zertifikat" in reason:
+                hint = " Das Zertifikat der App gehört zu einem anderen Schlüssel (App neu installiert oder Daten gelöscht?): neu holen."
+            elif "CERTIFICATE_VERIFY_FAILED" in reason:
+                hint = " Zertifikat nicht vertrauenswürdig: 'cert' in der Konfiguration angeben."
+            else:
+                hint = ""
             raise McpError(f"Server '{self.name}' nicht erreichbar: {reason}.{hint}") from exc
         except (OSError, ValueError) as exc:  # Zeitüberschreitung, Verbindungsabbruch
             raise McpError(f"Server '{self.name}' nicht erreichbar: {exc}") from exc

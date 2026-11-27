@@ -97,11 +97,12 @@ oder die Fernbedienungs-App auf dem Handy direkt, ohne stdio-Bridge:
 |---|---|
 | `url` | Endpunkt des Servers (`https://…`; `http://` nur für localhost, Heimnetz-Adressen und `.local`) |
 | `headers` | zusätzliche Header; `${NAME}` wird aus der Umgebungsvariable eingesetzt, der Token steht also nie in der Datei. Fehlt die Variable, steht ihr Name in der Fehlermeldung |
-| `cert` | Zertifikat (PEM) eines selbst signierten Servers als einziger Vertrauensanker; ohne Angabe gelten die System-Zertifikate |
+| `cert` | Zertifikat (PEM) eines selbst signierten Servers. Geprüft wird sein **öffentlicher Schlüssel** (Pinning), nicht das Zertifikat: ein neu ausgestelltes Zertifikat desselben Schlüssels (die App tut das bei neuen IP-Adressen) gilt weiter, Name und Laufzeit zählen nicht. Ohne Angabe gelten die System-Zertifikate |
 
 **Handy per USB** (z. B. im Hotel-WLAN, wo Geräte sich nicht sehen): `adb -s <Seriennummer> forward tcp:8443 tcp:8443`, dann
-`"url": "https://127.0.0.1:8443/mcp"`. Das Zertifikat der Fernbedienungs-App enthält `127.0.0.1`. Es wird beim Wechsel
-der WLAN-Adresse neu erzeugt; bei „certificate verify failed“ das aktuelle holen (über den Forward
+`"url": "https://127.0.0.1:8443/mcp"`. Das Zertifikat der Fernbedienungs-App enthält `127.0.0.1`. Die App stellt es beim Wechsel
+der WLAN-Adresse neu aus (gleicher Schlüssel, das stört nicht). Bei „gehört zu einem anderen Schlüssel“ (App neu
+installiert oder Daten gelöscht, auch ein altes Zertifikat von einem anderen Handy) das aktuelle holen (über den Forward
 `ssl.get_server_certificate(("127.0.0.1", 8443))`, per Kabel also vertrauenswürdig) und als `cert` eintragen. Die
 Forward-Regel gilt nur, solange adb läuft und das Handy angesteckt ist.
 

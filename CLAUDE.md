@@ -49,9 +49,9 @@ Modellvergleich fuer Sekretariatsaufgaben gegen LM Studio: `set PYTHONPATH=. && 
 - `mcp_servers.json` ist gitignored (kann Schlüssel enthalten); Vorlage in `examples/`.
 - **MCP-Transporte**: `McpClient` (Basis, `mcp_client.py`) mit `McpServer` (stdio) und `HttpMcpServer` (`mcp_http.py`,
   Streamable HTTP: JSON oder SSE, `Mcp-Session-Id`, einmalige Neuanmeldung bei 404). Eintrag mit `url` statt `command`;
-  Header mit `${ENV}` (Token nie in die Datei), `http://` nur lokal, `cert` als einziger Vertrauensanker, keine
+  Header mit `${ENV}` (Token nie in die Datei), `http://` nur lokal, `cert` wird per öffentlichem Schlüssel gepinnt (`PinnedTrustManager` in Kotlin, `_PinnedConnection` in Python; Name/Kette/Laufzeit zählen nicht), keine
   Weiterleitungen. Gegen die echte Fernbedienungs-App geprüft (per USB: `adb forward`, `tools/list`, `status`, `buttons`; `send` noch nicht;
-  die App ist zustandslos, ohne Sitzungs-ID, und erzeugt ihr Zertifikat bei IP-Wechsel neu).
+  die App ist zustandslos, ohne Sitzungs-ID, und stellt ihr Zertifikat bei IP-Wechsel mit gleichem Schlüssel neu aus; neuer Schlüssel nur nach Neuinstallation/Datenlöschen).
 - **Alias-Layer** (`aliases` in `mcp_servers.json`, `ToolSpec.fixed/defaults/result/status/confirm/remember`): Kurzname →
   echtes MCP-Tool mit festen Argumenten, damit das kleine Modell nur einen Namen (plus ≤1 Argument) schreiben muss.
   `result`: `model` (Antwortrunde) | `show` (Klartext im Chat, `Message.kind = tool_shown`, keine zweite Runde) |
