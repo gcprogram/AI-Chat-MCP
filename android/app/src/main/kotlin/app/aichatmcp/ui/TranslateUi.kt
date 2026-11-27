@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -38,6 +39,10 @@ fun TranslateScreen(
     vm: TranslateViewModel, onBack: () -> Unit, onPick: () -> Unit, onExport: (ExportFormat) -> Unit, onRead: () -> Unit, onOpenModels: () -> Unit,
 ) {
     val localFiles by produceState<List<StoredFile>>(emptyList(), vm.onDevice) { value = vm.localFiles() }
+    // Ist noch nichts gewählt und TranslateGemma da, wird es genommen
+    LaunchedEffect(localFiles) {
+        if (vm.localRef.isEmpty()) localFiles.firstOrNull { "translategemma" in it.name.lowercase() }?.let(vm::setLocalModel)
+    }
     var showGlossary by remember { mutableStateOf(vm.glossary.isNotBlank()) }
     val hasResult = vm.sections.isNotEmpty()
     ScreenFrame(t("Translate", "Übersetzen"), onBack) {
@@ -57,12 +62,12 @@ fun TranslateScreen(
         SectionTitle(t("Languages", "Sprachen"))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             DropdownField(
-                t("From", "Von"), Languages.displayList, Languages.displayName(vm.langSource),
+                t("From", "Von"), Languages.displayList, Languages.name(vm.langSource),
                 { vm.setLanguages(Languages.codeFromDisplay(it), vm.langTarget) }, Modifier.weight(1f), raw = true,
             )
             TextButton(onClick = vm::swapLanguages, enabled = !vm.running) { Text("⇄") }
             DropdownField(
-                t("To", "Nach"), Languages.displayList, Languages.displayName(vm.langTarget),
+                t("To", "Nach"), Languages.displayList, Languages.name(vm.langTarget),
                 { vm.setLanguages(vm.langSource, Languages.codeFromDisplay(it)) }, Modifier.weight(1f), raw = true,
             )
         }

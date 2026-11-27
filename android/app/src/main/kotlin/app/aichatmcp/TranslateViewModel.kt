@@ -72,9 +72,10 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Einstellungen ---------------------------------------------------------------------------
 
-    var langSource by mutableStateOf(prefs.getString("source", "en").orEmpty())
+    var langSource by mutableStateOf(prefs.getString("source", "en").orEmpty().ifEmpty { "en" })
         private set
-    var langTarget by mutableStateOf(prefs.getString("target", if (storage.loadConfig().uiLanguage == LANGUAGE_DE) "de" else "en").orEmpty())
+    // Vorgabe: Englisch nach Deutsch (die Oberflächensprache sagt nichts darüber, was man übersetzen will)
+    var langTarget by mutableStateOf(prefs.getString("target", "de").orEmpty().ifEmpty { "de" })
         private set
 
     /** true = Modell auf dem Handy, false = Server (LM Studio usw. aus den Einstellungen). Vorgabe: wie im Chat. */
