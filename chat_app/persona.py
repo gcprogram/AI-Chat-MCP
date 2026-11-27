@@ -1,4 +1,4 @@
-"""Chat-Persönlichkeit (Companion): Datei in companions/*.json -> System-Prompt.
+"""Chat-Persönlichkeit (Companion): Datei in companions/*.char (Inhalt: JSON) -> System-Prompt.
 
 Der System-Prompt legt die Rollen fest (wer ist 'ich', wer ist 'du'), verbietet Protokollzeilen und
 Monologe und wird vom Chat bei jeder Anfrage als erste Nachricht mitgesendet, aber nie angezeigt.
@@ -40,7 +40,7 @@ class Persona:
     voice_female: str = ""  # Stimme für weibliche wörtliche Rede beim Vorlesen (nur Android-App, durchgereicht)
     gender: str = ""  # "female"/"male" für die Standardstimme, leer = automatisch (nur Android-App, durchgereicht)
     daily_update: bool = False  # Tagesupdate beim Start (nur Android-App, durchgereicht)
-    id: str = ""  # Dateiname ohne .json; wird beim Laden/Speichern gesetzt, nicht in der Datei gespeichert
+    id: str = ""  # Dateiname ohne .char; wird beim Laden/Speichern gesetzt, nicht in der Datei gespeichert
 
     def _german(self) -> bool:
         return self.language.strip().lower() in ("deutsch", "german", "de", "de-de", "deutsch (de)")
@@ -138,17 +138,24 @@ def slugify(name: str) -> str:
     return re.sub(r"[^\w\-]+", "_", name.strip().lower()).strip("_") or "companion"
 
 
+EXTENSION = ".char"  # Companion-Dateien (Inhalt: JSON)
+
+
+def persona_file(persona_id: str, directory: Path = PERSONAS_DIR) -> Path:
+    return directory / f"{Path(persona_id).name}{EXTENSION}"  # kein Pfad aus config.json einschleusen
+
+
 def unique_id(name: str, directory: Path = PERSONAS_DIR) -> str:
     base = slugify(name)
     candidate, n = base, 2
-    while (directory / f"{candidate}.json").exists():
+    while persona_file(candidate, directory).exists():
         candidate, n = f"{base}_{n}", n + 1
     return candidate
 
 
 def load_persona(name: str, directory: Path = PERSONAS_DIR) -> Persona:
     name = Path(name).name  # kein Pfad aus config.json einschleusen
-    path = directory / f"{name}.json"
+    path = persona_file(name, directory)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         persona = Persona(**{k: v for k, v in data.items() if k in Persona.__dataclass_fields__ and k != "id"})
@@ -175,7 +182,7 @@ def save_persona(persona: Persona, directory: Path = PERSONAS_DIR) -> str:
     """Speichert den Companion und liefert seine ID (neue Companions bekommen eine freie ID aus dem Namen)."""
     directory.mkdir(parents=True, exist_ok=True)
     persona.id = persona.id or unique_id(persona.name, directory)
-    (directory / f"{persona.id}.json").write_text(
+    (directory / f"{persona.id}{EXTENSION}").write_text(
         json.dumps(persona.to_dict(), indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
     return persona.id
 
@@ -188,8 +195,8 @@ def remove_avatar_file(persona: Persona, directory: Path = PERSONAS_DIR) -> None
 
 def delete_persona(persona_id: str, directory: Path = PERSONAS_DIR) -> None:
     remove_avatar_file(load_persona(persona_id, directory), directory)
-    (directory / f"{Path(persona_id).name}.json").unlink(missing_ok=True)
+    persona_file(persona_id, directory).unlink(missing_ok=True)
 
 
 def list_personas(directory: Path = PERSONAS_DIR) -> list[str]:
-    return sorted(p.stem for p in directory.glob("*.json")) if directory.exists() else []
+    return sorted(p.stem for p in directory.glob(f"*{EXTENSION}")) if directory.exists() else []

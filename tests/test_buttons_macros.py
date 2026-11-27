@@ -370,8 +370,8 @@ class PersonaChoicesTest(unittest.TestCase):
             save_persona(Persona(name="A", tools=["tv"], tool_choices={"tv": ["P1", "off"]}, id="a"), Path(tmp))
             save_persona(Persona(name="B", id="b"), Path(tmp))
             self.assertEqual({"tv": ["P1", "off"]}, load_persona("a", Path(tmp)).tool_choices)
-            self.assertNotIn("tool_choices", (Path(tmp) / "b.json").read_text(encoding="utf-8"))
-            (Path(tmp) / "c.json").write_text('{"name": "C", "tool_choices": "kaputt"}', encoding="utf-8")
+            self.assertNotIn("tool_choices", (Path(tmp) / "b.char").read_text(encoding="utf-8"))
+            (Path(tmp) / "c.char").write_text('{"name": "C", "tool_choices": "kaputt"}', encoding="utf-8")
             self.assertEqual({}, load_persona("c", Path(tmp)).tool_choices)
 
 

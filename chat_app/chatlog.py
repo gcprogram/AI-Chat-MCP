@@ -1,7 +1,7 @@
 """Chats speichern und laden.
 
 Die Chat-Datei (Endung .aichat, Inhalt JSON) enthält den vollständigen Verlauf inkl. Werkzeugaufrufen/-ergebnissen; eine eigene
-Endung, damit ein Chat nie versehentlich eine Companion-Datei (companions/*.json) überschreibt. Ältere Chats als .json lassen sich
+Endung, damit ein Chat nie versehentlich eine Companion-Datei (companions/*.char) überschreibt. Ältere Chats als .json lassen sich
 weiter laden. Text (.txt) ist ein lesbarer Export ("Name: Text"), der sich auch wieder laden lässt (z. B. ältere Exporte).
 
 Beim Laden wird nichts ausgeführt: gespeicherte Werkzeugaufrufe und ihre Ergebnisse sind reiner Verlauf."""

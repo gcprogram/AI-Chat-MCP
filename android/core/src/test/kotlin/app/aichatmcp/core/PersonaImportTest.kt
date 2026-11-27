@@ -40,10 +40,10 @@ class PersonaImportTest {
     fun folderImportCreatesNewSkipsExistingAndReportsInvalidFiles() {
         val dir = kotlin.io.path.createTempDirectory("personas").toFile()
         val store = PersonaStore(dir)
-        assertEquals(CompanionImport.Imported("secretary"), store.importFile("secretary.json", """{"name": "Selena", "language": "English"}"""))
+        assertEquals(CompanionImport.Imported("secretary"), store.importFile("secretary.char", """{"name": "Selena", "language": "English"}"""))
         assertEquals("Selena", store.load("secretary").name)
         // zweiter Import derselben Datei überschreibt nicht
-        assertEquals(CompanionImport.Exists("secretary"), store.importFile("secretary.json", """{"name": "Anders"}"""))
+        assertEquals(CompanionImport.Exists("secretary"), store.importFile("secretary.char", """{"name": "Anders"}"""))
         assertEquals("Selena", store.load("secretary").name)
         val bad = store.importFile("mcp_servers.json", """{"servers": {}}""")
         assertTrue(bad is CompanionImport.Invalid && bad.file == "mcp_servers.json")
@@ -54,7 +54,7 @@ class PersonaImportTest {
         assertTrue("1 Companion(s) importiert: fern" in report, report)
         assertTrue("Schon vorhanden, nicht überschrieben: secretary" in report, report)
         assertTrue("mcp_servers.json" in report && "2 Avatar-Bild(er)" in report, report)
-        assertEquals("Keine Companion-Dateien (.json) im Ordner gefunden.", CompanionImport.report(emptyList(), 0))
+        assertEquals("Keine Companion-Dateien (.char) im Ordner gefunden.", CompanionImport.report(emptyList(), 0))
     }
 
     @Test

@@ -16,6 +16,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.aichatmcp.core.AppJson
+import app.aichatmcp.core.COMPANION_EXTENSION
+import app.aichatmcp.core.companionId
+import app.aichatmcp.core.isCompanionFile
 import app.aichatmcp.core.ChatClient
 import app.aichatmcp.core.ChatEngine
 import app.aichatmcp.core.ChatEvent
@@ -1197,7 +1200,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     /**
-     * Liest einen ganzen Ordner mit Companions ein (z. B. den Ordner personas der PC-App): jede `.json` im obersten Ordner wird ein Companion,
+     * Liest einen ganzen Ordner mit Companions ein (z. B. den Ordner personas der PC-App): jede `.char` im obersten Ordner wird ein Companion,
      * die Bilder aus dem Unterordner `avatars` kommen mit. Bestehende Companions werden nicht überschrieben, Dateien ohne Feld name
      * (andere JSON-Dateien) werden gemeldet und übersprungen. Der Bericht steht in [companionNote].
      */
@@ -1212,7 +1215,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         tree, skipDir = { relative, name -> !(relative.isEmpty() && name == "avatars") },
                         write = { path, input ->
                             val ext = path.substringAfterLast('.', "").lowercase()
-                            if ('/' !in path && ext == "json") {
+                            if ('/' !in path && ext == COMPANION_EXTENSION) {
                                 val text = input.readBytes().toString(Charsets.UTF_8)
                                 results += storage.personas.importFile(path, text)
                                 true
@@ -1668,7 +1671,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Sichert alle Companions (Dateien .json im Unterordner companions) und Chats (Dateien .aichat im Unterordner chats) in einen vom Nutzer gewählten Ordner (ohne Berechtigung "Zugriff
+     * Sichert alle Companions (Dateien .char im Unterordner companions) und Chats (Dateien .aichat im Unterordner chats) in einen vom Nutzer gewählten Ordner (ohne Berechtigung "Zugriff
      * auf alle Dateien": der Nutzer wählt den Ordner im Systemdialog für diese eine Aktion). Vorhandene Dateien dort werden ersetzt.
      */
     fun backupTo(tree: Uri, done: (String) -> Unit) {
@@ -1679,7 +1682,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val root = TreeStore(getApplication(), tree)
                     val personaTarget = root.sub("companions") ?: error("companions")
                     val chatTarget = root.sub("chats") ?: error("chats")
-                    val p = app.aichatmcp.core.StoreCopy.copy(DirStore(storage.personasDir), personaTarget, onlyNewer = false) { it.endsWith(".json") }
+                    val p = app.aichatmcp.core.StoreCopy.copy(DirStore(storage.personasDir), personaTarget, onlyNewer = false) { isCompanionFile(it) }
                     val c = app.aichatmcp.core.StoreCopy.copy(DirStore(storage.chatsDir), chatTarget, onlyNewer = false) { it.endsWith(ChatLog.EXTENSION) || it.endsWith(".json") }
                     tNow("Saved $p companions and $c chats to ${root.label}.", "$p Companions und $c Chats gesichert nach ${root.label}.")
                 }.getOrElse { tNow("Backup failed: ${it.message}", "Sicherung fehlgeschlagen: ${it.message}") }
@@ -1704,11 +1707,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val have = personaLocal.list().associateBy { it.name }
                     var p = 0
                     for (f in personaSource.list()) {
-                        if (!f.name.endsWith(".json")) continue
+                        if (!isCompanionFile(f.name)) continue
                         val old = have[f.name]
                         if (old != null && f.modified <= old.modified) continue
                         val bytes = personaSource.read(f.name)?.use { it.readBytes() } ?: continue
-                        if (Persona.parseCompanion(bytes.toString(Charsets.UTF_8), Persona.slugify(f.name.removeSuffix(".json"))).isFailure) continue
+                        if (Persona.parseCompanion(bytes.toString(Charsets.UTF_8), Persona.slugify(companionId(f.name))).isFailure) continue
                         personaLocal.write(f.name).use { it.write(bytes) }
                         p++
                     }
@@ -2567,7 +2570,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Importiert einen Companion aus einer JSON-Datei und macht ihn zum aktiven Companion; null bei Erfolg, sonst der Fehlertext (es wird dann nichts angelegt). */
     fun importPersona(text: String, fileName: String): String? {
-        val id = storage.personas.uniqueId(fileName.removeSuffix(".json").ifEmpty { "companion" })
+        val id = storage.personas.uniqueId(companionId(fileName).ifEmpty { "companion" })
         val persona = Persona.parseCompanion(text, id).getOrElse { return "Kein gültiger Companion (JSON): ${it.message?.lineSequence()?.firstOrNull() ?: "unlesbar"}" }
         savePersona(persona)
         selectPersona(id) // der neue Companion wird gleich aktiv (sonst bliebe der alte gewählt, und der Import wirkt wirkungslos)

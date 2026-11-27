@@ -139,12 +139,21 @@ data class Persona(
 }
 
 /** Companions als *.json in einem Ordner (Datei = Companion). */
+/** Companion-Dateien heißen `<kennung>.char` (Inhalt: JSON). */
+const val COMPANION_EXTENSION = "char"
+
+fun isCompanionFile(name: String) = name.endsWith(".$COMPANION_EXTENSION")
+
+fun companionId(fileName: String) = fileName.removeSuffix(".$COMPANION_EXTENSION")
+
 class PersonaStore(private val dir: File) {
+    private fun fileOf(id: String) = File(dir, "${File(id).name}.$COMPANION_EXTENSION")
+
     fun list(): List<String> =
-        dir.listFiles { f -> f.isFile && f.extension == "json" }?.map { it.nameWithoutExtension }?.sorted() ?: emptyList()
+        dir.listFiles { f -> f.isFile && f.extension == COMPANION_EXTENSION }?.map { it.nameWithoutExtension }?.sorted() ?: emptyList()
 
     fun load(id: String): Persona {
-        val file = File(dir, File(id).name + ".json")
+        val file = fileOf(id)
         return try {
             Persona.fromJson(file.readText(Charsets.UTF_8), File(id).name)
         } catch (_: Exception) {
@@ -157,8 +166,8 @@ class PersonaStore(private val dir: File) {
      * ([CompanionImport.Exists]). Dateien ohne Feld name oder mit kaputtem JSON werden gemeldet ([CompanionImport.Invalid]), nicht angelegt.
      */
     fun importFile(fileName: String, text: String): CompanionImport {
-        val id = Persona.slugify(fileName.removeSuffix(".json"))
-        if (File(dir, "$id.json").exists()) return CompanionImport.Exists(id)
+        val id = Persona.slugify(companionId(fileName))
+        if (fileOf(id).exists()) return CompanionImport.Exists(id)
         val persona = Persona.parseCompanion(text, id).getOrElse {
             return CompanionImport.Invalid(fileName, it.message?.lineSequence()?.firstOrNull() ?: "unlesbar")
         }
@@ -170,7 +179,7 @@ class PersonaStore(private val dir: File) {
         val base = Persona.slugify(name)
         var candidate = base
         var n = 2
-        while (File(dir, "$candidate.json").exists()) candidate = "${base}_${n++}"
+        while (fileOf(candidate).exists()) candidate = "${base}_${n++}"
         return candidate
     }
 
@@ -178,12 +187,12 @@ class PersonaStore(private val dir: File) {
     fun save(persona: Persona): String {
         dir.mkdirs()
         val id = persona.id.ifEmpty { uniqueId(persona.name) }
-        File(dir, "$id.json").writeText(persona.toJson() + "\n", Charsets.UTF_8)
+        fileOf(id).writeText(persona.toJson() + "\n", Charsets.UTF_8)
         return id
     }
 
     fun delete(id: String) {
-        File(dir, File(id).name + ".json").delete()
+        fileOf(id).delete()
     }
 }
 
@@ -199,7 +208,7 @@ sealed interface CompanionImport {
             val imported = results.filterIsInstance<Imported>().map { it.id }
             val exists = results.filterIsInstance<Exists>().map { it.id }
             val invalid = results.filterIsInstance<Invalid>()
-            if (results.isEmpty()) return "Keine Companion-Dateien (.json) im Ordner gefunden."
+            if (results.isEmpty()) return "Keine Companion-Dateien (.char) im Ordner gefunden."
             val lines = mutableListOf<String>()
             lines += if (imported.isEmpty()) "Kein neuer Companion importiert." else "${imported.size} Companion(s) importiert: ${imported.joinToString(", ")}."
             if (exists.isNotEmpty()) lines += "Schon vorhanden, nicht überschrieben: ${exists.joinToString(", ")}."

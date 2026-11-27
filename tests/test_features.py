@@ -315,7 +315,7 @@ class PersonaFilesTest(unittest.TestCase):
             loaded = load_persona("tom_müller", directory)
             self.assertEqual((loaded.name, loaded.rules, loaded.tools, loaded.id),
                              ("Tom Müller", ["Sei knapp."], ["zeit"], "tom_müller"))
-            self.assertNotIn('"id"', (directory / "tom_müller.json").read_text(encoding="utf-8"))
+            self.assertNotIn('"id"', (directory / "tom_müller.char").read_text(encoding="utf-8"))
             self.assertEqual(list_personas(directory), ["tom_müller"])
             delete_persona("tom_müller", directory)
             self.assertEqual(list_personas(directory), [])
@@ -572,7 +572,7 @@ class GuiToolsTest(unittest.TestCase):
         editor.clear_avatar()
         self.assertEqual(editor.save(), "tom")
         self.assertEqual(load_persona("tom", self.personas).avatar_data, "")  # Bild entfernt
-        self.assertNotIn("avatar_data", (self.personas / "tom.json").read_text(encoding="utf-8"))
+        self.assertNotIn("avatar_data", (self.personas / "tom.char").read_text(encoding="utf-8"))
         self.assertIsNone(self.app.avatar._photo)  # Platzhalter
         self.assertFalse(self.app.avatar.show_full())  # ohne Bild gibt es nichts zu vergrößern
 

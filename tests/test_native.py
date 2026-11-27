@@ -145,8 +145,8 @@ class NativeSessionTest(unittest.TestCase):
             directory = Path(tmp)
             save_persona(Persona(name="Nativ", tool_mode="native"), directory)
             self.assertEqual(load_persona("nativ", directory).tool_mode, "native")
-            (directory / "alt.json").write_text(json.dumps({"name": "Alt"}), encoding="utf-8")
-            (directory / "falsch.json").write_text(json.dumps({"name": "X", "tool_mode": "magisch"}), encoding="utf-8")
+            (directory / "alt.char").write_text(json.dumps({"name": "Alt"}), encoding="utf-8")
+            (directory / "falsch.char").write_text(json.dumps({"name": "X", "tool_mode": "magisch"}), encoding="utf-8")
             self.assertEqual(load_persona("alt", directory).tool_mode, "marker")
             self.assertEqual(load_persona("falsch", directory).tool_mode, "marker")
 

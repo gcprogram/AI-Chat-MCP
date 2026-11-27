@@ -22,7 +22,7 @@ In den Einstellungen die Server-URL (z. B. `http://127.0.0.1:1234/v1`) und den A
 
 ## Companions (Persönlichkeiten)
 
-Jede Datei in `companions/*.json` ist ein Companion (`name`, `description`, `language`, `greeting`, `rules`, `avatar`,
+Jede Datei in `companions/*.char` ist ein Companion (`name`, `description`, `language`, `greeting`, `rules`, `avatar`,
 `tools`). Über **Companions…** werden sie im Programm angelegt, bearbeitet, gespeichert und gelöscht; das
 Auswahlfeld in der Werkzeugleiste wechselt den aktiven Companion. Das **Avatar-Bild** (mit Pillow
 alle gängigen Formate) wird quadratisch zugeschnitten und als JPEG in Base64 **in der Companion-Datei** gespeichert

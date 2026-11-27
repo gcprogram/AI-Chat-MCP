@@ -39,7 +39,8 @@ def load(path: Path) -> dict | None:
 def embed(directory: Path, assign: dict[str, str], auto: bool, dry_run: bool, redo: bool = False) -> list[str]:
     """Liefert die Meldungen. assign: Bilddatei (Name oder Pfad) -> Companion-Kennung."""
     report: list[str] = []
-    companions = {p.stem: d for p in sorted(directory.glob("*.json")) if (d := load(p)) is not None}
+    files = {p.stem: p for p in sorted(directory.glob("*.char"))}
+    companions = {cid: d for cid, p in files.items() if (d := load(p)) is not None}
     todo: dict[str, Path] = {}  # Kennung -> Bild
 
     for cid, data in companions.items():  # ältere Companions: Datei aus "avatar"
@@ -80,7 +81,7 @@ def embed(directory: Path, assign: dict[str, str], auto: bool, dry_run: bool, re
         data = companions[cid]
         data["avatar_data"] = data_b64
         data["avatar"] = ""
-        (directory / f"{cid}.json").write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+        files[cid].write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
     if not todo and not report:
         report.append("nichts zu tun")
     return report
@@ -88,7 +89,7 @@ def embed(directory: Path, assign: dict[str, str], auto: bool, dry_run: bool, re
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--personas", default=str(Path(__file__).resolve().parent.parent / "personas"), help="Ordner der Companions")
+    parser.add_argument("--personas", default=str(Path(__file__).resolve().parent.parent / "companions"), help="Ordner der Companions")
     parser.add_argument("--auto", action="store_true", help="lose Bilder im Ordner per Namen den Companions zuordnen")
     parser.add_argument("--assign", action="append", default=[], metavar="BILD=KENNUNG", help="Bild einem Companion zuweisen (ersetzt sein Bild)")
     parser.add_argument("--redo", action="store_true", help="auch Companions mit eingebettetem Bild neu einbetten (z. B. nach einer Änderung der Größe)")

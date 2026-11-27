@@ -57,7 +57,7 @@ fun CompanionsScreen(
             OutlinedButton(onClick = onImportAvatars) { Text("Nur Avatare…") }
         }
         Text(
-            "Datei importieren: ein Companion (.json). Ordner importieren: alle Companions eines Ordners samt Unterordner avatars (z. B. personas der PC-App). " +
+            "Datei importieren: ein Companion (.char). Ordner importieren: alle Companions eines Ordners samt Unterordner avatars (z. B. personas der PC-App). " +
                 "Nur Avatare: kopiert Bilder, legt keine Companions an.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
         )

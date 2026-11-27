@@ -1,6 +1,7 @@
 package app.aichatmcp
 
 import app.aichatmcp.core.AppJson
+import app.aichatmcp.core.COMPANION_EXTENSION
 import app.aichatmcp.core.Gamebook
 import app.aichatmcp.core.Gamebooks
 import app.aichatmcp.core.ChatFileException
@@ -60,7 +61,7 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
         if (personas.list().isEmpty()) {
             asset("default_persona.json")?.let {
                 personasDir.mkdirs()
-                File(personasDir, "companion.json").writeText(it)
+                File(personasDir, "companion.$COMPANION_EXTENSION").writeText(it)
             }
         }
     }
@@ -76,7 +77,7 @@ class AppStorage(private val root: File, private val asset: (String) -> String?)
         if (pending.isEmpty()) return null
         var voices: RetiredVoices? = null
         for (id in pending) {
-            val file = File(personasDir, "$id.json")
+            val file = File(personasDir, "$id.$COMPANION_EXTENSION")
             if (id == "vorleser" && file.isFile) {
                 voices = runCatching { Persona.parse(file.readText(Charsets.UTF_8), id).getOrThrow() }.getOrNull()
                     ?.takeIf { it.voice.isNotEmpty() || it.voiceMale.isNotEmpty() || it.voiceFemale.isNotEmpty() }

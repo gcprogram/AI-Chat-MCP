@@ -1,4 +1,4 @@
-"""Fenster zum Anlegen, Bearbeiten und Löschen von Companions (companions/*.json) inkl. Avatar und Werkzeug-Auswahl."""
+"""Fenster zum Anlegen, Bearbeiten und Löschen von Companions (companions/*.char) inkl. Avatar und Werkzeug-Auswahl."""
 from __future__ import annotations
 
 import re
