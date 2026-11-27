@@ -24,6 +24,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,8 @@ import app.aichatmcp.ui.SettingsScreen
 import app.aichatmcp.ui.I18n
 import app.aichatmcp.ui.LocalUiLanguage
 import app.aichatmcp.ui.ToolsScreen
+import app.aichatmcp.ui.TranslateScreen
+import app.aichatmcp.translate.ExportFormat
 import app.aichatmcp.ui.trNow
 
 class MainActivity : ComponentActivity() {
@@ -191,6 +194,20 @@ private fun RootContent(vm: ChatViewModel) {
     }
 
     val bookVm: BookViewModel = viewModel()
+    val translateVm: TranslateViewModel = viewModel()
+    val pickTranslateFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(translateVm::selectFile) }
+    val translateExports = ExportFormat.entries.associateWith { format ->
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(format.mimeType)) { uri -> uri?.let { translateVm.export(format, it) } }
+    }
+    LaunchedEffect(translateVm.message) {
+        if (translateVm.message.isNotEmpty()) { Toast.makeText(context, translateVm.message, Toast.LENGTH_LONG).show(); translateVm.consumeMessage() }
+    }
+    fun readTranslation() {
+        vm.readTranslation(translateVm.documentName.ifBlank { "Translation" }, translateVm.readableText())
+        screen = Screen.CHAT
+    }
+    // Ist eine Übersetzung fertig und "gleich vorlesen" eingeschaltet, beginnt das Vorlesen (auch wenn man inzwischen woanders ist)
+    LaunchedEffect(translateVm.finishedCount) { if (translateVm.finishedCount > 0 && translateVm.readWhenDone) readTranslation() }
     var summaryText by remember { mutableStateOf("") }
     val saveSummary = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         uri?.let { runCatching { context.contentResolver.openOutputStream(it)?.use { out -> out.write(summaryText.toByteArray(Charsets.UTF_8)) } }.onSuccess { toast("Gespeichert") }.onFailure { e -> toast("Speichern fehlgeschlagen: ${e.message}") } }
@@ -210,7 +227,7 @@ private fun RootContent(vm: ChatViewModel) {
     DownloadQuestion(vm)
 
     // Das Start-Menü (Chat, Companions, Schreiben, Vorlesen, Spielen) steht unter den Hauptbildschirmen
-    val mainScreens = setOf(Screen.CHAT, Screen.GALLERY, Screen.BOOK, Screen.READ, Screen.PLAY)
+    val mainScreens = setOf(Screen.CHAT, Screen.GALLERY, Screen.BOOK, Screen.READ, Screen.PLAY, Screen.TRANSLATE)
     Column(Modifier.fillMaxSize()) {
     Box(Modifier.weight(1f)) {
     when (screen) {
@@ -221,6 +238,7 @@ private fun RootContent(vm: ChatViewModel) {
             onImport = { importChat.launch("*/*") },
             onMic = ::onMic,
             onUpload = { pickDocument.launch(arrayOf("*/*")) },
+            onTranslate = { doc -> translateVm.selectDocument(doc.name, doc.uri, doc.text); screen = Screen.TRANSLATE },
         )
         Screen.SETTINGS -> SettingsScreen(
             vm, onBack = { screen = Screen.CHAT }, onPickModel = { pickModel.launch(arrayOf("*/*")) },
@@ -244,6 +262,11 @@ private fun RootContent(vm: ChatViewModel) {
         Screen.PLAY -> PlayScreen(
             vm, onBack = { screen = Screen.CHAT }, onLoad = { pickDocument.launch(arrayOf("*/*")) }, onStarted = { screen = Screen.CHAT },
             onLoadGamebook = { pickGameFile.launch(vm.bookLocation) },
+        )
+        Screen.TRANSLATE -> TranslateScreen(
+            translateVm, onBack = { screen = Screen.CHAT }, onPick = { pickTranslateFile.launch(arrayOf("*/*")) },
+            onExport = { format -> translateExports.getValue(format).launch(translateVm.suggestedFileName(format)) },
+            onRead = ::readTranslation, onOpenModels = { screen = Screen.MODELS },
         )
         Screen.INTRO -> OnboardingScreen(vm, onDone = { vm.finishOnboarding(); screen = Screen.CHAT }, folders = folders)
         Screen.COMPANIONS -> CompanionsScreen(

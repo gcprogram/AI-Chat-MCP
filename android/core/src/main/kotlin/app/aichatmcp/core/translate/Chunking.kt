@@ -6,7 +6,7 @@ package app.aichatmcp.core.translate
  * Leerraum. Bewusst keine Flags wie (?U): Androids Regex-Engine (ICU) kennt sie nicht, und \s allein ist auf der
  * JVM nur ASCII, auf Android auch Unicode. Diese Klasse verhält sich überall gleich.
  */
-internal const val WS = "[\\s\\p{Z}]"
+const val WS = "[\\s\\p{Z}]"
 
 // Satzende inkl. schließender Anführungszeichen. Westliche Zeichen verlangen folgenden Leerraum,
 // CJK-Satzzeichen nicht (dort steht kein Leerzeichen dahinter).

@@ -68,10 +68,13 @@ private val ToolGreen = Color(0xFF0B6B3A)
 private val ErrorRed = Color(0xFFC0392B)
 private val InfoBlue = Color(0xFF1A56C4)
 
-enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO, BOOK, READ, PLAY, GALLERY }
+enum class Screen { CHAT, SETTINGS, COMPANIONS, TOOLS, MODELS, INTRO, BOOK, READ, PLAY, GALLERY, TRANSLATE }
 
 @Composable
-fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit) {
+fun ChatScreen(
+    vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, onImport: () -> Unit, onMic: () -> Unit, onUpload: () -> Unit,
+    onTranslate: (PendingDoc) -> Unit = {},
+) {
     val listState = rememberLazyListState()
     // Während das Modell rechnet (Antwort oder Vorwärmen), soll der Bildschirm nicht ausgehen: Sonst muss man für jede Antwort entsperren,
     // und Samsung beschränkt die App bei dunklem Bildschirm auf die langsamen Kerne (gemessen: mehrfach langsamer).
@@ -117,7 +120,7 @@ fun ChatScreen(vm: ChatViewModel, open: (Screen) -> Unit, onExport: () -> Unit, 
         }
         HorizontalDivider()
         vm.pendingImage?.let { ImageCard(it, vm) }
-        vm.pendingDoc?.let { DocCard(it, vm) }
+        vm.pendingDoc?.let { DocCard(it, vm, onTranslate) }
         SoloPanel(vm)
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(vm.status, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -287,7 +290,7 @@ private fun withToolCalls(text: String) = buildAnnotatedString {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
+private fun DocCard(doc: PendingDoc, vm: ChatViewModel, onTranslate: (PendingDoc) -> Unit) {
     var roleplayDialog by remember { mutableStateOf(false) }
     if (roleplayDialog) RoleplayDialog(doc, vm) { roleplayDialog = false }
     Surface(
@@ -327,6 +330,7 @@ private fun DocCard(doc: PendingDoc, vm: ChatViewModel) {
                     else Button(onClick = { vm.docRead() }) { Text("2 · Vorlesen") }
                     if (!doc.image) Button(onClick = vm::docSummarize, enabled = !vm.streaming) { Text("3 · Zusammenfassen") }
                     if (!doc.image) OutlinedButton(onClick = { roleplayDialog = true }, enabled = !vm.streaming) { Text(t("Role play…", "Rollenspiel…")) }
+                    if (!doc.image) Button(onClick = { onTranslate(doc) }, enabled = !vm.streaming) { Text(t("🌐 Translate…", "🌐 Übersetzen…")) }
                     TextButton(onClick = vm::dismissDoc) { Text("Verwerfen") }
                 }
             }

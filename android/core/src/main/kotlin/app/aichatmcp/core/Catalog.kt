@@ -55,6 +55,11 @@ object ModelCatalog {
             ),
         ),
         CatalogEntry(
+            "translategemma-4b", ModelKind.CHAT, "TranslateGemma 4B (translation)",
+            "Google's translation model (55 languages) for the Translate tab. Translates only, no chat. About 3 GB of RAM while translating.",
+            listOf(RemoteFile(hf("mradermacher/translategemma-4b-it-GGUF", "translategemma-4b-it.Q4_K_S.gguf"), "translategemma-4b-it.Q4_K_S.gguf", 2378 * MB)),
+        ),
+        CatalogEntry(
             "gemma-3n-e2b", ModelKind.CHAT, "Gemma 3n E2B",
             "Google's small model built for phones; good language skills, weaker with tools.",
             listOf(RemoteFile(hf("lmstudio-community/gemma-3n-E2B-it-GGUF", "gemma-3n-E2B-it-Q4_K_M.gguf"), "gemma-3n-E2B-it-Q4_K_M.gguf", 2788 * MB)),

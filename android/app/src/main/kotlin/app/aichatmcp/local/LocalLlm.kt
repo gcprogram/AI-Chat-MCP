@@ -10,11 +10,21 @@ import app.aichatmcp.core.Config
 import app.aichatmcp.core.LlmBackend
 import app.aichatmcp.core.LlmException
 import app.aichatmcp.core.StopFilter
+import app.aichatmcp.core.translate.ChatMessage
+import app.aichatmcp.core.translate.Completion
+import app.aichatmcp.core.translate.TranslateBackend
+import app.aichatmcp.core.translate.TranslationException
 import app.aichatmcp.core.StreamEvent
 import app.aichatmcp.core.Thinking
 import app.aichatmcp.core.WireMessage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.trySendBlocking
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
@@ -167,6 +177,60 @@ class LocalLlm(private val context: Context) {
 
         /** Das eine Modell des Prozesses: Chat und Autorenmodus teilen es (zwei Instanzen würden das Modell doppelt in den Speicher laden). */
         fun shared(context: Context): LocalLlm = instance ?: synchronized(this) { instance ?: LocalLlm(context.applicationContext).also { instance = it } }
+    }
+
+    /**
+     * Übersetzen mit einem Modell auf dem Gerät: der Roh-Prompt von TranslateGemma geht ohne Chat-Vorlage ans Modell (das ist die
+     * Vorlage selbst). Das Modell [modelRef] (Pfad oder content://-Adresse) ersetzt das Chat-Modell im Speicher und wird nach dem Lauf
+     * mit [unload] freigegeben. Abbrechen der Coroutine bricht die native Schleife ab.
+     */
+    fun translateBackend(modelRef: String, threads: Int): TranslateBackend = object : TranslateBackend {
+        override suspend fun complete(
+            model: String, prompt: String, maxTokens: Int, temperature: Double, stop: List<String>?, onDelta: ((String) -> Unit)?,
+        ): Completion = withContext(Dispatchers.IO) {
+            val h = try {
+                ensureLoaded(modelRef, LOCAL_MAX_CONTEXT, threads)
+            } catch (e: LlmException) {
+                throw TranslationException(e.message.orEmpty(), e)
+            }
+            coroutineScope {
+                val watcher = launch {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        LlamaNative.cancel(h)
+                    }
+                }
+                try {
+                    synchronized(runLock) {
+                        val filter = StopFilter(stop.orEmpty())
+                        val text = StringBuilder()
+                        val result = LlamaNative.generate(
+                            h, prompt.toByteArray(Charsets.UTF_8), maxTokens, temperature.toFloat(), 1f, 1f, 0f, 0f, System.nanoTime().toInt(),
+                        ) { bytes ->
+                            val piece = filter.feed(String(bytes, Charsets.UTF_8))
+                            if (piece.isNotEmpty()) {
+                                text.append(piece)
+                                onDelta?.invoke(piece)
+                            }
+                            !filter.stopped && isActive
+                        }
+                        if (result == -1) throw TranslationException(LlamaNative.lastError())
+                        ensureActive()
+                        filter.flush().takeIf { it.isNotEmpty() }?.let { text.append(it); onDelta?.invoke(it) }
+                        // 0 = Ende-Token, 2 = Stop-Wort des Filters (die Schleife wurde vom Sink beendet); 1 und 3 = Token-Grenze bzw. Kontext voll
+                        val finish = if (result == 0 || filter.stopped) "stop" else "length"
+                        Completion(text.toString().trim(), finish)
+                    }
+                } finally {
+                    watcher.cancel()
+                }
+            }
+        }
+
+        override suspend fun chat(
+            model: String, messages: List<ChatMessage>, maxTokens: Int, temperature: Double, onDelta: ((String) -> Unit)?,
+        ): Completion = throw TranslationException("Das Modell auf dem Gerät übersetzt nur mit TranslateGemma (der Modellname muss 'translategemma' enthalten).")
     }
 
     fun backend(config: Config): LlmBackend = object : LlmBackend {

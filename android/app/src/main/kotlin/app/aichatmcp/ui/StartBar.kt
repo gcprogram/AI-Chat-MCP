@@ -47,7 +47,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Das Start-Menü unten: die vier Funktionen der App als Symbole: Companions (Übersichtsseite), Buch schreiben, Buch vorlesen und Buch spielen, dazu der Chat.
+ * Das Start-Menü unten: die Funktionen der App als Symbole: Companions (Übersichtsseite), Buch schreiben, Buch vorlesen, Buch spielen und Dokumente übersetzen, dazu der Chat.
  * Es steht auf den Hauptbildschirmen; Einstellungen und Werkzeuge (Setup, im Menü ⋮) haben es nicht.
  */
 @Composable
@@ -58,6 +58,7 @@ fun StartBar(current: Screen, open: (Screen) -> Unit) {
         Triple(Screen.BOOK, "✍️", t("Write", "Schreiben")),
         Triple(Screen.READ, "📖", t("Read", "Vorlesen")),
         Triple(Screen.PLAY, "🎲", t("Play", "Spielen")),
+        Triple(Screen.TRANSLATE, "🌐", t("Translate", "Übersetzen")),
     )
     Column {
         HorizontalDivider()

@@ -874,6 +874,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.speak(spoken, tag, speechOut.voice) { status = it }
     }
 
+    /**
+     * Liest eine Übersetzung (Text ohne Markdown) mit dem Vorleser vor: sie wird zum geladenen Dokument, die Sprache erkennt [docRead] am Text.
+     * Läuft gerade ein Vorlesen, wird es beendet.
+     */
+    fun readTranslation(name: String, text: String) {
+        if (text.isBlank()) return
+        endReading()
+        val tokens = (text.length / session.context.charsPerToken).toInt()
+        pendingDoc = PendingDoc(name, DocKind.TEXT, text, tokens, session.documentBudgetTokens())
+        docRead()
+    }
+
     fun confirmVoicePrompt() {
         val prompt = voicePrompt ?: return
         voicePrompt = null
