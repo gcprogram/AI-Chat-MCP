@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import app.aichatmcp.ChatViewModel
 import app.aichatmcp.TranslateViewModel
 import app.aichatmcp.core.StoredFile
 import app.aichatmcp.core.translate.Languages
@@ -38,7 +39,7 @@ import app.aichatmcp.translate.ExportFormat
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TranslateScreen(
-    vm: TranslateViewModel, onBack: () -> Unit, onPick: () -> Unit, onExport: (ExportFormat) -> Unit, onRead: () -> Unit, onOpenModels: () -> Unit,
+    vm: TranslateViewModel, chat: ChatViewModel, onBack: () -> Unit, onPick: () -> Unit, onExport: (ExportFormat) -> Unit, onRead: () -> Unit, onOpenModels: () -> Unit,
 ) {
     val localFiles by produceState<List<StoredFile>>(emptyList(), vm.onDevice) { value = vm.localFiles() }
     // Während übersetzt wird, soll der Bildschirm nicht ausgehen (bei dunklem Bildschirm drosseln Handys die App auf die langsamen Kerne)
@@ -118,9 +119,13 @@ fun TranslateScreen(
             Text(t("Use the previous section as context (consistent names and tone)", "Vorgängerabschnitt als Kontext (einheitliche Namen und Ton)"), style = MaterialTheme.typography.bodySmall)
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Switch(checked = vm.readWhenDone, onCheckedChange = vm::changeReadWhenDone)
-            Text(t("Read the translation aloud when it is finished", "Übersetzung gleich vorlesen, sobald sie fertig ist"), style = MaterialTheme.typography.bodySmall)
+            Switch(checked = vm.readLive, onCheckedChange = vm::changeReadLive)
+            Text(
+                t("Read aloud while translating (each finished section is read; the voices for narrator, women and men are used if set in Setup)", "Beim Übersetzen mitlesen (jeder fertige Abschnitt wird vorgelesen; Erzähler-, Frauen- und Männerstimme laut Setup)"),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
+        if (chat.docReading) ReaderControls(chat) // Tasten des Vorlesers (Stopp, Pause, Sprünge) auch hier
         TextButton(onClick = { showGlossary = !showGlossary }) { Text(if (showGlossary) t("Hide glossary", "Glossar ausblenden") else t("Glossary…", "Glossar…")) }
         if (showGlossary) {
             TextSetting(

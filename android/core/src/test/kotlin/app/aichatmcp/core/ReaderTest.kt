@@ -20,6 +20,7 @@ class ReaderTest {
         val texts = mutableListOf<Pair<String, Boolean>>()
         val describing = mutableListOf<Boolean>()
         val problems = mutableListOf<String>()
+        val waits = mutableListOf<Boolean>()
         var finished = 0
 
         override fun speak(text: String, id: String, language: String?, flush: Boolean) { spoken += Spoken(text, id, language, flush) }
@@ -34,6 +35,7 @@ class ReaderTest {
         override fun onSpoken(text: String, fromImage: Boolean) { texts += text to fromImage }
         override fun onDescribing(active: Boolean) { describing += active }
         override fun onProblem(message: String) { problems += message }
+        override fun onWaiting(waiting: Boolean) { waits += waiting }
         override fun onFinished() { finished++ }
     }
 
@@ -308,6 +310,132 @@ class ReaderTest {
         assertEquals(ReaderState.STOPPED, empty.state)
         assertTrue(g.spoken.isEmpty())
         assertNull(g.problems.firstOrNull())
+    }
+
+    // --- Wachsender Plan: Vorlesen einer laufenden Übersetzung ---------------------------------------------------
+
+    private fun growing(vararg texts: String, f: Fakes = Fakes()): Triple<Reader, ReadPlan, Fakes> {
+        val plan = ReadPlan.growing()
+        plan.append(speech(*texts))
+        return Triple(Reader(plan, f, f, f, textLanguage = "de-DE"), plan, f)
+    }
+
+    @Test
+    fun anOpenPlanWaitsForNewTextInsteadOfFinishing() {
+        val (r, plan, f) = growing("eins")
+        r.play()
+        r.utteranceDone(f.spoken[0].id)
+        assertEquals(0, f.finished)
+        assertEquals(ReaderState.PLAYING, r.state)
+        assertEquals(listOf(true), f.waits)
+        plan.append(speech("zwei"))
+        r.planGrew()
+        assertEquals(listOf("eins", "zwei"), f.spoken.map { it.text })
+        assertTrue(f.spoken[1].flush)
+        assertEquals(listOf(true, false), f.waits)
+        assertEquals(1, r.index)
+        r.utteranceDone(f.spoken[1].id)
+        plan.append(speech("drei", "vier"))
+        r.planGrew()
+        assertEquals(listOf("eins", "zwei", "drei", "vier"), f.spoken.map { it.text }) // vier ist schon angehängt
+        r.closePlan()
+        r.utteranceDone(f.spoken[2].id)
+        r.utteranceDone(f.spoken[3].id)
+        assertEquals(1, f.finished)
+        assertEquals(ReaderState.STOPPED, r.state)
+    }
+
+    @Test
+    fun textThatArrivesWhileSpeakingIsQueuedWithoutAGap() {
+        val (r, plan, f) = growing("eins")
+        r.play()
+        plan.append(speech("zwei"))
+        r.planGrew()
+        assertEquals(listOf("eins" to true, "zwei" to false), f.spoken.map { it.text to it.flush })
+        r.utteranceDone(f.spoken[0].id)
+        assertEquals(2, f.spoken.size) // zwei wurde schon angehängt, nichts wird doppelt gesprochen
+        assertEquals(1, r.index)
+        assertEquals(emptyList(), f.waits)
+    }
+
+    @Test
+    fun closingThePlanWhileWaitingFinishesAtOnce() {
+        val (r, _, f) = growing("eins")
+        r.play()
+        r.utteranceDone(f.spoken[0].id)
+        r.closePlan()
+        assertEquals(1, f.finished)
+        assertEquals(ReaderState.STOPPED, r.state)
+        assertEquals(listOf(true, false), f.waits)
+    }
+
+    @Test
+    fun closingThePlanWhileSpeakingFinishesAfterTheLastSection() {
+        val (r, _, f) = growing("eins")
+        r.play()
+        r.closePlan()
+        assertEquals(0, f.finished)
+        r.utteranceDone(f.spoken[0].id)
+        assertEquals(1, f.finished)
+    }
+
+    @Test
+    fun pausingWhileWaitingDoesNotReplayTheLastSectionOnPlay() {
+        val (r, plan, f) = growing("eins")
+        r.play()
+        r.utteranceDone(f.spoken[0].id)
+        r.pause()
+        assertEquals(ReaderState.PAUSED, r.state)
+        assertEquals(listOf(true, false), f.waits)
+        r.play()
+        assertEquals(ReaderState.PLAYING, r.state)
+        assertEquals(listOf(true, false, true), f.waits)
+        assertEquals(1, f.spoken.size) // eins wird nicht noch einmal gelesen
+        plan.append(speech("zwei"))
+        r.planGrew()
+        assertEquals(listOf("eins", "zwei"), f.spoken.map { it.text })
+    }
+
+    @Test
+    fun nextAndJumpForwardDoNothingAtTheEndOfAnOpenPlan() {
+        val (r, _, f) = growing("eins")
+        r.play()
+        r.next()
+        r.jumpForward()
+        assertEquals(0, f.finished)
+        assertEquals(ReaderState.PLAYING, r.state)
+    }
+
+    @Test
+    fun anEmptyOpenPlanWaitsFromTheStart() {
+        val f = Fakes()
+        val plan = ReadPlan.growing()
+        val r = Reader(plan, f, f, f, textLanguage = "de-DE")
+        r.play()
+        assertEquals(ReaderState.PLAYING, r.state)
+        assertEquals(listOf(true), f.waits)
+        assertEquals(0, f.spoken.size)
+        plan.append(speech("eins"))
+        r.planGrew()
+        assertEquals(listOf("eins"), f.spoken.map { it.text })
+    }
+
+    @Test
+    fun aClosedPlanStillStopsAtTheEnd() {
+        val (r, plan, f) = growing("eins")
+        plan.open = false
+        r.play()
+        r.utteranceDone(f.spoken[0].id)
+        assertEquals(1, f.finished)
+        assertEquals(emptyList(), f.waits)
+    }
+
+    @Test
+    fun aPlanThatDoesNotGrowRefusesToAppend() {
+        val plan = ReadPlan(speech("eins"), listOf(0))
+        var failed = false
+        try { plan.append(speech("zwei")) } catch (e: IllegalStateException) { failed = true } catch (e: UnsupportedOperationException) { failed = true }
+        assertTrue(failed || plan.size == 2) // eine unveränderliche Liste lehnt ab; eine veränderliche wächst
     }
 }
 

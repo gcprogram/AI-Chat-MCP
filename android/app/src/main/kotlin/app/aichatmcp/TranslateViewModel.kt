@@ -54,6 +54,13 @@ data class TranslateSection(
     val index: Int, val source: String, val translation: String, val warnings: List<String> = emptyList(), val live: Boolean = false,
 )
 
+/** Wohin fertige Abschnitte zum Mitlesen gehen (der Vorleser des Chats); gesetzt von der Oberfläche. */
+interface LiveReadHook {
+    fun start()
+    fun text(name: String, language: String, text: String)
+    fun end()
+}
+
 /** Das gewählte Dokument: entweder eine Datei ([uri]) oder ein schon eingelesener Text (aus der Dokumentkarte im Chat). */
 data class TranslateInput(val name: String, val uri: String = "", val text: String = "")
 
@@ -89,8 +96,11 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var useContext by mutableStateOf(prefs.getBoolean("use_context", true))
         private set
-    var readWhenDone by mutableStateOf(prefs.getBoolean("read_when_done", false))
+    /** Fertige Abschnitte gleich vorlesen, während die nächsten übersetzt werden. */
+    var readLive by mutableStateOf(prefs.getBoolean("read_when_done", false))
         private set
+
+    var liveHook: LiveReadHook? = null
     var glossary by mutableStateOf(prefs.getString("glossary", "").orEmpty())
         private set
 
@@ -123,9 +133,10 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("use_context", value).apply()
     }
 
-    fun changeReadWhenDone(value: Boolean) {
-        readWhenDone = value
+    fun changeReadLive(value: Boolean) {
+        readLive = value
         prefs.edit().putBoolean("read_when_done", value).apply()
+        if (value) liveHook?.start() // mitten in einer Übersetzung eingeschaltet: ab dem nächsten fertigen Abschnitt
     }
 
     fun changeGlossary(text: String) {
@@ -168,10 +179,6 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Einmalige Meldung für die Oberfläche (Toast); die Oberfläche setzt sie mit [consumeMessage] zurück. */
     var message by mutableStateOf("")
-        private set
-
-    /** Zählt hoch, wenn eine Übersetzung vollständig fertig geworden ist (die Oberfläche startet dann ggf. das Vorlesen). */
-    var finishedCount by mutableStateOf(0)
         private set
 
     private var job: Job? = null
@@ -281,11 +288,11 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         running = true
         status = startStatus
         error = ""
+        if (readLive) liveHook?.start()
         GenerationService.start(getApplication())
         try {
             block()
             status = tNow("Translation finished.", "Übersetzung abgeschlossen.")
-            if (pending.isEmpty()) finishedCount++
         } catch (e: CancellationException) {
             markLiveIncomplete(tNow("incomplete (cancelled)", "unvollständig (abgebrochen)"))
             status = tNow("Cancelled.", "Abgebrochen.")
@@ -299,6 +306,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
             message = detail
         } finally {
             running = false
+            liveHook?.end() // der Vorleser liest das Vorhandene fertig und hört dann auf
             GenerationService.stop(getApplication())
             withContext(NonCancellable) {
                 saveNow()
@@ -322,6 +330,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
             pending = pending.filter { it.index != result.index }
             progress = sections.size.toFloat() / total.coerceAtLeast(1)
             status = tNow("Section ${result.index}/$total translated$etaSuffix", "Abschnitt ${result.index}/$total übersetzt$etaSuffix")
+            if (readLive) liveHook?.text(documentName, targetLanguage(), toPlainText(parseBlocks(result.translation)))
             scheduleSave()
         }
     }

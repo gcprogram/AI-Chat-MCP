@@ -54,6 +54,9 @@ interface ReaderEvents {
 
     fun onProblem(message: String) {}
 
+    /** Der Vorleser hat alles Vorhandene gesprochen und wartet auf neuen Text (nur bei einem offenen Plan, z. B. einer laufenden Übersetzung). */
+    fun onWaiting(waiting: Boolean) {}
+
     /** Der letzte Abschnitt ist gesprochen. */
     fun onFinished() {}
 }
@@ -95,6 +98,7 @@ class Reader(
     private var baseOffset = 0 // ab welchem Zeichen des Abschnitts der laufende Sprechauftrag beginnt (nach kurzer Unterbrechung > 0)
     private var pausedAt = 0L
     private var pausedIndex = -1
+    private var waiting = false // alles Vorhandene ist gesprochen, der Plan ist noch offen: der Vorleser wartet auf Text
 
     val total: Int get() = plan.size
     val page: Int get() = plan.pageOf(index) + 1
@@ -103,9 +107,18 @@ class Reader(
     // --- Tasten -----------------------------------------------------------------------------------------------
 
     fun play() {
-        if (plan.size == 0 || state == ReaderState.PLAYING) return
+        if (state == ReaderState.PLAYING) return
+        if (plan.size == 0 && !plan.open) return
         autoPaused = false
-        if (index >= plan.size) index = 0
+        if (index >= plan.size) {
+            if (plan.open) { // alles gelesen, aber es kommt noch Text: warten statt von vorn beginnen
+                state = ReaderState.PLAYING
+                events.onState(state)
+                beginWaiting()
+                return
+            }
+            index = 0
+        }
         // Kurze Unterbrechung am selben Abschnitt: dort weiter, wo das Sprechen stand (nur einfacher Text, keine Rede-Stücke)
         val item = plan.items[index] as? ReadItem.Speech
         val resumeAt = if (state == ReaderState.PAUSED && pausedIndex == index && clock() - pausedAt < SHORT_INTERRUPTION_MS &&
@@ -163,7 +176,7 @@ class Reader(
     /** ">": ein Abschnitt vor. Hinter dem letzten Abschnitt ist das Ende. */
     fun next() {
         if (index + 1 >= plan.size) {
-            finish()
+            if (!plan.open) finish() // bei einem offenen Plan gibt es noch keinen nächsten Abschnitt
         } else {
             seekTo(index + 1)
         }
@@ -175,7 +188,41 @@ class Reader(
     /** ">>": Seite vor, ohne Seiten 10 Abschnitte vor. Hinter dem Ende ist das Ende. */
     fun jumpForward() {
         val target = plan.forwardTarget(index)
-        if (target == null) finish() else seekTo(target)
+        if (target == null) { if (!plan.open) finish() } else seekTo(target)
+    }
+
+    // --- Wachsender Plan (laufende Übersetzung) -------------------------------------------------------------------
+
+    /** Es wurden Elemente an den Plan angehängt: wartet der Vorleser auf Text, geht es jetzt weiter; sonst wird der nächste Abschnitt schon angehängt (keine Lücke). */
+    fun planGrew() {
+        if (state != ReaderState.PLAYING) return
+        if (waiting) {
+            if (index >= plan.size) return
+            waiting = false
+            events.onWaiting(false)
+            startAt(index)
+        } else if (!describing) {
+            queueNext(index)
+        }
+    }
+
+    /** Der Text ist vollständig (die Übersetzung ist zu Ende oder abgebrochen): nach dem letzten Abschnitt ist Schluss. */
+    fun closePlan() {
+        plan.open = false
+        if (waiting && state == ReaderState.PLAYING) {
+            finish()
+        } else if (state == ReaderState.PAUSED && index >= plan.size) {
+            finish() // pausiert am Ende: dort gibt es nichts mehr zu lesen
+        }
+    }
+
+    private fun beginWaiting() {
+        index = plan.size
+        baseOffset = 0
+        spokenOffset = 0
+        waiting = true
+        events.onPosition(index, total)
+        events.onWaiting(true)
     }
 
     // --- Tonfokus (Anruf, anderes Audio) ------------------------------------------------------------------------
@@ -217,6 +264,10 @@ class Reader(
     // --- Ablauf ---------------------------------------------------------------------------------------------------
 
     private fun halt(newState: ReaderState) {
+        if (waiting) {
+            waiting = false
+            events.onWaiting(false)
+        }
         if (newState == ReaderState.PAUSED && state == ReaderState.PLAYING) {
             pausedAt = clock()
             pausedIndex = index
@@ -284,7 +335,7 @@ class Reader(
     private fun advanceFrom(done: Int) {
         val n = done + 1
         if (n >= plan.size) {
-            finish()
+            if (plan.open) beginWaiting() else finish()
             return
         }
         index = n

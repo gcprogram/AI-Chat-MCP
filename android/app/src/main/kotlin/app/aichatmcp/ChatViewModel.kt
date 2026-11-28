@@ -886,6 +886,56 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         docRead()
     }
 
+    // --- Vorlesen einer laufenden Übersetzung: Abschnitt für Abschnitt, während noch übersetzt wird -----------------------------
+
+    private var livePlan: ReadPlan? = null
+    private var liveSuppressed = false // der Nutzer hat das Vorlesen beendet: weitere Abschnitte starten es nicht von neuem
+    private var liveDialogue = false
+
+    /** Eine Übersetzung beginnt (oder das Mitlesen wird eingeschaltet): die Zuordnung beginnt von vorn. */
+    fun liveReadReset() {
+        livePlan = null
+        liveSuppressed = false
+    }
+
+    /**
+     * Ein übersetzter Abschnitt ist fertig: [text] (Klartext) wird an den laufenden Vorlesen-Plan angehängt; der erste Abschnitt startet das Vorlesen.
+     * Wie beim normalen Vorlesen sprechen Erzähler, Frauen und Männer mit ihren Standardstimmen der Zielsprache, wenn dafür Piper-Stimmen gewählt sind;
+     * die Zuordnung der Reden geschieht je Abschnitt (ohne Kenntnis früherer Abschnitte, ohne KI-Rückfall).
+     */
+    fun liveReadAppend(name: String, languageCode: String, text: String) {
+        if (liveSuppressed || text.isBlank()) return
+        val plan = livePlan?.takeIf { it.open }
+        if (plan != null) {
+            plan.append(liveItems(name, text))
+            reader?.takeIf { it.plan === plan }?.planGrew()
+            return
+        }
+        val tag = PACK_LANGUAGES.firstOrNull { it.first.substringBefore('-').equals(languageCode, ignoreCase = true) }?.first
+            ?: Locale.forLanguageTag(languageCode).toLanguageTag()
+        applyReadVoices(tag, null)
+        liveDialogue = config.dialogueVoices && (speechOut.voiceMale.isNotEmpty() || speechOut.voiceFemale.isNotEmpty()) && speechOut.piperFor(speechOut.voice, tag) != null
+        val fresh = ReadPlan.growing()
+        fresh.append(liveItems(name, text))
+        livePlan = fresh
+        val doc = PendingDoc(name, DocKind.TEXT, "", 0, session.documentBudgetTokens())
+        pendingDoc = doc
+        speechOut.installedVoices(listOf(tag)) { installed ->
+            if (livePlan !== fresh || liveSuppressed) return@installedVoices // inzwischen beendet
+            if (installed[tag] == true || speechOut.piperFor(speechOut.voice, tag) != null) beginReading(doc, fresh, tag, 0)
+            else voicePrompt = VoicePrompt(tag, languageName(tag)) { beginReading(doc, fresh, tag, 0) }
+        }
+    }
+
+    private fun liveItems(name: String, text: String): List<ReadItem> = ReadPlan.of(DocText(name, DocKind.TEXT, text), dialogue = liveDialogue).items
+
+    /** Die Übersetzung ist zu Ende (fertig, abgebrochen oder Fehler): der Vorleser liest das Vorhandene fertig und hört dann auf. */
+    fun liveReadEnd() {
+        val plan = livePlan ?: return
+        val r = reader?.takeIf { it.plan === plan }
+        if (r != null) r.closePlan() else plan.open = false
+    }
+
     fun confirmVoicePrompt() {
         val prompt = voicePrompt ?: return
         voicePrompt = null
@@ -929,8 +979,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 status = message
             }
 
+            override fun onWaiting(waiting: Boolean) {
+                readerNote = if (waiting) tNow("waiting for the translation…", "warte auf die Übersetzung…") else ""
+            }
+
             override fun onFinished() {
                 status = "Vorlesen beendet."
+                livePlan = null
                 endReading()
                 pendingDoc = null
                 speechOut.speak(BookEnd.phrase(tag), tag, speechOut.voice) { } // "Ende des Buches" in der Sprache des Buches
@@ -1031,6 +1086,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Stop (Rechteck): beendet das Vorlesen, die Stelle bleibt als Marke; die Rückfrage erscheint wieder. */
     fun readerStop() {
+        if (livePlan?.open == true) liveSuppressed = true // beim Mitlesen einer Übersetzung: Stopp heißt Stopp, auch für spätere Abschnitte
         endReading()
     }
 

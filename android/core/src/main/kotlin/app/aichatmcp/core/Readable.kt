@@ -50,6 +50,18 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
     /** Im Dialogmodus: die Zuordnung der wörtlichen Reden (für den KI-Rückfall); sonst null. */
     var dialogue: Dialogue? = null
 
+    /**
+     * true = der Text wächst noch (eine Übersetzung läuft und liefert Abschnitt für Abschnitt): am Ende wartet der Vorleser auf neuen Text,
+     * statt aufzuhören. Nur auf dem Hauptthread ändern, wie alles am Vorleser.
+     */
+    var open: Boolean = false
+
+    /** Hängt Elemente an das Ende an; nur bei einem Plan aus [growing]. Danach dem [Reader] mit [Reader.planGrew] Bescheid geben. */
+    fun append(more: List<ReadItem>) {
+        val list = items as? MutableList<ReadItem> ?: error("Dieser Plan wächst nicht (ReadPlan.growing() benutzen).")
+        list.addAll(more)
+    }
+
     val size: Int get() = items.size
     val hasPages: Boolean get() = pageStarts.size > 1
 
@@ -66,6 +78,9 @@ class ReadPlan(val items: List<ReadItem>, val pageStarts: List<Int>) {
     }
 
     companion object {
+        /** Ein leerer, offener Plan: der Text kommt nach und nach (siehe [append]), bis [open] auf false gesetzt wird. */
+        fun growing(): ReadPlan = ReadPlan(mutableListOf(), listOf(0)).also { it.open = true }
+
         const val JUMP_ITEMS = 10
         const val CHUNK_CHARS = 400 // ca. 25 Sekunden Sprechzeit: fein genug zum Springen, grob genug für flüssiges Sprechen
 

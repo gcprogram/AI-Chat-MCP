@@ -206,8 +206,14 @@ private fun RootContent(vm: ChatViewModel) {
         vm.readTranslation(translateVm.documentName.ifBlank { "Translation" }, translateVm.readableText())
         screen = Screen.CHAT
     }
-    // Ist eine Übersetzung fertig und "gleich vorlesen" eingeschaltet, beginnt das Vorlesen (auch wenn man inzwischen woanders ist)
-    LaunchedEffect(translateVm.finishedCount) { if (translateVm.finishedCount > 0 && translateVm.readWhenDone) readTranslation() }
+    // Mitlesen: jeder fertig übersetzte Abschnitt geht an den Vorleser des Chats (auch wenn man inzwischen woanders ist)
+    SideEffect {
+        translateVm.liveHook = object : LiveReadHook {
+            override fun start() = vm.liveReadReset()
+            override fun text(name: String, language: String, text: String) = vm.liveReadAppend(name, language, text)
+            override fun end() = vm.liveReadEnd()
+        }
+    }
     var summaryText by remember { mutableStateOf("") }
     val saveSummary = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         uri?.let { runCatching { context.contentResolver.openOutputStream(it)?.use { out -> out.write(summaryText.toByteArray(Charsets.UTF_8)) } }.onSuccess { toast("Gespeichert") }.onFailure { e -> toast("Speichern fehlgeschlagen: ${e.message}") } }
@@ -264,7 +270,7 @@ private fun RootContent(vm: ChatViewModel) {
             onLoadGamebook = { pickGameFile.launch(vm.bookLocation) },
         )
         Screen.TRANSLATE -> TranslateScreen(
-            translateVm, onBack = { screen = Screen.CHAT }, onPick = { pickTranslateFile.launch(arrayOf("*/*")) },
+            translateVm, vm, onBack = { screen = Screen.CHAT }, onPick = { pickTranslateFile.launch(arrayOf("*/*")) },
             onExport = { format -> translateExports.getValue(format).launch(translateVm.suggestedFileName(format)) },
             onRead = ::readTranslation, onOpenModels = { screen = Screen.MODELS },
         )
