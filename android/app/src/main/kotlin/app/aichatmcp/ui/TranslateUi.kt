@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.TranslateViewModel
 import app.aichatmcp.core.StoredFile
@@ -39,6 +41,12 @@ fun TranslateScreen(
     vm: TranslateViewModel, onBack: () -> Unit, onPick: () -> Unit, onExport: (ExportFormat) -> Unit, onRead: () -> Unit, onOpenModels: () -> Unit,
 ) {
     val localFiles by produceState<List<StoredFile>>(emptyList(), vm.onDevice) { value = vm.localFiles() }
+    // Während übersetzt wird, soll der Bildschirm nicht ausgehen (bei dunklem Bildschirm drosseln Handys die App auf die langsamen Kerne)
+    val view = LocalView.current
+    DisposableEffect(vm.running) {
+        view.keepScreenOn = vm.running
+        onDispose { view.keepScreenOn = false }
+    }
     // Ist noch nichts gewählt und TranslateGemma da, wird es genommen
     LaunchedEffect(localFiles) {
         if (vm.localRef.isEmpty()) localFiles.firstOrNull { "translategemma" in it.name.lowercase() }?.let(vm::setLocalModel)
