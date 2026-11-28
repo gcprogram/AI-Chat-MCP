@@ -138,6 +138,10 @@ import kotlinx.serialization.json.JsonObject
 /** Eine Sprache der Offline-Spracherkennung: state = installed | available | downloading | unsupported. */
 data class PackRow(val tag: String, val name: String, val state: String, val progress: Int = 0)
 
+/** Beim Mitlesen einer Übersetzung: langsamstes Tempo (Faktor auf die Sprechgeschwindigkeit) und Vorrat (Elemente zu ca. 25 s), ab dem der Vorleser wieder schneller wird. */
+private const val MIN_LIVE_FACTOR = 0.6
+private const val LIVE_AHEAD_ITEMS = 12
+
 private val PACK_LANGUAGES = listOf(
     "de-DE" to "Deutsch", "en-US" to "English (US)", "en-GB" to "English (UK)", "ja-JP" to "Japanisch (日本語)",
     "fr-FR" to "Französisch", "es-ES" to "Spanisch", "it-IT" to "Italienisch",
@@ -891,11 +895,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private var livePlan: ReadPlan? = null
     private var liveSuppressed = false // der Nutzer hat das Vorlesen beendet: weitere Abschnitte starten es nicht von neuem
     private var liveDialogue = false
+    private var liveHint: (() -> String)? = null // geschätzte Wartezeit bis zum nächsten übersetzten Abschnitt ("ca. 2 Min."), leer = unbekannt
+    private var liveFactor = 1.0 // Faktor auf das Sprechtempo: sinkt, wenn der Vorleser die Übersetzung überholt, und steigt langsam wieder, wenn er genug Vorrat hat
+
+    private fun applyLiveRate() {
+        speechOut.rate = (config.speechRate * liveFactor).toFloat()
+    }
 
     /** Eine Übersetzung beginnt (oder das Mitlesen wird eingeschaltet): die Zuordnung beginnt von vorn. */
-    fun liveReadReset() {
+    fun liveReadReset(waitHint: () -> String = { "" }) {
         livePlan = null
         liveSuppressed = false
+        liveFactor = 1.0
+        liveHint = waitHint
     }
 
     /**
@@ -907,8 +919,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (liveSuppressed || text.isBlank()) return
         val plan = livePlan?.takeIf { it.open }
         if (plan != null) {
+            val r = reader?.takeIf { it.plan === plan }
+            // Hat der Vorleser bei der Ankunft noch mehr als anderthalb Abschnitte Vorrat, ist er langsamer als die Übersetzung: wieder etwas schneller
+            if (r != null && !r.isWaiting && plan.size - (r.index + 1) >= LIVE_AHEAD_ITEMS && liveFactor < 1.0) {
+                liveFactor = minOf(1.0, liveFactor * 1.05)
+                applyLiveRate()
+            }
             plan.append(liveItems(name, text))
-            reader?.takeIf { it.plan === plan }?.planGrew()
+            r?.planGrew()
             return
         }
         val tag = PACK_LANGUAGES.firstOrNull { it.first.substringBefore('-').equals(languageCode, ignoreCase = true) }?.first
@@ -980,7 +998,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onWaiting(waiting: Boolean) {
-                readerNote = if (waiting) tNow("waiting for the translation…", "warte auf die Übersetzung…") else ""
+                if (!waiting) {
+                    readerNote = ""
+                    return
+                }
+                // Der Vorleser hat die Übersetzung eingeholt: Hinweis mit geschätzter Wartezeit und ab jetzt etwas langsamer sprechen
+                val hint = liveHint?.invoke().orEmpty().let { if (it.isEmpty()) "" else " ($it)" }
+                liveFactor = maxOf(MIN_LIVE_FACTOR, liveFactor * 0.88)
+                applyLiveRate()
+                readerNote = tNow("waiting for the translation$hint…", "warte auf die Übersetzung$hint…")
+                status = tNow("The reader caught up with the translation$hint. It reads a little slower from now on to avoid this.", "Der Vorleser hat die Übersetzung eingeholt$hint. Er liest ab jetzt etwas langsamer, damit das nicht wieder passiert.")
             }
 
             override fun onFinished() {
@@ -1068,6 +1095,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         speechOut.setItemSink(null)
         readerState = ReaderState.STOPPED
         readerNote = ""
+        liveFactor = 1.0
+        speechOut.rate = config.speechRate.toFloat() // das Tempo aus den Einstellungen (beim Mitlesen kann es gebremst gewesen sein)
         syncVoice() // Chat und Spiel sprechen wieder mit ihren eigenen Stimmen
     }
 

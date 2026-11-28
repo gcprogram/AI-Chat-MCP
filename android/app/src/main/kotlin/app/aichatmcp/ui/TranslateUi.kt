@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import app.aichatmcp.ChatViewModel
 import app.aichatmcp.TranslateViewModel
+import app.aichatmcp.core.ReaderState
 import app.aichatmcp.core.StoredFile
 import app.aichatmcp.core.translate.Languages
 import app.aichatmcp.translate.ExportFormat
@@ -125,7 +126,16 @@ fun TranslateScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        if (chat.docReading) ReaderControls(chat) // Tasten des Vorlesers (Stopp, Pause, Sprünge) auch hier
+        if (chat.docReading) {
+            ReaderControls(chat) // Tasten des Vorlesers (Stopp, Pause, Sprünge) auch hier
+            if (vm.running) {
+                Text(
+                    if (chat.readerState == ReaderState.PAUSED) t("Reading is paused. The translation keeps running; ▶ continues where you stopped.", "Vorlesen pausiert. Die Übersetzung läuft weiter; ▶ liest dort weiter, wo du aufgehört hast.")
+                    else t("|| pauses only the reading, the translation keeps running. Switch off “Read aloud while translating” to finish reading what is there.", "|| pausiert nur das Vorlesen, die Übersetzung läuft weiter. Mit dem Schalter oben lässt sich das Mitlesen ganz ausschalten."),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
         TextButton(onClick = { showGlossary = !showGlossary }) { Text(if (showGlossary) t("Hide glossary", "Glossar ausblenden") else t("Glossary…", "Glossar…")) }
         if (showGlossary) {
             TextSetting(

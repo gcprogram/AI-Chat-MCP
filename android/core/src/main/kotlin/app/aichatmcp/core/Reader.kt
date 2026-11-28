@@ -100,6 +100,9 @@ class Reader(
     private var pausedIndex = -1
     private var waiting = false // alles Vorhandene ist gesprochen, der Plan ist noch offen: der Vorleser wartet auf Text
 
+    /** Wartet der Vorleser gerade auf neuen Text (offener Plan, alles Vorhandene gesprochen)? */
+    val isWaiting: Boolean get() = waiting
+
     val total: Int get() = plan.size
     val page: Int get() = plan.pageOf(index) + 1
     val pageCount: Int get() = plan.pageStarts.size

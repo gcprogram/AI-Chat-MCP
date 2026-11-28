@@ -209,7 +209,7 @@ private fun RootContent(vm: ChatViewModel) {
     // Mitlesen: jeder fertig übersetzte Abschnitt geht an den Vorleser des Chats (auch wenn man inzwischen woanders ist)
     SideEffect {
         translateVm.liveHook = object : LiveReadHook {
-            override fun start() = vm.liveReadReset()
+            override fun start() = vm.liveReadReset { translateVm.waitHint() }
             override fun text(name: String, language: String, text: String) = vm.liveReadAppend(name, language, text)
             override fun end() = vm.liveReadEnd()
         }

@@ -25,6 +25,7 @@ import app.aichatmcp.core.translate.TranslationException
 import app.aichatmcp.core.translate.TranslationPipeline
 import app.aichatmcp.core.translate.buildContext
 import app.aichatmcp.core.translate.etaText
+import app.aichatmcp.core.translate.formatDuration
 import app.aichatmcp.core.translate.parseBlocks
 import app.aichatmcp.core.translate.parseGlossary
 import app.aichatmcp.core.translate.toPlainText
@@ -133,10 +134,39 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("use_context", value).apply()
     }
 
+    /**
+     * Mitlesen ein- oder ausschalten, auch mitten in einer Übersetzung. Aus: der Vorleser liest das schon Übergebene fertig und wartet nicht mehr;
+     * die Übersetzung läuft weiter. Wieder an: er macht mit den Abschnitten weiter, die inzwischen fertig wurden.
+     */
     fun changeReadLive(value: Boolean) {
         readLive = value
         prefs.edit().putBoolean("read_when_done", value).apply()
-        if (value) liveHook?.start() // mitten in einer Übersetzung eingeschaltet: ab dem nächsten fertigen Abschnitt
+        if (value) {
+            liveHook?.start()
+            sections.filter { !it.live && it.index > liveSent }.sortedBy { it.index }.forEach { sendToReader(it) }
+        } else {
+            liveHook?.end()
+        }
+    }
+
+    private fun sendToReader(section: TranslateSection) {
+        liveSent = section.index
+        liveHook?.text(documentName, targetLanguage(), toPlainText(parseBlocks(section.translation)))
+    }
+
+    /**
+     * Geschätzte Wartezeit bis zum nächsten übersetzten Abschnitt ("ca. 3 Min."), nach dem bisherigen Tempo dieses Laufs abzüglich der Zeit seit dem
+     * letzten fertigen Abschnitt; leer, solange es keine Grundlage gibt.
+     */
+    fun waitHint(): String {
+        if (!running || etaDoneChars <= 0) return ""
+        val next = pending.firstOrNull()?.text?.length ?: return ""
+        val nowNs = System.nanoTime()
+        val perChar = (nowNs - etaStartNanos) / 1_000_000.0 / etaDoneChars
+        val sinceMs = (nowNs - lastSectionNanos) / 1_000_000.0
+        val remainingMs = maxOf(30_000.0, perChar * next - sinceMs).toLong()
+        val text = formatDuration(remainingMs)
+        return if (text.startsWith("unter")) text else "ca. $text"
     }
 
     fun changeGlossary(text: String) {
@@ -184,6 +214,8 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
     private var job: Job? = null
     private var saveJob: Job? = null
     private var runConfig = TranslateConfig()
+    private var liveSent = 0 // der letzte Abschnitt, der zum Mitlesen weitergegeben wurde (beim Wiedereinschalten wird dahinter weitergemacht)
+    private var lastSectionNanos = 0L
 
     // Restzeit: bisheriges Tempo (Zeichen pro Zeit) auf den Rest hochgerechnet
     private var etaStartNanos = 0L
@@ -320,6 +352,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         etaTotalChars = chunks.sumOf { it.text.length.toLong() }
         etaDoneChars = 0
         etaSuffix = ""
+        lastSectionNanos = etaStartNanos
         pipeline.translate(chunks, glossary, initialContext) { chunk, delta -> appendDelta(chunk, delta) }.collect { result ->
             etaDoneChars += result.source.length
             val elapsedMs = (System.nanoTime() - etaStartNanos) / 1_000_000
@@ -330,7 +363,8 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
             pending = pending.filter { it.index != result.index }
             progress = sections.size.toFloat() / total.coerceAtLeast(1)
             status = tNow("Section ${result.index}/$total translated$etaSuffix", "Abschnitt ${result.index}/$total übersetzt$etaSuffix")
-            if (readLive) liveHook?.text(documentName, targetLanguage(), toPlainText(parseBlocks(result.translation)))
+            lastSectionNanos = System.nanoTime()
+            if (readLive) sendToReader(section)
             scheduleSave()
         }
     }
@@ -340,6 +374,7 @@ class TranslateViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isEmpty()) throw IllegalStateException(tNow("The file could not be read or is empty.", "Die Datei konnte nicht gelesen werden oder ist leer."))
         val chunks = splitIntoChunks(text, config.maxChunkChars)
         // Erst jetzt ist sicher, dass es etwas Neues gibt: die bisherige Übersetzung wird ersetzt
+        liveSent = 0
         documentName = name
         total = chunks.size
         sections = emptyList()
